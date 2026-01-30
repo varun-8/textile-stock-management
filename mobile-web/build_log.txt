@@ -1,0 +1,15 @@
+
+> mobile-web@0.0.0 build
+> vite build
+
+[36mvite v7.3.1 [32mbuilding client environment for production...[36m[39m
+transforming...
+[32mΓ£ô[39m 24 modules transformed.
+Γ£ù Build failed in 207ms
+error during build:
+Could not resolve "./InstallPrompt" from "src/components/AppShell.jsx"
+file: C:/Users/varun/OneDrive/Desktop/tex/mobile-web/src/components/AppShell.jsx
+    at getRollupError (file:///C:/Users/varun/OneDrive/Desktop/tex/mobile-web/node_modules/rollup/dist/es/shared/parseAst.js:400:41)
+    at error (file:///C:/Users/varun/OneDrive/Desktop/tex/mobile-web/node_modules/rollup/dist/es/shared/parseAst.js:396:42)
+    at ModuleLoader.handleInvalidResolvedId (file:///C:/Users/varun/OneDrive/Desktop/tex/mobile-web/node_modules/rollup/dist/es/shared/node-entry.js:21666:24)
+    at file:///C:/Users/varun/OneDrive/Desktop/tex/mobile-web/node_modules/rollup/dist/es/shared/node-entry.js:21626:26

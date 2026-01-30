@@ -1,0 +1,17 @@
+directories:
+  output: release
+  buildResources: build
+appId: com.srilakshmitextiles.inventory
+productName: Sri Lakshmi Textiles
+files:
+  - filter:
+      - dist/**/*
+      - electron-main.cjs
+      - package.json
+win:
+  target:
+    - nsis
+    - portable
+  icon: icon.png
+  forceCodeSigning: false
+electronVersion: 40.0.0

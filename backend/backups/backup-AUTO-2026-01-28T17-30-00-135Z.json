@@ -1,0 +1,136 @@
+{
+  "metadata": {
+    "timestamp": "2026-01-28T17:30:00.183Z",
+    "version": "1.0",
+    "type": "AUTO"
+  },
+  "data": {
+    "barcodes": [
+      {
+        "_id": "6979012b535255eb074c51f0",
+        "year": 2026,
+        "size": 40,
+        "sequence": 1,
+        "full_barcode": "26-40-0001",
+        "status": "Unused",
+        "createdAt": "2026-01-27T18:17:15.533Z",
+        "__v": 0
+      },
+      {
+        "_id": "697a1a77267afb8ab7f5a0bb",
+        "year": 2026,
+        "size": 40,
+        "sequence": 2,
+        "full_barcode": "26-40-0002",
+        "status": "Unused",
+        "createdAt": "2026-01-28T14:17:27.548Z",
+        "__v": 0
+      },
+      {
+        "_id": "697a1a77267afb8ab7f5a0bc",
+        "year": 2026,
+        "size": 40,
+        "sequence": 3,
+        "full_barcode": "26-40-0003",
+        "status": "Unused",
+        "createdAt": "2026-01-28T14:17:27.548Z",
+        "__v": 0
+      },
+      {
+        "_id": "697a1a77267afb8ab7f5a0bd",
+        "year": 2026,
+        "size": 40,
+        "sequence": 4,
+        "full_barcode": "26-40-0004",
+        "status": "Unused",
+        "createdAt": "2026-01-28T14:17:27.548Z",
+        "__v": 0
+      },
+      {
+        "_id": "697a1a77267afb8ab7f5a0be",
+        "year": 2026,
+        "size": 40,
+        "sequence": 5,
+        "full_barcode": "26-40-0005",
+        "status": "Unused",
+        "createdAt": "2026-01-28T14:17:27.548Z",
+        "__v": 0
+      },
+      {
+        "_id": "697a1a77267afb8ab7f5a0bf",
+        "year": 2026,
+        "size": 40,
+        "sequence": 6,
+        "full_barcode": "26-40-0006",
+        "status": "Unused",
+        "createdAt": "2026-01-28T14:17:27.548Z",
+        "__v": 0
+      },
+      {
+        "_id": "697a1a77267afb8ab7f5a0c0",
+        "year": 2026,
+        "size": 40,
+        "sequence": 7,
+        "full_barcode": "26-40-0007",
+        "status": "Unused",
+        "createdAt": "2026-01-28T14:17:27.549Z",
+        "__v": 0
+      },
+      {
+        "_id": "697a1a77267afb8ab7f5a0c1",
+        "year": 2026,
+        "size": 40,
+        "sequence": 8,
+        "full_barcode": "26-40-0008",
+        "status": "Unused",
+        "createdAt": "2026-01-28T14:17:27.549Z",
+        "__v": 0
+      },
+      {
+        "_id": "697a1a77267afb8ab7f5a0c2",
+        "year": 2026,
+        "size": 40,
+        "sequence": 9,
+        "full_barcode": "26-40-0009",
+        "status": "Unused",
+        "createdAt": "2026-01-28T14:17:27.549Z",
+        "__v": 0
+      },
+      {
+        "_id": "697a1a77267afb8ab7f5a0c3",
+        "year": 2026,
+        "size": 40,
+        "sequence": 10,
+        "full_barcode": "26-40-0010",
+        "status": "Unused",
+        "createdAt": "2026-01-28T14:17:27.549Z",
+        "__v": 0
+      },
+      {
+        "_id": "697a1a77267afb8ab7f5a0c4",
+        "year": 2026,
+        "size": 40,
+        "sequence": 11,
+        "full_barcode": "26-40-0011",
+        "status": "Unused",
+        "createdAt": "2026-01-28T14:17:27.550Z",
+        "__v": 0
+      }
+    ],
+    "clothRolls": [],
+    "auditLogs": [
+      {
+        "_id": "6978f61828ea78ce93d47152",
+        "action": "BACKUP",
+        "user": "System",
+        "details": {
+          "filename": "backup-AUTO-2026-01-27T17-30-00-047Z.json",
+          "type": "AUTO",
+          "size": 0
+        },
+        "timestamp": "2026-01-27T17:30:00.073Z",
+        "__v": 0
+      }
+    ]
+  }
+}

@@ -1,0 +1,19 @@
+SECTION 4: BARCODE GENERATION SYSTEM (CRITICAL)
+
+Rules
+
+Auto-generate sequential barcodes
+
+Prefix: SLT
+
+Format: SLT000001
+
+No manual barcode entry allowed
+
+Constraints
+
+MongoDB unique index on barcode
+
+Duplicate barcode → block + alert
+
+All barcodes must be same ordered modify the prompt ass i say, there must be a year field in this section if the year is 2026 the barcode first 2 digit must be '26'. then a dropdowin list with name size from 38 to 51. this number must be the second part and the third part must start from 0000 to 9999. In this section they may be able to generate as pdf of the barcode there must not be any duplicates. Once used no should not be used again and the no should continue from the last used one. It should only able to generate one page of barcode make the size siutable that is used in all . it should be in the way to take printout for strickering purpose
