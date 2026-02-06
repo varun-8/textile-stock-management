@@ -433,7 +433,7 @@ const WorkScreen = () => {
 
             {showMissing && (
                 <div style={{ position: 'fixed', inset: 0, background: THEME.primary, zIndex: 2000, display: 'flex', flexDirection: 'column' }}>
-                    <div style={{ flex: 1, overflow: 'hidden' }}><MissingScans serverIp={serverIp} /></div>
+                    <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}><MissingScans /></div>
                     <button onClick={() => setShowMissing(false)} style={{ padding: '20px', background: THEME.secondary, border: 'none', color: 'white', fontWeight: 'bold' }}>CLOSE</button>
                 </div>
             )}

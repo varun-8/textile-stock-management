@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useConfig } from '../context/ConfigContext';
 import { io } from "socket.io-client";
+import DetailedViewModal from '../components/DetailedViewModal';
 
 // --- Icons ---
 const IconBox = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" /><path d="m3.3 7 8.7 5 8.7-5" /><path d="M12 22V12" /></svg>;
@@ -11,6 +12,8 @@ const IconCloud = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="no
 
 const IconEdit = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>;
 const IconTrash = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>;
+const IconPlay = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>;
+const IconStop = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect></svg>;
 
 const Dashboard = () => {
     const navigate = useNavigate();
@@ -32,7 +35,22 @@ const Dashboard = () => {
     const [endDate, setEndDate] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
     const [editItem, setEditItem] = useState(null);
-    const [isTodayOnly, setIsTodayOnly] = useState(true);
+    const [isTodayOnly, setIsTodayOnly] = useState(false);
+    const [sessionStartTime, setSessionStartTime] = useState(localStorage.getItem('SESSION_START'));
+
+    // Detailed View Modal State
+    const [detailedView, setDetailedView] = useState({ isOpen: false, type: null });
+
+    // Modal State
+    const [modalConfig, setModalConfig] = useState({ isOpen: false, type: 'info', title: '', message: '', onConfirm: null });
+
+    const showModal = (type, title, message, onConfirm = null) => {
+        setModalConfig({ isOpen: true, type, title, message, onConfirm });
+    };
+
+    const closeModal = () => {
+        setModalConfig({ ...modalConfig, isOpen: false });
+    };
 
     const getTodayRange = () => {
         const today = new Date().toISOString().split('T')[0];
@@ -58,12 +76,14 @@ const Dashboard = () => {
     };
 
     const fetchRecentLogs = async () => {
+        if (!sessionStartTime) {
+            setRecentLogs([]);
+            return;
+        }
+
         try {
-            let url = `${apiUrl}/api/stats/list/recent`;
-            if (isTodayOnly) {
-                const { startDate, endDate } = getTodayRange();
-                url += `?startDate=${startDate}&endDate=${endDate}`;
-            }
+            // Fetch logs only from session start
+            let url = `${apiUrl}/api/stats/list/recent?startDate=${sessionStartTime}&limit=all`;
             const res = await fetch(url);
             const data = await res.json();
             const normalized = data.map(item => ({
@@ -82,22 +102,22 @@ const Dashboard = () => {
 
         const socket = io(apiUrl, {
             rejectUnauthorized: false,
-            transports: ['websocket', 'polling'] // Force simpler transports to avoid some CORS issues with self-signed
+            transports: ['websocket', 'polling']
         });
         socket.on('stock_update', (data) => {
-            if (activeTab === 'LIVE') {
+            if (activeTab === 'LIVE' && sessionStartTime) {
                 const newLog = {
                     time: new Date().toLocaleTimeString(),
                     barcode: data.barcode,
                     type: data.type,
                     details: data.details
                 };
-                setRecentLogs(prev => [newLog, ...prev.slice(0, 49)]);
+                setRecentLogs(prev => [newLog, ...prev]);
             }
             fetchStats();
         });
         return () => socket.disconnect();
-    }, [apiUrl, activeTab, isTodayOnly]);
+    }, [apiUrl, activeTab, isTodayOnly, sessionStartTime]);
 
     useEffect(() => {
         if (activeTab !== 'LIVE') handleCardClick(activeTab);
@@ -133,6 +153,13 @@ const Dashboard = () => {
             }));
             setFilteredLogs(normalized);
         } catch (err) { console.error(err); }
+    };
+
+    const handleCardDoubleClick = (key) => {
+        // Only allow detailed view for main inventory types
+        if (key === 'totalRolls' || key === 'stockIn' || key === 'stockOut') {
+            setDetailedView({ isOpen: true, type: key });
+        }
     };
 
     const handleDelete = async (barcode) => {
@@ -215,25 +242,87 @@ const Dashboard = () => {
     }, [displayList]);
 
     const downloadCSV = () => {
-        if (!displayList.length) return alert("No data to export.");
-        const headers = ["Timestamp", "Barcode", "Status", "Metre", "Weight", "Quality %"];
-        const rows = displayList.map(item => [
-            `"${item.time}"`,
-            item.barcode,
-            item.type,
-            item.details?.metre || 0,
-            item.details?.weight || 0,
-            item.details?.percentage || 0
-        ]);
-        const csvContent = "data:text/csv;charset=utf-8,"
-            + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
-        const encodedUri = encodeURI(csvContent);
-        const link = document.createElement("a");
-        link.setAttribute("href", encodedUri);
-        link.setAttribute("download", `inventory_${activeTab}_${Date.now()}.csv`);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        if (!displayList.length) return showModal('warning', 'Export Empty', "There is no data to export right now.");
+        generateAndDownloadCSV(displayList, `inventory_${activeTab}_${Date.now()}.csv`);
+    };
+
+    const generateAndDownloadCSV = (data, filename) => {
+        try {
+            const headers = ["Timestamp", "Barcode", "Status", "Metre", "Weight", "Quality %"];
+            const rows = data.map(item => [
+                `"${item.time}"`,
+                item.barcode,
+                item.type,
+                item.details?.metre || 0,
+                item.details?.weight || 0,
+                item.details?.percentage || 0
+            ]);
+            const csvContent = "data:text/csv;charset=utf-8,"
+                + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", filename);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        } catch (e) {
+            showModal('error', 'Export Failed', 'An error occurred while generating the CSV file.');
+        }
+    };
+
+    const handleStartSession = () => {
+        showModal('confirm', 'Start New Session?', 'This will begin tracking a new real-time operation session. All subsequent scans will be recorded in this session.', () => {
+            const now = new Date().toISOString();
+            localStorage.setItem('SESSION_START', now);
+            setSessionStartTime(now);
+            showModal('success', 'Session Started', 'Real-time tracking is now active.');
+        });
+    };
+
+    const handleEndSession = async () => {
+        if (!sessionStartTime) return;
+
+        showModal('confirm', 'End Session & Export?', 'This will stop the current session and download a comprehensive report of all operations.', async () => {
+            try {
+                // Fetch logs only from session start
+                let url = `${apiUrl}/api/stats/list/recent?startDate=${sessionStartTime}&limit=all`;
+                const res = await fetch(url);
+
+                if (!res.ok) throw new Error('Failed to fetch session data');
+
+                const data = await res.json();
+                const normalized = data.map(item => ({
+                    time: new Date(item.updatedAt || item.detectedAt || item.createdAt).toLocaleString(),
+                    _rawDate: new Date(item.updatedAt || item.detectedAt || item.createdAt),
+                    barcode: item.barcode,
+                    type: item.status || 'UNKNOWN',
+                    details: { metre: item.metre, weight: item.weight, percentage: item.percentage }
+                }));
+
+                // Filter strictly by time on client side to be precise
+                const sessionData = normalized.filter(item => item._rawDate >= new Date(sessionStartTime));
+
+                if (sessionData.length === 0) {
+                    showModal('info', 'Session Ended', 'No data was recorded during this session.');
+                } else {
+                    generateAndDownloadCSV(sessionData, `SESSION_REPORT_${new Date().toISOString().slice(0, 10)}.csv`);
+                    showModal('success', 'Session Completed', 'The session report has been downloaded successfully.');
+                }
+
+                // Cleanup
+                localStorage.removeItem('SESSION_START');
+                setSessionStartTime(null);
+
+                // Clear Dashboard View
+                setRecentLogs([]);
+                setFilteredLogs([]);
+
+            } catch (err) {
+                console.error("Export failed", err);
+                showModal('error', 'System Error', `Failed to export session data: ${err.message}`);
+            }
+        });
     };
 
     return (
@@ -302,6 +391,53 @@ const Dashboard = () => {
                             >
                                 <span style={{ opacity: 0.7 }}>📥</span> Export
                             </button>
+
+                            <div style={{ width: '1px', height: '20px', background: 'var(--border-color)', margin: '0 0.5rem' }}></div>
+
+                            {!sessionStartTime ? (
+                                <button
+                                    onClick={handleStartSession}
+                                    style={{
+                                        background: '#ecfdf5',
+                                        color: '#059669',
+                                        border: '1px solid #d1fae5',
+                                        padding: '0.4rem 1.2rem',
+                                        borderRadius: '6px',
+                                        fontSize: '0.75rem',
+                                        fontFamily: '"Segoe UI", sans-serif',
+                                        fontWeight: '700',
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '0.5rem',
+                                        boxShadow: '0 2px 5px rgba(0,0,0,0.03)'
+                                    }}
+                                >
+                                    <IconPlay /> START SESSION
+                                </button>
+                            ) : (
+                                <button
+                                    onClick={handleEndSession}
+                                    style={{
+                                        background: '#fef2f2',
+                                        color: '#dc2626',
+                                        border: '1px solid #fee2e2',
+                                        padding: '0.4rem 1.2rem',
+                                        borderRadius: '6px',
+                                        fontSize: '0.75rem',
+                                        fontFamily: '"Segoe UI", sans-serif',
+                                        fontWeight: '700',
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '0.5rem',
+                                        animation: 'pulse 2s infinite'
+                                    }}
+                                >
+                                    <IconStop /> END SESSION
+                                </button>
+                            )}
+                            <style>{`@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.4); } 70% { box-shadow: 0 0 0 6px rgba(220, 38, 38, 0); } 100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); } }`}</style>
                         </div>
                     </div>
 
@@ -336,12 +472,15 @@ const Dashboard = () => {
                                 key={i}
                                 className="panel glass"
                                 onClick={() => handleCardClick(stat.key)}
+                                onDoubleClick={() => handleCardDoubleClick(stat.key)}
+                                title="Double-click for Detailed Analysis & Filters"
                                 style={{
                                     cursor: 'pointer',
                                     borderTop: `4px solid ${stat.color}`,
                                     transform: activeTab === stat.key ? 'translateY(-4px)' : 'none',
                                     transition: 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-                                    padding: '1.8rem'
+                                    padding: '1.8rem',
+                                    position: 'relative'
                                 }}
                             >
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -355,9 +494,18 @@ const Dashboard = () => {
                                     <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: stat.color }}></span>
                                     {stat.change}
                                 </div>
+                                {['totalRolls', 'stockIn', 'stockOut'].includes(stat.key) && (
+                                    <div style={{ position: 'absolute', top: '10px', right: '10px', opacity: 0, transition: 'opacity 0.2s', fontSize: '0.7rem' }} className="hover-hint">
+                                        Double-click for Details ↗
+                                    </div>
+                                )}
                             </div>
                         ))}
                     </div>
+
+                    <style>{`
+                        .panel:hover .hover-hint { opacity: 0.6 !important; }
+                    `}</style>
 
                     {/* Content Table Area */}
                     <div className="panel" style={{ background: 'var(--bg-secondary)', padding: 0, overflow: 'hidden' }}>
@@ -501,46 +649,83 @@ const Dashboard = () => {
                 {/* Edit Modal */}
                 {
                     editItem && (
-                        <div style={modalOverlayStyle}>
-                            <div className="panel animate-fade-in" style={{ width: '400px' }}>
-                                <h3 style={{ marginBottom: '1rem' }}>Adjust Roll Parameters</h3>
-                                <p style={{ fontSize: '0.8rem', color: 'var(--accent-color)', marginBottom: '1.5rem', fontWeight: '700' }}>ROLL ID: {editItem.barcode}</p>
+                        <div className="panel animate-fade-in" style={{ width: '400px' }}>
+                            <h3 style={{ marginBottom: '1rem' }}>Adjust Roll Parameters</h3>
+                            <p style={{ fontSize: '0.8rem', color: 'var(--accent-color)', marginBottom: '1.5rem', fontWeight: '700' }}>ROLL ID: {editItem.barcode}</p>
 
-                                <div style={{ display: 'grid', gap: '1.25rem' }}>
-                                    <div>
-                                        <label style={labelStyle}>Length (Metres)</label>
-                                        <input type="number" value={editItem.details.metre} onChange={e => setEditItem({ ...editItem, details: { ...editItem.details, metre: e.target.value } })} style={{ width: '100%' }} />
-                                    </div>
-                                    <div>
-                                        <label style={labelStyle}>Weight (Kilograms)</label>
-                                        <input type="number" value={editItem.details.weight} onChange={e => setEditItem({ ...editItem, details: { ...editItem.details, weight: e.target.value } })} style={{ width: '100%' }} />
-                                    </div>
-                                    <div>
-                                        <label style={labelStyle}>Quality Index (%)</label>
-                                        <input type="number" value={editItem.details.percentage} onChange={e => setEditItem({ ...editItem, details: { ...editItem.details, percentage: e.target.value } })} style={{ width: '100%' }} />
-                                    </div>
-                                    <div>
-                                        <label style={labelStyle}>Flow Status</label>
-                                        <select
-                                            value={editItem.type}
-                                            onChange={e => setEditItem({ ...editItem, type: e.target.value })}
-                                            style={{ width: '100%', padding: '0.8rem', background: 'var(--bg-primary)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '8px' }}
-                                        >
-                                            <option value="IN">STOCK-IN</option>
-                                            <option value="OUT">DISPATCH (OUT)</option>
-                                        </select>
-                                    </div>
+                            <div style={{ display: 'grid', gap: '1.25rem' }}>
+                                <div>
+                                    <label style={labelStyle}>Length (Metres)</label>
+                                    <input type="number" value={editItem.details.metre} onChange={e => setEditItem({ ...editItem, details: { ...editItem.details, metre: e.target.value } })} style={{ width: '100%' }} />
                                 </div>
+                                <div>
+                                    <label style={labelStyle}>Weight (Kilograms)</label>
+                                    <input type="number" value={editItem.details.weight} onChange={e => setEditItem({ ...editItem, details: { ...editItem.details, weight: e.target.value } })} style={{ width: '100%' }} />
+                                </div>
+                                <div>
+                                    <label style={labelStyle}>Quality Index (%)</label>
+                                    <input type="number" value={editItem.details.percentage} onChange={e => setEditItem({ ...editItem, details: { ...editItem.details, percentage: e.target.value } })} style={{ width: '100%' }} />
+                                </div>
+                                <div>
+                                    <label style={labelStyle}>Flow Status</label>
+                                    <select
+                                        value={editItem.type}
+                                        onChange={e => setEditItem({ ...editItem, type: e.target.value })}
+                                        style={{ width: '100%', padding: '0.8rem', background: 'var(--bg-primary)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '8px' }}
+                                    >
+                                        <option value="IN">STOCK-IN</option>
+                                        <option value="OUT">DISPATCH (OUT)</option>
+                                    </select>
+                                </div>
+                            </div>
 
-                                <div style={{ display: 'flex', gap: '1rem', marginTop: '2rem' }}>
-                                    <button onClick={handleSaveEdit} className="btn btn-primary" style={{ flex: 1 }}>SAVE CHANGES</button>
-                                    <button onClick={() => setEditItem(null)} className="btn btn-secondary" style={{ flex: 1 }}>DISCARD</button>
-                                </div>
+                            <div style={{ display: 'flex', gap: '1rem', marginTop: '2rem' }}>
+                                <button onClick={handleSaveEdit} className="btn btn-primary" style={{ flex: 1 }}>SAVE CHANGES</button>
+                                <button onClick={() => setEditItem(null)} className="btn btn-secondary" style={{ flex: 1 }}>DISCARD</button>
                             </div>
                         </div>
                     )
                 }
+                {/* Custom Confirmation Modal */}
+                {modalConfig.isOpen && (
+                    <div style={modalOverlayStyle}>
+                        <div className="panel animate-fade-in" style={{ width: '400px', borderTop: `4px solid ${modalConfig.type === 'error' ? 'var(--error-color)' : (modalConfig.type === 'success' ? 'var(--success-color)' : 'var(--accent-color)')}` }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                    <div style={{
+                                        fontSize: '1.5rem',
+                                        color: modalConfig.type === 'error' ? 'var(--error-color)' : (modalConfig.type === 'success' ? 'var(--success-color)' : 'var(--accent-color)')
+                                    }}>
+                                        {modalConfig.type === 'error' ? '⚠️' : (modalConfig.type === 'success' ? '✅' : 'ℹ️')}
+                                    </div>
+                                    <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: '700' }}>{modalConfig.title}</h3>
+                                </div>
+                                <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', lineHeight: '1.5', margin: 0 }}>
+                                    {modalConfig.message}
+                                </p>
+                                <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1rem', justifyContent: 'flex-end' }}>
+                                    {modalConfig.type === 'confirm' ? (
+                                        <>
+                                            <button onClick={closeModal} className="btn btn-secondary">Cancel</button>
+                                            <button onClick={() => { modalConfig.onConfirm(); closeModal(); }} className="btn btn-primary">Confirm</button>
+                                        </>
+                                    ) : (
+                                        <button onClick={closeModal} className="btn btn-secondary" style={{ width: '100%' }}>Close</button>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div >
+
+            {/* Detailed View Modal Integration */}
+            <DetailedViewModal
+                isOpen={detailedView.isOpen}
+                onClose={() => setDetailedView({ ...detailedView, isOpen: false })}
+                type={detailedView.type}
+                apiUrl={apiUrl}
+            />
         </>
     );
 };

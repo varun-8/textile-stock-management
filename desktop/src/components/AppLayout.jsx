@@ -7,8 +7,6 @@ const AppLayout = ({ children }) => {
     const navigate = useNavigate();
     const location = useLocation();
     const { apiUrl, updateApiUrl, theme, toggleTheme } = useConfig();
-    const [showSettings, setShowSettings] = useState(false);
-    const [tempIp, setTempIp] = useState(apiUrl);
 
     const isActive = (path) => location.pathname === path;
 
@@ -49,7 +47,8 @@ const AppLayout = ({ children }) => {
 
                     <div style={{ padding: '2rem 1.5rem 0.5rem', fontSize: '0.65rem', fontWeight: '800', color: 'var(--text-secondary)', letterSpacing: '0.1em' }}>CONFIGURATION</div>
                     <nav style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <SidebarLink onClick={() => setShowSettings(true)} icon={<IconSettings />} label="System Settings" />
+                        <SidebarLink active={isActive('/configuration')} onClick={() => navigate('/configuration')} icon={<IconSettings />} label="Article Sizes" />
+                        <SidebarLink active={isActive('/settings')} onClick={() => navigate('/settings')} icon={<IconSettings />} label="System Settings" />
                     </nav>
                 </div>
 
@@ -76,31 +75,6 @@ const AppLayout = ({ children }) => {
 
             {/* --- MODALS --- */}
             {/* Settings Modal */}
-            {showSettings && (
-                <div style={modalOverlayStyle}>
-                    <div className="panel animate-fade-in" style={{ width: '420px', background: 'var(--bg-secondary)', padding: '2rem', borderRadius: '12px', boxShadow: '0 10px 40px rgba(0,0,0,0.3)' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
-                            <h3 style={{ margin: 0 }}>System Preferences</h3>
-                            <button onClick={() => setShowSettings(false)} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
-                        </div>
-
-                        <div style={{ marginBottom: '1.5rem' }}>
-                            <label style={labelStyle}>Interface Theme</label>
-                            <div style={{ display: 'flex', gap: '0.5rem', background: 'var(--bg-primary)', padding: '0.25rem', borderRadius: '8px' }}>
-                                <button onClick={() => theme !== 'dark' && toggleTheme()} style={{ flex: 1, background: theme === 'dark' ? 'var(--accent-color)' : 'transparent', color: theme === 'dark' ? 'white' : 'inherit' }} className="btn">DARK</button>
-                                <button onClick={() => theme === 'dark' && toggleTheme()} style={{ flex: 1, background: theme === 'light' ? 'var(--accent-color)' : 'transparent', color: theme === 'light' ? 'white' : 'inherit' }} className="btn">LIGHT</button>
-                            </div>
-                        </div>
-
-                        <div style={{ marginBottom: '2rem' }}>
-                            <label style={labelStyle}>Server Endpoint</label>
-                            <input type="text" value={tempIp} onChange={e => setTempIp(e.target.value)} style={{ width: '100%', fontFamily: 'monospace', padding: '0.8rem', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }} />
-                        </div>
-
-                        <button onClick={() => { updateApiUrl(tempIp); setShowSettings(false); }} className="btn btn-primary" style={{ width: '100%', padding: '0.8rem', background: 'var(--accent-color)', color: 'white', fontWeight: 'bold', borderRadius: '8px', border: 'none', cursor: 'pointer' }}>APPLY CONFIGURATION</button>
-                    </div>
-                </div>
-            )}
         </div>
     );
 };

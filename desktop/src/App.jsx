@@ -5,6 +5,8 @@ import Dashboard from './pages/Dashboard';
 import BarcodeGenerator from './pages/BarcodeGenerator';
 import MobileScanner from './pages/MobileScanner';
 import Scanners from './pages/Scanners';
+import Configuration from './pages/Configuration';
+import Settings from './pages/Settings';
 
 const ProtectedRoute = ({ children }) => {
   const isAuthenticated = localStorage.getItem('isAuthenticated') === 'true';
@@ -44,6 +46,20 @@ function App() {
             <ProtectedRoute>
               <AppLayout>
                 <Scanners />
+              </AppLayout>
+            </ProtectedRoute>
+          } />
+          <Route path="/configuration" element={
+            <ProtectedRoute>
+              <AppLayout>
+                <Configuration />
+              </AppLayout>
+            </ProtectedRoute>
+          } />
+          <Route path="/settings" element={
+            <ProtectedRoute>
+              <AppLayout>
+                <Settings />
               </AppLayout>
             </ProtectedRoute>
           } />

@@ -9,7 +9,7 @@ const BarcodeGenerator = () => {
     const { apiUrl } = useConfig();
     const navigate = useNavigate();
     const [year, setYear] = useState(new Date().getFullYear());
-    const [size, setSize] = useState('40');
+    const [size, setSize] = useState('');
     const [quantity, setQuantity] = useState(24);
     const [seqInfo, setSeqInfo] = useState({ lastSequence: 0, nextSequence: 1 });
     const [missingBarcodes, setMissingBarcodes] = useState([]);
@@ -18,11 +18,13 @@ const BarcodeGenerator = () => {
     const [error, setError] = useState('');
     const [successMsg, setSuccessMsg] = useState('');
 
-    const sizes = Array.from({ length: 14 }, (_, i) => 38 + i);
+    const [sizes, setSizes] = useState([]);
     const MAX_PER_PAGE = 96; // 4 full pages of 24
 
     useEffect(() => {
-        fetchSequence();
+        fetchSizes().then(() => {
+            fetchSequence(); // This might depend on size being set, so we handle it carefully
+        });
         fetchMissing();
 
         const socket = io(apiUrl);
@@ -33,6 +35,18 @@ const BarcodeGenerator = () => {
         });
         return () => socket.disconnect();
     }, [year, size, apiUrl]);
+
+    const fetchSizes = async () => {
+        try {
+            const res = await fetch(`${apiUrl}/api/sizes`);
+            const data = await res.json();
+            setSizes(data.map(s => s.code));
+            // Set default if not set and data exists
+            if (data.length > 0 && !size) {
+                setSize(data[0].code);
+            }
+        } catch (err) { console.error("Failed to fetch sizes", err); }
+    };
 
     const fetchSequence = async () => {
         setSeqLoading(true);

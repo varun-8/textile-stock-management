@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import axios from 'axios';
+import { useMobile } from '../context/MobileContext';
 
 const THEME = {
     dark: {
@@ -14,7 +14,6 @@ const THEME = {
         error: '#ef4444',
         btnText: '#ffffff'
     },
-    // Fallback/Structure for potential light mode expansion
     light: {
         bg: '#f1f5f9',
         card: '#ffffff',
@@ -29,25 +28,30 @@ const THEME = {
     }
 };
 
-const MissingScans = ({ serverIp }) => {
-    // Default to dark theme for now as per app style, can be made dynamic via context later
+const MissingScans = () => {
+    const { api } = useMobile();
     const theme = THEME.dark;
     const [missing, setMissing] = useState([]);
     const [loading, setLoading] = useState(true);
     const [processingId, setProcessingId] = useState(null);
+    const [error, setError] = useState(null);
 
     const fetchMissing = async () => {
-        // specific loading state for initial load only to prevent lag on refresh
-        if (loading) setLoading(true);
+        // Keep loading true only on initial mount to avoid shrinking list on updates
         try {
-            const url = `https://${serverIp}:5000/api/stats/list/missingCount`;
-            const api = axios.create({ httpsAgent: { rejectUnauthorized: false } });
-            const res = await api.get(url);
+            const res = await api.get('/api/stats/list/missingCount');
             if (Array.isArray(res.data)) {
                 setMissing(res.data);
+                setError(null);
             }
         } catch (err) {
             console.error('Fetch error:', err);
+            // Don't show full error UI for background fetch failures, 
+            // but we could set a transient error state if needed.
+            // For now, if initial load fails, we might want to show something.
+            if (loading) {
+                setError("Failed to load data. Check connection.");
+            }
         } finally {
             setLoading(false);
         }
@@ -57,17 +61,16 @@ const MissingScans = ({ serverIp }) => {
         fetchMissing();
         const interval = setInterval(fetchMissing, 10000);
         return () => clearInterval(interval);
-    }, [serverIp]);
+    }, [api]);
 
     const handleIgnore = async (barcode) => {
         if (!window.confirm("Verify: Mark roll as DAMAGED/SKIPPED?")) return;
         setProcessingId(barcode);
         try {
-            const url = `https://${serverIp}:5000/api/mobile/missing/damaged/${barcode}`;
-            await axios.patch(url, {}, { httpsAgent: { rejectUnauthorized: false } });
-            fetchMissing(); // Immediate refresh
+            await api.patch(`/api/mobile/missing/damaged/${barcode}`);
+            await fetchMissing(); // Immediate refresh
         } catch (err) {
-            alert('Operation Failed: Check Network');
+            alert(`Operation Failed: ${err.response?.data?.error || err.message}`);
         } finally {
             setProcessingId(null);
         }
@@ -76,6 +79,14 @@ const MissingScans = ({ serverIp }) => {
     const handleEdit = (barcode) => {
         alert(`To register Roll #${barcode}, please close this menu and use the "Manual Input" feature on the main screen.`);
     };
+
+    if (loading && missing.length === 0 && !error) {
+        return (
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: theme.bg }}>
+                <div style={{ color: theme.subtext }}>Loading sequence data...</div>
+            </div>
+        );
+    }
 
     return (
         <div style={{
@@ -128,8 +139,22 @@ const MissingScans = ({ serverIp }) => {
                 </div>
             </div>
 
+            {/* Error Message */}
+            {error && (
+                <div style={{
+                    padding: '16px',
+                    backgroundColor: `${theme.error}20`,
+                    color: theme.error,
+                    fontSize: '14px',
+                    textAlign: 'center',
+                    fontWeight: '600'
+                }}>
+                    {error}
+                </div>
+            )}
+
             {/* Content List */}
-            {missing.length === 0 && !loading ? (
+            {missing.length === 0 && !loading && !error ? (
                 <div style={{
                     flex: 1,
                     display: 'flex',
@@ -175,9 +200,7 @@ const MissingScans = ({ serverIp }) => {
                     flexDirection: 'column',
                     gap: '16px'
                 }}>
-                    {loading && missing.length === 0 ? (
-                        <div style={{ padding: '20px', textAlign: 'center', color: theme.subtext }}>Loading sequence data...</div>
-                    ) : missing.map((item) => (
+                    {missing.map((item) => (
                         <div key={item.barcode} style={{
                             backgroundColor: theme.card,
                             borderRadius: '16px',
@@ -243,7 +266,8 @@ const MissingScans = ({ serverIp }) => {
                                         display: 'flex',
                                         alignItems: 'center',
                                         justifyContent: 'center',
-                                        gap: '8px'
+                                        gap: '8px',
+                                        cursor: 'pointer'
                                     }}
                                 >
                                     <span>📝</span> Manual Entry
@@ -263,7 +287,8 @@ const MissingScans = ({ serverIp }) => {
                                         alignItems: 'center',
                                         justifyContent: 'center',
                                         gap: '8px',
-                                        transition: 'all 0.2s'
+                                        transition: 'all 0.2s',
+                                        cursor: processingId === item.barcode ? 'not-allowed' : 'pointer'
                                     }}
                                 >
                                     <span>✕</span>

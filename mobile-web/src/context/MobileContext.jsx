@@ -207,7 +207,25 @@ export const MobileProvider = ({ children }) => {
         };
 
         verifyScannerPairing();
+        verifyScannerPairing();
     }, [scannerId, serverIp]);
+
+    // Heartbeat for Connection Status
+    useEffect(() => {
+        if (!isLoggedIn || !scannerId) return;
+
+        const sendHeartbeat = async () => {
+            try {
+                await api.get('/api/mobile/ping');
+            } catch (e) {
+                console.warn('Heartbeat failed', e.message);
+            }
+        };
+
+        sendHeartbeat(); // Initial
+        const interval = setInterval(sendHeartbeat, 30000); // 30s
+        return () => clearInterval(interval);
+    }, [isLoggedIn, scannerId, api]);
 
     const fetchMissing = async () => {
         setLoadingMissing(true);
