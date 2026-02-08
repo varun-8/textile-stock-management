@@ -461,7 +461,7 @@ const Dashboard = () => {
                     `}</style>
 
                     {/* Content Table Area */}
-                    <div className="panel" style={{ background: 'var(--bg-secondary)', padding: 0, overflow: 'hidden' }}>
+                    <div className="panel" style={{ background: 'var(--bg-secondary)', padding: 0 }}>
                         <div style={{ padding: '1.5rem 2rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
                                 <h2 style={{ fontSize: '1.1rem', margin: 0 }}>
@@ -499,7 +499,7 @@ const Dashboard = () => {
                             </div>
                         </div>
 
-                        <div style={{ maxHeight: 'calc(100vh - 450px)', overflowY: 'auto' }}>
+                        <div style={{ width: '100%' }}>
                             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                                 <thead style={{ position: 'sticky', top: 0, zIndex: 1, background: 'var(--table-header-bg)' }}>
                                     <tr>
