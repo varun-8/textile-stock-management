@@ -76,17 +76,23 @@ router.get('/server-ip', (req, res) => {
 router.get('/scanners', async (req, res) => {
     try {
         const scanners = await Scanner.find().sort({ pairedAt: -1 });
-        console.log(`📋 GET /scanners - Found ${scanners.length} scanners`);
-        if (scanners.length > 0) {
-            console.log('📋 Scanners:', scanners.map(s => ({ id: s.uuid, name: s.label, status: s.status })));
-        }
-        res.json(scanners.map(s => ({
-            scannerId: s.uuid,
-            name: s.name,
-            status: s.status,
-            pairedAt: s.pairedAt,
-            lastSeen: s.lastSeen
-        })));
+
+        // Threshold for "Online" is 60 seconds (since ping is every 30s)
+        const NOW = new Date();
+        const THRESHOLD_MS = 60 * 1000;
+
+        res.json(scanners.map(s => {
+            const lastSeenTime = s.lastSeen ? new Date(s.lastSeen).getTime() : 0;
+            const isOnline = (NOW.getTime() - lastSeenTime) < THRESHOLD_MS;
+
+            return {
+                scannerId: s.uuid,
+                name: s.name,
+                status: isOnline ? 'ONLINE' : 'OFFLINE',
+                pairedAt: s.pairedAt,
+                lastSeen: s.lastSeen
+            };
+        }));
     } catch (err) {
         console.error('❌ Error fetching scanners:', err);
         res.status(500).json({ error: err.message });

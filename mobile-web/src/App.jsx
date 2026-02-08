@@ -1,28 +1,33 @@
-import React, { useState, useEffect } from 'react';
-import { MobileProvider } from './context/MobileContext';
+import React from 'react';
+import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { MobileProvider, useMobile } from './context/MobileContext';
 import WorkScreen from './pages/WorkScreen';
-import LoginScreen from './pages/LoginScreen';
 import SetupScreen from './pages/SetupScreen';
+import PinScreen from './pages/PinScreen';
+import SessionManager from './pages/SessionManager';
 import AppShell from './components/AppShell';
-import { useMobile } from './context/MobileContext';
+
+const ProtectedRoute = ({ children }) => {
+  const employee = localStorage.getItem('employee');
+  if (!employee) {
+    return <Navigate to="/pin" replace />;
+  }
+  return children;
+};
+
+const SessionGuard = ({ children }) => {
+  const sessionId = localStorage.getItem('active_session_id');
+  if (!sessionId) {
+    return <Navigate to="/session" replace />;
+  }
+  return children;
+};
 
 function AppContent() {
-  const { isLoggedIn, scannerId } = useMobile();
-  const [isInitialized, setIsInitialized] = useState(false);
+  const { scannerId } = useMobile();
 
-  useEffect(() => {
-    // Small delay for app initialization
-    const timer = setTimeout(() => setIsInitialized(true), 300);
-    return () => clearTimeout(timer);
-  }, []);
-
-  useEffect(() => {
-    console.log('🔄 AppContent re-rendering - scannerId:', scannerId, 'isLoggedIn:', isLoggedIn);
-  }, [scannerId, isLoggedIn]);
-
-  // If no scanner ID, show setup screen
+  // If no scanner ID, show setup screen (Global check)
   if (!scannerId) {
-    console.log('📱 Showing SetupScreen - scannerId is null/empty');
     return (
       <div className="transition-opacity duration-300 opacity-100">
         <SetupScreen />
@@ -30,21 +35,34 @@ function AppContent() {
     );
   }
 
-  // Go directly to work screen after pairing
-  console.log('✅ Showing WorkScreen - device paired');
   return (
-    <div className="transition-opacity duration-300 opacity-100">
-      <WorkScreen />
-    </div>
+    <Routes>
+      <Route path="/pin" element={<PinScreen />} />
+      <Route path="/session" element={
+        <ProtectedRoute>
+          <SessionManager />
+        </ProtectedRoute>
+      } />
+      <Route path="/" element={
+        <ProtectedRoute>
+          <SessionGuard>
+            <WorkScreen />
+          </SessionGuard>
+        </ProtectedRoute>
+      } />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
 }
 
 function App() {
   return (
     <MobileProvider>
-      <AppShell>
-        <AppContent />
-      </AppShell>
+      <HashRouter>
+        <AppShell>
+          <AppContent />
+        </AppShell>
+      </HashRouter>
     </MobileProvider>
   );
 }

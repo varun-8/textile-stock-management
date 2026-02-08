@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useConfig } from '../context/ConfigContext';
-import { IconBox, IconScan, IconSettings, IconCloud } from './Icons';
+import { IconBox, IconScan, IconSettings, IconCloud, IconUsers, IconBroadcast } from './Icons';
 
 const AppLayout = ({ children }) => {
     const navigate = useNavigate();
@@ -37,16 +37,19 @@ const AppLayout = ({ children }) => {
                     </div>
                 </div>
 
-                <div style={{ flex: 1, paddingTop: '1rem' }} className="app-region-no-drag">
+                <div style={{ flex: 1, paddingTop: '1rem', overflowY: 'auto' }} className="app-region-no-drag sidebar-scroll">
                     <div style={{ padding: '0 1.5rem 0.5rem', fontSize: '0.65rem', fontWeight: '800', color: 'var(--text-secondary)', letterSpacing: '0.1em' }}>MAIN NAVIGATION</div>
                     <nav style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                         <SidebarLink active={isActive('/dashboard')} onClick={() => navigate('/dashboard')} icon={<IconCloud />} label="Operations Dashboard" />
+                        <SidebarLink active={isActive('/sessions')} onClick={() => navigate('/sessions')} icon={<IconBroadcast />} label="Active Sessions" />
+                        <SidebarLink active={isActive('/reports')} onClick={() => navigate('/reports')} icon={<IconBox />} label="Reports & Exports" />
                         <SidebarLink active={isActive('/barcode')} onClick={() => navigate('/barcode')} icon={<IconScan />} label="Barcode Generator" />
                         <SidebarLink active={isActive('/scanners')} onClick={() => navigate('/scanners')} icon={<IconSettings />} label="Scanner Devices" />
                     </nav>
 
                     <div style={{ padding: '2rem 1.5rem 0.5rem', fontSize: '0.65rem', fontWeight: '800', color: 'var(--text-secondary)', letterSpacing: '0.1em' }}>CONFIGURATION</div>
                     <nav style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <SidebarLink active={isActive('/employees')} onClick={() => navigate('/employees')} icon={<IconUsers />} label="Employee Management" />
                         <SidebarLink active={isActive('/configuration')} onClick={() => navigate('/configuration')} icon={<IconSettings />} label="Article Sizes" />
                         <SidebarLink active={isActive('/settings')} onClick={() => navigate('/settings')} icon={<IconSettings />} label="System Settings" />
                     </nav>
@@ -75,6 +78,22 @@ const AppLayout = ({ children }) => {
 
             {/* --- MODALS --- */}
             {/* Settings Modal */}
+            {/* Settings Modal */}
+            <style>{`
+                .sidebar-scroll::-webkit-scrollbar {
+                    width: 4px;
+                }
+                .sidebar-scroll::-webkit-scrollbar-track {
+                    background: transparent;
+                }
+                .sidebar-scroll::-webkit-scrollbar-thumb {
+                    background: var(--border-color);
+                    border-radius: 4px;
+                }
+                .sidebar-scroll::-webkit-scrollbar-thumb:hover {
+                    background: var(--text-secondary);
+                }
+            `}</style>
         </div>
     );
 };

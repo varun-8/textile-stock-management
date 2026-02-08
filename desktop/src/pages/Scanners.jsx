@@ -112,28 +112,30 @@ const Scanners = () => {
                 {scanners.length > 0 && (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1.5rem' }}>
                         {scanners.map((scanner) => {
-                            const isDisconnected = scanner.status === 'DISCONNECTED';
-                            const statusColor = isDisconnected ? 'var(--error-color)' : 'var(--success-color)';
+                            const isOnline = scanner.status === 'ONLINE';
+                            const statusColor = isOnline ? 'var(--success-color)' : 'var(--text-secondary)';
+                            const statusBg = isOnline ? 'rgba(16, 185, 129, 0.1)' : 'var(--bg-tertiary)';
 
                             return (
-                                <div key={scanner.scannerId} className="panel glass" style={{ padding: '2rem', position: 'relative', overflow: 'hidden', borderLeft: isDisconnected ? `4px solid ${statusColor}` : `4px solid ${statusColor}` }}>
+                                <div key={scanner.scannerId} className="panel glass" style={{ padding: '2rem', position: 'relative', overflow: 'hidden', borderLeft: `4px solid ${statusColor}` }}>
 
                                     <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
                                         <div style={{
                                             width: '56px', height: '56px', borderRadius: '12px',
-                                            background: isDisconnected ? 'var(--bg-tertiary)' : 'rgba(99, 102, 241, 0.1)',
-                                            color: isDisconnected ? 'var(--text-secondary)' : 'var(--accent-color)',
+                                            background: statusBg,
+                                            color: statusColor,
                                             display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem'
                                         }}>
-                                            {isDisconnected ? '🔌' : '📱'}
+                                            {isOnline ? '📱' : '🔌'}
                                         </div>
                                         {/* Status Pill */}
                                         <div style={{
                                             padding: '4px 10px', borderRadius: '100px',
                                             border: `1px solid ${statusColor}`,
+                                            background: statusBg,
                                             color: statusColor, fontSize: '0.7rem', fontWeight: '700', textTransform: 'uppercase'
                                         }}>
-                                            {isDisconnected ? 'Disconnected' : 'Online'}
+                                            {isOnline ? 'Online' : 'Offline'}
                                         </div>
                                     </div>
 

@@ -56,8 +56,8 @@ const getLocalIp = () => {
 };
 
 // Database Connection
-mongoose.connect('mongodb://127.0.0.1:27017/sri_lakshmi_textiles').then(() => {
-    console.log('Connected to MongoDB Local');
+mongoose.connect('mongodb://127.0.0.1:27017/textile-stock-management').then(() => {
+    console.log('Connected to MongoDB Local (textile-stock-management)');
 }).catch(err => {
     console.error('MongoDB Connection Error:', err);
 });
@@ -115,6 +115,10 @@ app.use('/api/barcode', barcodeRoutes);
 app.use('/api/mobile', mobileRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/sessions', require('./routes/sessionRoutes')); // New Session Routes
+app.use('/api/reports', require('./routes/reportsRoutes'));
+app.use('/api/sizes', require('./routes/sizesRoutes'));
+app.use('/api/employees', require('./routes/employeeRoutes'));
 
 // New Endpoint: Get Server IP (for Desktop to generate QR)
 app.get('/api/admin/server-ip', (req, res) => {

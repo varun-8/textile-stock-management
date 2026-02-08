@@ -1,6 +1,79 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, memo } from 'react';
 import { useConfig } from '../context/ConfigContext';
 import { IconSettings } from '../components/Icons';
+
+// Memoized Table Component
+const SizeTable = memo(({ sizes, onDelete }) => {
+    return (
+        <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+                <thead>
+                    <tr style={{ borderBottom: '2px solid var(--border-color)', textAlign: 'left' }}>
+                        <th style={{ padding: '1rem', color: 'var(--text-secondary)' }}>Size Code</th>
+                        <th style={{ padding: '1rem', color: 'var(--text-secondary)', textAlign: 'center' }}>Barcodes Generated</th>
+                        <th style={{ padding: '1rem', color: 'var(--text-secondary)', textAlign: 'center' }}>In Stock</th>
+                        <th style={{ padding: '1rem', color: 'var(--text-secondary)', textAlign: 'center' }}>Dispatched (Out)</th>
+                        <th style={{ padding: '1rem', color: 'var(--text-secondary)', textAlign: 'right' }}>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {sizes.map(size => {
+                        const stats = size.stats || { generated: 0, inStock: 0, outStock: 0 };
+                        const canDelete = stats.generated === 0 && stats.inStock === 0 && stats.outStock === 0;
+
+                        return (
+                            <tr key={size._id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                                <td style={{ padding: '1rem', fontWeight: 'bold' }}>{size.code}</td>
+                                <td style={{ padding: '1rem', textAlign: 'center' }}>
+                                    <span style={{
+                                        background: 'var(--bg-tertiary)', padding: '4px 12px', borderRadius: '12px', fontSize: '0.85rem'
+                                    }}>
+                                        {stats.generated}
+                                    </span>
+                                </td>
+                                <td style={{ padding: '1rem', textAlign: 'center', color: 'var(--success-color)' }}>
+                                    {stats.inStock > 0 ? (
+                                        <span style={{ fontWeight: 'bold' }}>{stats.inStock}</span>
+                                    ) : '-'}
+                                </td>
+                                <td style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                                    {stats.outStock > 0 ? stats.outStock : '-'}
+                                </td>
+                                <td style={{ padding: '1rem', textAlign: 'right' }}>
+                                    <button
+                                        onClick={() => onDelete(size._id)}
+                                        disabled={!canDelete}
+                                        style={{
+                                            background: canDelete ? 'var(--error-bg)' : 'transparent',
+                                            border: 'none',
+                                            cursor: canDelete ? 'pointer' : 'not-allowed',
+                                            color: canDelete ? 'var(--error-color)' : 'var(--text-muted)',
+                                            opacity: canDelete ? 1 : 0.3,
+                                            padding: '6px 12px',
+                                            borderRadius: '6px',
+                                            fontWeight: 'bold',
+                                            fontSize: '0.8rem'
+                                        }}
+                                        title={canDelete ? "Remove Size" : "Cannot delete: Size is in use"}
+                                    >
+                                        {canDelete ? 'DELETE' : 'IN USE'}
+                                    </button>
+                                </td>
+                            </tr>
+                        );
+                    })}
+                    {sizes.length === 0 && (
+                        <tr>
+                            <td colSpan="5" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>
+                                No sizes configured. Add a size code to get started.
+                            </td>
+                        </tr>
+                    )}
+                </tbody>
+            </table>
+        </div>
+    );
+});
 
 const Configuration = () => {
     const { apiUrl } = useConfig();
@@ -10,11 +83,7 @@ const Configuration = () => {
     const [adding, setAdding] = useState(false);
     const [error, setError] = useState('');
 
-    useEffect(() => {
-        fetchSizes();
-    }, []);
-
-    const fetchSizes = async () => {
+    const fetchSizes = useCallback(async () => {
         setLoading(true);
         try {
             const res = await fetch(`${apiUrl}/api/sizes`);
@@ -22,11 +91,16 @@ const Configuration = () => {
             setSizes(data);
         } catch (err) {
             console.error(err);
-            setError('Failed to load sizes');
+            console.log('Fetch URL:', `${apiUrl}/api/sizes`);
+            setError(`Failed to load sizes from ${apiUrl}. Backend might be down or URL incorrect.`);
         } finally {
             setLoading(false);
         }
-    };
+    }, [apiUrl]);
+
+    useEffect(() => {
+        fetchSizes();
+    }, [fetchSizes]);
 
     const handleAdd = async (e) => {
         e.preventDefault();
@@ -54,7 +128,7 @@ const Configuration = () => {
         }
     };
 
-    const handleDelete = async (id) => {
+    const handleDelete = useCallback(async (id) => {
         if (!window.confirm('Are you sure you want to delete this size?')) return;
 
         try {
@@ -63,7 +137,7 @@ const Configuration = () => {
         } catch (err) {
             alert('Failed to delete size');
         }
-    };
+    }, [apiUrl, fetchSizes]);
 
     return (
         <div style={{ padding: '2rem', height: '100%', overflowY: 'auto' }}>
@@ -114,33 +188,11 @@ const Configuration = () => {
 
                     {error && <div style={{ color: 'var(--error-color)', background: 'var(--error-bg)', padding: '1rem', borderRadius: '8px', marginBottom: '1.5rem' }}>{error}</div>}
 
-                    {/* Size List */}
+                    {/* Size List Table */}
                     {loading ? (
                         <div style={{ padding: '2rem', textAlign: 'center', opacity: 0.5 }}>Loading current configuration...</div>
                     ) : (
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: '1rem' }}>
-                            {sizes.map(size => (
-                                <div key={size._id} style={{
-                                    background: 'var(--bg-tertiary)', padding: '1rem', borderRadius: '10px',
-                                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                                    border: '1px solid var(--border-color)'
-                                }}>
-                                    <span style={{ fontWeight: '700', fontSize: '1.1rem' }}>{size.code}</span>
-                                    <button
-                                        onClick={() => handleDelete(size._id)}
-                                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', opacity: 0.6, fontSize: '1.2rem' }}
-                                        title="Remove Size"
-                                    >
-                                        &times;
-                                    </button>
-                                </div>
-                            ))}
-                            {sizes.length === 0 && (
-                                <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '2rem', background: 'rgba(0,0,0,0.02)', borderRadius: '12px', color: 'var(--text-secondary)' }}>
-                                    No sizes configured. Add a size code to get started.
-                                </div>
-                            )}
-                        </div>
+                        <SizeTable sizes={sizes} onDelete={handleDelete} />
                     )}
                 </div>
             </div>

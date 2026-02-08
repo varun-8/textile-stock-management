@@ -11,7 +11,11 @@ const transactionSchema = new mongoose.Schema({
         default: Date.now
     },
     details: String,
-    userId: String // Track who did it if available
+    userId: String, // Legacy Admin ID
+    employeeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Employee' },
+    employeeName: String, // Snapshot for history
+    action: { type: String, enum: ['SCAN', 'BATCH'] }, // Optional context
+    sessionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Session' } // Link to Session
 });
 
 const clothRollSchema = new mongoose.Schema({

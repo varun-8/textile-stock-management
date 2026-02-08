@@ -12,8 +12,8 @@ const IconCloud = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="no
 
 const IconEdit = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>;
 const IconTrash = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>;
-const IconPlay = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>;
-const IconStop = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect></svg>;
+const IconSignal = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 20h.01" /><path d="M7 20v-4" /><path d="M12 20v-8" /><path d="M17 20V8" /><path d="M22 20V4" /></svg>;
+
 
 const Dashboard = () => {
     const navigate = useNavigate();
@@ -36,7 +36,8 @@ const Dashboard = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [editItem, setEditItem] = useState(null);
     const [isTodayOnly, setIsTodayOnly] = useState(false);
-    const [sessionStartTime, setSessionStartTime] = useState(localStorage.getItem('SESSION_START'));
+    const [sessionStartTime, setSessionStartTime] = useState(null); // Deprecated state kept null
+    const [activeSessionCount, setActiveSessionCount] = useState(0);
 
     // Detailed View Modal State
     const [detailedView, setDetailedView] = useState({ isOpen: false, type: null });
@@ -76,14 +77,27 @@ const Dashboard = () => {
     };
 
     const fetchRecentLogs = async () => {
-        if (!sessionStartTime) {
+        if (false) { // Deprecated check removed
             setRecentLogs([]);
             return;
         }
 
         try {
-            // Fetch logs only from session start
-            let url = `${apiUrl}/api/stats/list/recent?startDate=${sessionStartTime}&limit=all`;
+            // Fetch logs for today by default if no range is set and activeTab is LIVE
+            // If sessionStartTime was null, we fetched nothing. Now we fetch recent.
+            // Using existing API that supports limit=all or date range.
+            // Let's use getTodayRange() if no explicit range.
+
+            let url = `${apiUrl}/api/stats/list/recent?limit=50`; // Default to last 50
+
+            // If today view is toggled, force today's range
+            if (isTodayOnly) {
+                const { startDate, endDate } = getTodayRange();
+                url += `&startDate=${startDate}&endDate=${endDate}`;
+            }
+
+            // Using sessionStartTime logic was: ?startDate=${sessionStartTime}&limit=all
+            // We remove that. Now it's just recent logs.
             const res = await fetch(url);
             const data = await res.json();
             const normalized = data.map(item => ({
@@ -96,8 +110,17 @@ const Dashboard = () => {
         } catch (err) { console.error(err); }
     };
 
+    const fetchActiveSessions = async () => {
+        try {
+            const res = await fetch(`${apiUrl}/api/sessions/active`);
+            const data = await res.json();
+            setActiveSessionCount(Array.isArray(data) ? data.length : 0);
+        } catch (err) { console.error(err); }
+    };
+
     useEffect(() => {
         fetchStats();
+        fetchActiveSessions();
         if (activeTab === 'LIVE') fetchRecentLogs();
 
         const socket = io(apiUrl, {
@@ -105,7 +128,7 @@ const Dashboard = () => {
             transports: ['websocket', 'polling']
         });
         socket.on('stock_update', (data) => {
-            if (activeTab === 'LIVE' && sessionStartTime) {
+            if (activeTab === 'LIVE') { // Removed sessionStartTime check
                 const newLog = {
                     time: new Date().toLocaleTimeString(),
                     barcode: data.barcode,
@@ -116,6 +139,11 @@ const Dashboard = () => {
             }
             fetchStats();
         });
+
+        socket.on('session_update', () => {
+            fetchActiveSessions();
+        });
+
         return () => socket.disconnect();
     }, [apiUrl, activeTab, isTodayOnly, sessionStartTime]);
 
@@ -271,59 +299,7 @@ const Dashboard = () => {
         }
     };
 
-    const handleStartSession = () => {
-        showModal('confirm', 'Start New Session?', 'This will begin tracking a new real-time operation session. All subsequent scans will be recorded in this session.', () => {
-            const now = new Date().toISOString();
-            localStorage.setItem('SESSION_START', now);
-            setSessionStartTime(now);
-            showModal('success', 'Session Started', 'Real-time tracking is now active.');
-        });
-    };
-
-    const handleEndSession = async () => {
-        if (!sessionStartTime) return;
-
-        showModal('confirm', 'End Session & Export?', 'This will stop the current session and download a comprehensive report of all operations.', async () => {
-            try {
-                // Fetch logs only from session start
-                let url = `${apiUrl}/api/stats/list/recent?startDate=${sessionStartTime}&limit=all`;
-                const res = await fetch(url);
-
-                if (!res.ok) throw new Error('Failed to fetch session data');
-
-                const data = await res.json();
-                const normalized = data.map(item => ({
-                    time: new Date(item.updatedAt || item.detectedAt || item.createdAt).toLocaleString(),
-                    _rawDate: new Date(item.updatedAt || item.detectedAt || item.createdAt),
-                    barcode: item.barcode,
-                    type: item.status || 'UNKNOWN',
-                    details: { metre: item.metre, weight: item.weight, percentage: item.percentage }
-                }));
-
-                // Filter strictly by time on client side to be precise
-                const sessionData = normalized.filter(item => item._rawDate >= new Date(sessionStartTime));
-
-                if (sessionData.length === 0) {
-                    showModal('info', 'Session Ended', 'No data was recorded during this session.');
-                } else {
-                    generateAndDownloadCSV(sessionData, `SESSION_REPORT_${new Date().toISOString().slice(0, 10)}.csv`);
-                    showModal('success', 'Session Completed', 'The session report has been downloaded successfully.');
-                }
-
-                // Cleanup
-                localStorage.removeItem('SESSION_START');
-                setSessionStartTime(null);
-
-                // Clear Dashboard View
-                setRecentLogs([]);
-                setFilteredLogs([]);
-
-            } catch (err) {
-                console.error("Export failed", err);
-                showModal('error', 'System Error', `Failed to export session data: ${err.message}`);
-            }
-        });
-    };
+    // Legacy Session handlers removed
 
     return (
         <>
@@ -394,49 +370,26 @@ const Dashboard = () => {
 
                             <div style={{ width: '1px', height: '20px', background: 'var(--border-color)', margin: '0 0.5rem' }}></div>
 
-                            {!sessionStartTime ? (
-                                <button
-                                    onClick={handleStartSession}
-                                    style={{
-                                        background: '#ecfdf5',
-                                        color: '#059669',
-                                        border: '1px solid #d1fae5',
-                                        padding: '0.4rem 1.2rem',
-                                        borderRadius: '6px',
-                                        fontSize: '0.75rem',
-                                        fontFamily: '"Segoe UI", sans-serif',
-                                        fontWeight: '700',
-                                        cursor: 'pointer',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '0.5rem',
-                                        boxShadow: '0 2px 5px rgba(0,0,0,0.03)'
-                                    }}
-                                >
-                                    <IconPlay /> START SESSION
-                                </button>
-                            ) : (
-                                <button
-                                    onClick={handleEndSession}
-                                    style={{
-                                        background: '#fef2f2',
-                                        color: '#dc2626',
-                                        border: '1px solid #fee2e2',
-                                        padding: '0.4rem 1.2rem',
-                                        borderRadius: '6px',
-                                        fontSize: '0.75rem',
-                                        fontFamily: '"Segoe UI", sans-serif',
-                                        fontWeight: '700',
-                                        cursor: 'pointer',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '0.5rem',
-                                        animation: 'pulse 2s infinite'
-                                    }}
-                                >
-                                    <IconStop /> END SESSION
-                                </button>
-                            )}
+                            <button
+                                onClick={() => navigate('/sessions')}
+                                style={{
+                                    padding: '0.4rem 1.2rem',
+                                    background: activeSessionCount > 0 ? 'var(--accent-bg)' : 'var(--bg-primary)',
+                                    border: activeSessionCount > 0 ? '1px solid var(--accent-color)' : '1px solid var(--border-color)',
+                                    borderRadius: '6px',
+                                    fontSize: '0.75rem',
+                                    fontWeight: '700',
+                                    color: activeSessionCount > 0 ? 'var(--accent-color)' : 'var(--text-secondary)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '0.5rem',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.2s'
+                                }}
+                            >
+                                <IconSignal />
+                                {activeSessionCount > 0 ? `${activeSessionCount} ACTIVE SESSIONS` : 'NO ACTIVE SESSIONS'}
+                            </button>
                             <style>{`@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.4); } 70% { box-shadow: 0 0 0 6px rgba(220, 38, 38, 0); } 100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); } }`}</style>
                         </div>
                     </div>

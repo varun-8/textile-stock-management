@@ -14,13 +14,33 @@ const WorkScreen = () => {
     const [showManualInput, setShowManualInput] = useState(false);
     const [manualBarcode, setManualBarcode] = useState('');
     const [torch, setTorch] = useState(false);
+    const [hasTorch, setHasTorch] = useState(false);
     const [cameraError, setCameraError] = useState(null);
 
-    const [lastAction, setLastAction] = useState(null);
+    const [sessionMode, setSessionMode] = useState('IN');
+    const [sessionList, setSessionList] = useState([]);
+    const [showReview, setShowReview] = useState(false);
+
+    // Session Info State
+    const [sessionSize, setSessionSize] = useState(null);
+    const [sessionId, setSessionId] = useState(null);
+
     const [currentBarcode, setCurrentBarcode] = useState(null);
     const [mode, setMode] = useState('SCAN');
     const [scanData, setScanData] = useState(null);
     const [form, setForm] = useState({ metre: '', weight: '', percentage: '100' });
+    const [previewItem, setPreviewItem] = useState(null);
+
+    // Load Session from LocalStorage on Mount
+    useEffect(() => {
+        const sType = localStorage.getItem('active_session_type');
+        const sSize = localStorage.getItem('active_session_size');
+        const sId = localStorage.getItem('active_session_id');
+
+        if (sType) setSessionMode(sType);
+        if (sSize) setSessionSize(sSize);
+        if (sId) setSessionId(sId);
+    }, []);
 
     // Auto-calculate Percentage: (Weight / Metre) * 1000
     useEffect(() => {
@@ -37,6 +57,12 @@ const WorkScreen = () => {
 
     const html5QrCodeRef = useRef(null);
     const scanningRef = useRef(false);
+
+    // Session Finish State
+    const [showFinishPreview, setShowFinishPreview] = useState(false);
+    const [finishStats, setFinishStats] = useState(null);
+
+
 
     const THEME = {
         primary: '#0f172a',
@@ -63,7 +89,7 @@ const WorkScreen = () => {
     };
 
     useEffect(() => {
-        if (mode === 'SCAN' && !scanned && !showMissing && !showIpInput && !showMenu) {
+        if (mode === 'SCAN' && !scanned && !showMissing && !showIpInput && !showMenu && !showReview) {
             startCamera();
         } else {
             stopCamera();
@@ -72,7 +98,7 @@ const WorkScreen = () => {
         const handleVisibilityChange = () => {
             if (document.visibilityState === 'hidden') {
                 stopCamera();
-            } else if (document.visibilityState === 'visible' && mode === 'SCAN' && !scanned) {
+            } else if (document.visibilityState === 'visible' && mode === 'SCAN' && !scanned && !showReview) {
                 setTimeout(() => startCamera(), 500);
             }
         };
@@ -82,7 +108,7 @@ const WorkScreen = () => {
             stopCamera();
             document.removeEventListener('visibilitychange', handleVisibilityChange);
         };
-    }, [mode, scanned, showMissing, showIpInput, showMenu]);
+    }, [mode, scanned, showMissing, showIpInput, showMenu, showReview]);
 
     const startCamera = async () => {
         try {
@@ -119,6 +145,20 @@ const WorkScreen = () => {
                 },
                 (errorMessage) => { }
             );
+
+            // Check Torch Capability
+            try {
+                const caps = html5QrCode.getRunningTrackCameraCapabilities();
+                if (caps && caps.torchFeature().isSupported()) {
+                    setHasTorch(true);
+                } else {
+                    setHasTorch(false);
+                }
+            } catch (err) {
+                console.warn('Torch check failed:', err);
+                setHasTorch(false);
+            }
+
         } catch (err) {
             console.error('❌ Camera error:', err);
             setCameraError(`${err.name}: ${err.message}`);
@@ -150,10 +190,94 @@ const WorkScreen = () => {
             formattedBarcode = `${formattedBarcode.substring(0, 2)}-${formattedBarcode.substring(2, 4)}-${formattedBarcode.substring(4)}`;
         }
 
+        // --- BULK OUT MODE LOGIC ---
+        if (sessionMode === 'OUT') {
+            // Check if already in session list
+            if (sessionList.some(item => item.barcode === formattedBarcode)) {
+                haptic.error();
+                showAlert(`Barcode ID: ${formattedBarcode}\n\nAlready in current list!`, 'error', 'Duplicate Scan');
+                setScanned(false);
+                scanningRef.current = false;
+                return;
+            }
+
+            // Verify with Server if it exists and is IN Stock
+            try {
+                const url = `/api/mobile/scan/${formattedBarcode}`;
+                const res = await api.get(url, { headers: { 'x-session-id': sessionId } });
+                const json = res.data;
+
+                // Session Logic: Wrong Size?
+                if (json.status === 'WRONG_SIZE') {
+                    haptic.error();
+                    showAlert(`🛑 WRONG SIZE!\n\nExpected: ${json.expected}\nScanned: ${json.actual}`, 'error');
+                    setScanned(false);
+                    scanningRef.current = false;
+                    return;
+                }
+
+                if (json.status === 'SESSION_ENDED') {
+                    haptic.error();
+                    showAlert('Session has ended. Redirecting...', 'error');
+                    setTimeout(() => {
+                        localStorage.removeItem('active_session_id');
+                        window.location.reload();
+                    }, 2000);
+                    return;
+                }
+
+                if (json.status === 'INVALID' || !json.data) {
+                    haptic.error();
+                    showAlert(`Unknown Barcode: ${formattedBarcode}`, 'error');
+                } else if (json.data.status === 'OUT') {
+                    haptic.error();
+                    showAlert(`Item already Dispatched: ${formattedBarcode}`, 'error');
+                } else {
+                    // SHOW PREVIEW INSTEAD OF AUTO ADDING
+                    haptic.success();
+                    setPreviewItem({
+                        barcode: formattedBarcode,
+                        details: json.data
+                    });
+                    // Pause scanning while in preview
+                    scanningRef.current = true;
+                }
+            } catch (err) {
+                haptic.error();
+                showAlert(err.message, 'error');
+                // Resume scanning on error
+                setTimeout(() => {
+                    setScanned(false);
+                    scanningRef.current = false;
+                }, 1000);
+            }
+            return;
+        }
+
+        // --- STANDARD IN MODE LOGIC (Existing) ---
         try {
             const url = `/api/mobile/scan/${formattedBarcode}`;
-            const res = await api.get(url);
+            const res = await api.get(url, { headers: { 'x-session-id': sessionId } });
             const json = res.data;
+
+            // Session Logic
+            if (json.status === 'WRONG_SIZE') {
+                haptic.error();
+                showAlert(`🛑 WRONG SIZE!\n\nExpected: ${json.expected}\nScanned: ${json.actual}`, 'error');
+                setScanned(false);
+                scanningRef.current = false;
+                return;
+            }
+
+            if (json.status === 'SESSION_ENDED') {
+                haptic.error();
+                showAlert('Session has ended. Redirecting...', 'error');
+                setTimeout(() => {
+                    localStorage.removeItem('active_session_id');
+                    window.location.reload();
+                }, 2000);
+                return;
+            }
 
             if (json.status === 'INVALID') {
                 haptic.error();
@@ -190,12 +314,16 @@ const WorkScreen = () => {
         if (isProcessing) return;
         setIsProcessing(true);
 
+        const employee = JSON.parse(localStorage.getItem('employee') || '{}');
+
         const payload = {
             barcode: scanData.barcode,
-            type,
+            type, // Always IN for this mode, but kept flexible
             metre: parseFloat(form.metre || 0),
             weight: parseFloat(form.weight || 0),
-            percentage: parseFloat(form.percentage || 100)
+            percentage: parseFloat(form.percentage || 100),
+            employeeId: employee.id || employee._id, // Handle both formats if needed
+            employeeName: employee.name
         };
 
         try {
@@ -216,6 +344,74 @@ const WorkScreen = () => {
         }
     };
 
+    const submitBatchOut = async () => {
+        if (sessionList.length === 0) return;
+        setIsProcessing(true);
+
+        try {
+            const employee = JSON.parse(localStorage.getItem('employee') || '{}');
+
+            const payload = {
+                type: 'OUT',
+                employeeId: employee.id || employee._id,
+                employeeName: employee.name,
+                items: sessionList.map(item => ({
+                    barcode: item.barcode,
+                    details: 'Bulk Stock Out via Session'
+                }))
+            };
+
+            const res = await api.post('/api/mobile/batch-transaction', payload);
+
+            if (res.data.results && res.data.results.failed.length > 0) {
+                const failedCount = res.data.results.failed.length;
+                const successCount = res.data.results.success.length;
+                showAlert(`⚠️ Partial Success\n\nProcessed: ${successCount}\nFailed: ${failedCount}\n\nCheck logs for failed items.`, 'error');
+                // Keep failed items in list? For simplicity, we clear and user re-scans if needed, or we filter?
+                // Let's clear for now to avoid complexity in this step
+                setSessionList([]);
+                setShowReview(false);
+            } else {
+                haptic.success();
+                showAlert(`✅ Batch Dispatch Complete!\n\n${sessionList.length} items processed.`, 'success');
+                setSessionList([]);
+                setShowReview(false);
+            }
+
+        } catch (err) {
+            haptic.error();
+            showAlert(err.message, 'error');
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    const removeItemFromSession = (idx) => {
+        const newList = [...sessionList];
+        newList.splice(idx, 1);
+        setSessionList(newList);
+    };
+
+    const confirmAddItem = () => {
+        if (!previewItem) return;
+        setSessionList(prev => [{
+            barcode: previewItem.barcode,
+            details: previewItem.details,
+            scannedAt: new Date()
+        }, ...prev]);
+
+        setPreviewItem(null);
+        setScanned(false);
+        scanningRef.current = false;
+        haptic.success();
+    };
+
+    const cancelAddItem = () => {
+        setPreviewItem(null);
+        setScanned(false);
+        scanningRef.current = false;
+    };
+
     const reset = () => {
         scanningRef.current = false;
         setScanned(false);
@@ -225,34 +421,180 @@ const WorkScreen = () => {
         setCurrentBarcode(null);
     };
 
+    const switchSessionMode = (newMode) => {
+        if (sessionList.length > 0) {
+            if (!window.confirm("Switching modes will clear your current scanned list. Continue?")) return;
+        }
+        setSessionMode(newMode);
+        setSessionList([]);
+        reset();
+    };
+
     useEffect(() => {
         const applyTorch = async () => {
-            if (html5QrCodeRef.current && mode === 'SCAN' && !scanned) {
+            // Only attempt if camera is running and we are in SCAN mode
+            if (html5QrCodeRef.current && html5QrCodeRef.current.isScanning && mode === 'SCAN' && !scanned && !showReview) {
                 try {
                     await html5QrCodeRef.current.applyVideoConstraints({
                         advanced: [{ torch: torch }]
                     });
                 } catch (err) {
+                    console.error("Torch Error:", err);
+                    if (torch) {
+                        // Only show alert if trying to turn ON
+                        haptic.error();
+                        showAlert("Flashlight unavailble on this device/browser", "warning");
+                        // Timeout to avoid state loop
+                        setTimeout(() => setTorch(false), 500);
+                    }
                 }
             }
-        };
-        setTimeout(applyTorch, 500);
-    }, [torch, mode, scanned]);
+        }
+
+        // Small delay to ensure camera is ready
+        const timer = setTimeout(applyTorch, 500);
+        return () => clearTimeout(timer);
+    }, [torch, mode, scanned, showReview]);
+
+    const handleTorchClick = () => {
+        setTorch(!torch);
+    };
+
+    const handleFinishSession = async () => {
+        try {
+            setIsProcessing(true);
+            const res = await api.get(`/api/sessions/${sessionId}/preview`);
+            if (res.data.success) {
+                setFinishStats(res.data.stats);
+                setShowFinishPreview(true);
+                setShowMenu(false);
+            } else {
+                showAlert(res.data.error || 'Failed to get session stats', 'error');
+            }
+        } catch (err) {
+            console.error(err);
+            showAlert('Failed to connect to server', 'error');
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    const confirmFinishSession = async () => {
+        try {
+            setIsProcessing(true);
+            const res = await api.post('/api/sessions/end', { sessionId });
+            if (res.data.success) {
+                haptic.success();
+                showAlert('Session Finished Successfully!', 'success');
+                localStorage.removeItem('active_session_id');
+                localStorage.removeItem('active_session_type');
+                localStorage.removeItem('active_session_size');
+                setTimeout(() => window.location.reload(), 1500);
+            } else {
+                showAlert(res.data.error, 'error');
+            }
+        } catch (err) {
+            showAlert(err.message, 'error');
+        } finally {
+            setIsProcessing(false);
+            setShowFinishPreview(false);
+        }
+    };
+
+    // Render Logic
+    if (showFinishPreview && finishStats) {
+        return (
+            <div style={{
+                position: 'fixed', inset: 0, background: THEME.primary, zIndex: 2000,
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px'
+            }}>
+                <div style={{ textAlign: 'center', marginBottom: '40px' }}>
+                    <div style={{ fontSize: '60px', marginBottom: '20px' }}>🏁</div>
+                    <h1 style={{ color: 'white', fontSize: '24px', margin: 0 }}>Finish Session?</h1>
+                    <p style={{ color: THEME.textMuted, marginTop: '8px' }}>Review session summary before closing.</p>
+                </div>
+
+                <div style={{ width: '80%', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '40px' }}>
+                    <div style={{ background: THEME.secondary, padding: '20px', borderRadius: '16px', textAlign: 'center' }}>
+                        <div style={{ fontSize: '32px', fontWeight: '800', color: 'white' }}>{finishStats.totalCount}</div>
+                        <div style={{ fontSize: '11px', fontWeight: '700', color: THEME.textMuted, marginTop: '4px' }}>ITEMS</div>
+                    </div>
+                    <div style={{ background: THEME.secondary, padding: '20px', borderRadius: '16px', textAlign: 'center' }}>
+                        <div style={{ fontSize: '32px', fontWeight: '800', color: THEME.accent }}>{finishStats.totalMetre.toFixed(0)}</div>
+                        <div style={{ fontSize: '11px', fontWeight: '700', color: THEME.textMuted, marginTop: '4px' }}>METRE</div>
+                    </div>
+                    <div style={{ gridColumn: '1 / -1', background: THEME.secondary, padding: '20px', borderRadius: '16px', textAlign: 'center' }}>
+                        <div style={{ fontSize: '32px', fontWeight: '800', color: THEME.success }}>{finishStats.totalWeight.toFixed(1)}</div>
+                        <div style={{ fontSize: '11px', fontWeight: '700', color: THEME.textMuted, marginTop: '4px' }}>TOTAL WEIGHT (KG)</div>
+                    </div>
+                </div>
+
+                <div style={{ width: '80%', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    <ActionButton
+                        onClick={confirmFinishSession}
+                        label="CONFIRM & FINISH"
+                        icon="✅"
+                        color={THEME.success}
+                    />
+                    <ActionButton
+                        onClick={() => setShowFinishPreview(false)}
+                        label="CANCEL"
+                        variant="ghost"
+                    />
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div style={{ height: '100dvh', width: '100vw', backgroundColor: 'black', display: 'flex', flexDirection: 'column', position: 'fixed', overflow: 'hidden' }}>
 
+            {/* Header */}
             <div style={{
-                position: 'fixed', top: 0, left: 0, right: 0, height: '60px',
-                padding: '0 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(12px)',
-                borderBottom: '1px solid rgba(255,255,255,0.1)', zIndex: 100
+                position: 'fixed', top: 0, left: 0, right: 0, height: '64px',
+                padding: '0 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                background: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(16px)',
+                borderBottom: '1px solid rgba(255,255,255,0.05)', zIndex: 100,
+                boxShadow: '0 4px 30px rgba(0, 0, 0, 0.1)'
             }}>
-                <h1 style={{ color: 'white', fontWeight: '800', fontSize: '18px', letterSpacing: '-0.5px' }}>
-                    WH FLOW
-                </h1>
+                <div style={{ display: 'flex', gap: '10px', background: 'rgba(255,255,255,0.1)', padding: '4px', borderRadius: '12px' }}>
+                    <div style={{
+                        padding: '6px 12px', borderRadius: '8px',
+                        background: sessionMode === 'IN' ? THEME.success : THEME.error,
+                        color: 'white', fontWeight: '800', fontSize: '11px', lineHeight: '1'
+                    }}>
+                        {sessionMode}
+                    </div>
+                    {sessionSize && (
+                        <div style={{
+                            padding: '6px 12px', borderRadius: '8px',
+                            background: 'rgba(255,255,255,0.2)',
+                            color: 'white', fontWeight: '800', fontSize: '11px', lineHeight: '1'
+                        }}>
+                            S-{sessionSize}
+                        </div>
+                    )}
+                </div>
+
+                <div style={{ textAlign: 'center' }}>
+                    <h1 style={{ color: 'white', fontWeight: '800', fontSize: '14px', letterSpacing: '0.5px', margin: 0 }}>
+                        {sessionMode === 'IN' ? 'STOCK ENTRY' : 'DISPATCH'}
+                    </h1>
+                    <div style={{ fontSize: '10px', color: '#94a3b8', marginTop: '2px' }}>
+                        {(() => {
+                            const e = JSON.parse(localStorage.getItem('employee') || '{}');
+                            return e.name ? `${e.name} (${e.employeeId})` : 'Unknown';
+                        })()}
+                    </div>
+                </div>
+
                 <div style={{ display: 'flex', gap: '8px' }}>
-                    <button onClick={() => setTorch(!torch)} style={iconBtnStyle}>{torch ? '💡' : '🔦'}</button>
+                    <button
+                        onClick={handleTorchClick}
+                        style={iconBtnStyle}
+                    >
+                        {torch ? '💡' : '🔦'}
+                    </button>
                     <button onClick={() => setShowMenu(true)} style={iconBtnStyle}>☰</button>
                 </div>
             </div>
@@ -271,31 +613,47 @@ const WorkScreen = () => {
 
                         <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                             <div style={{
-                                width: '280px', height: '200px',
-                                border: '2px solid rgba(255,255,255,0.3)', borderRadius: '20px',
-                                boxShadow: '0 0 0 9999px rgba(0,0,0,0.6)',
+                                width: '280px', height: '280px',
+                                border: `2px solid ${sessionMode === 'IN' ? THEME.success : THEME.error}`, borderRadius: '24px',
+                                boxShadow: '0 0 0 9999px rgba(0,0,0,0.7)',
                                 position: 'relative', overflow: 'hidden'
                             }}>
                                 <div className="laser-line" style={{
                                     position: 'absolute', top: 0, left: 0, right: 0, height: '2px',
-                                    background: '#ef4444', boxShadow: '0 0 10px #ef4444',
+                                    background: sessionMode === 'IN' ? THEME.success : THEME.error,
+                                    boxShadow: `0 0 10px ${sessionMode === 'IN' ? THEME.success : THEME.error}`,
                                     animation: 'scan 2s infinite ease-in-out'
                                 }}></div>
                                 <style>{`@keyframes scan { 0% { top: 10%; opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } 100% { top: 90%; opacity: 0; } }`}</style>
                             </div>
-                            <p style={{ position: 'absolute', bottom: '25%', color: 'white', fontWeight: '600', letterSpacing: '1px', fontSize: '12px' }}>
-                                SCAN BARCODE
-                            </p>
+
+                            {/* Session Counter / Review Button */}
+                            {sessionMode === 'OUT' && (
+                                <button
+                                    onClick={() => setShowReview(true)}
+                                    style={{
+                                        position: 'absolute', bottom: '25%', pointerEvents: 'auto',
+                                        background: 'rgba(255,255,255,0.2)', backdropFilter: 'blur(10px)',
+                                        border: '1px solid rgba(255,255,255,0.2)', padding: '10px 24px', borderRadius: '30px',
+                                        color: 'white', fontWeight: '800', display: 'flex', gap: '8px', alignItems: 'center'
+                                    }}
+                                >
+                                    <span>🛒 LIST ({sessionList.length})</span>
+                                    <span style={{ fontSize: '10px', background: 'white', color: 'black', padding: '2px 6px', borderRadius: '4px' }}>REVIEW</span>
+                                </button>
+                            )}
 
                             <button
                                 onClick={() => setShowManualInput(true)}
                                 style={{
                                     position: 'absolute', bottom: '15%',
-                                    background: 'rgba(255,255,255,0.2)', backdropFilter: 'blur(10px)',
-                                    border: '1px solid rgba(255,255,255,0.1)', color: 'white',
-                                    padding: '12px 24px', borderRadius: '30px', fontWeight: '600', pointerEvents: 'auto'
+                                    background: 'rgba(255, 255, 255, 0.15)', backdropFilter: 'blur(12px)',
+                                    border: '1px solid rgba(255, 255, 255, 0.2)', color: 'white',
+                                    padding: '16px 32px', borderRadius: '100px', fontWeight: '700',
+                                    boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.37)',
+                                    pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '15px'
                                 }}>
-                                ⌨️ Manual Input
+                                <span>⌨️</span> ENTER PIN / BARCODE
                             </button>
                         </div>
                     </>
@@ -306,6 +664,7 @@ const WorkScreen = () => {
                     }}>
                         <style>{`@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }`}</style>
 
+                        {/* This Scan Result UI is primarily for 'IN' mode or single scan checks */}
                         <div style={{ padding: '80px 20px 20px', textAlign: 'center' }}>
                             <div style={{ background: THEME.secondary, padding: '24px', borderRadius: '24px', border: `1px solid ${THEME.border}` }}>
                                 <div style={{ fontSize: '12px', color: THEME.textMuted, fontWeight: '700', marginBottom: '8px' }}>DETECTED BARCODE</div>
@@ -324,22 +683,53 @@ const WorkScreen = () => {
                                         </div>
                                     )}
 
-                                    <ActionButton
-                                        onClick={() => setMode('IN_FORM')}
-                                        disabled={scanData?.status === 'EXISTING'}
-                                        label="IN STOCK"
-                                        sub={scanData?.status === 'EXISTING' ? "(Already In)" : null}
-                                        icon="📥"
-                                        color={THEME.success}
-                                    />
-                                    <ActionButton
-                                        onClick={() => setMode('OUT_FORM')}
-                                        disabled={scanData?.status === 'NEW' || scanData?.data?.status === 'OUT'}
-                                        label="OUT STOCK"
-                                        sub={scanData?.data?.status === 'OUT' ? "(Already Out)" : null}
-                                        icon="📤"
-                                        color={THEME.error}
-                                    />
+                                    {/* Status Banner */}
+                                    <div style={{
+                                        background: THEME.secondary, padding: '16px', borderRadius: '16px', border: `1px solid ${THEME.border}`,
+                                        marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between'
+                                    }}>
+                                        <div style={{ fontSize: '12px', fontWeight: '700', color: THEME.textMuted }}>CURRENT STATUS</div>
+                                        <div style={{
+                                            padding: '6px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: '800', textTransform: 'uppercase',
+                                            background: scanData?.data?.status ? (scanData.data.status === 'IN' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)') : 'rgba(99, 102, 241, 0.2)',
+                                            color: scanData?.data?.status ? (scanData.data.status === 'IN' ? THEME.success : THEME.error) : THEME.accent,
+                                            border: `1px solid ${scanData?.data?.status ? (scanData.data.status === 'IN' ? THEME.success : THEME.error) : THEME.accent}`
+                                        }}>
+                                            {scanData?.data?.status ? (scanData.data.status === 'IN' ? '📥 STOCKED IN' : '📤 DISPATCHED') : '✨ NEW / UNKNOWN'}
+                                        </div>
+                                    </div>
+
+                                    {/* Existing Detail Summary if available */}
+                                    {scanData?.data && (
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginBottom: '16px' }}>
+                                            <div style={{ background: 'rgba(255,255,255,0.05)', padding: '10px', borderRadius: '10px', textAlign: 'center' }}>
+                                                <div style={{ fontSize: '10px', color: THEME.textMuted, fontWeight: '700' }}>METRE</div>
+                                                <div style={{ fontSize: '14px', fontWeight: '700', color: 'white' }}>{scanData.data.metre}</div>
+                                            </div>
+                                            <div style={{ background: 'rgba(255,255,255,0.05)', padding: '10px', borderRadius: '10px', textAlign: 'center' }}>
+                                                <div style={{ fontSize: '10px', color: THEME.textMuted, fontWeight: '700' }}>WEIGHT</div>
+                                                <div style={{ fontSize: '14px', fontWeight: '700', color: 'white' }}>{scanData.data.weight}</div>
+                                            </div>
+                                            <div style={{ background: 'rgba(255,255,255,0.05)', padding: '10px', borderRadius: '10px', textAlign: 'center' }}>
+                                                <div style={{ fontSize: '10px', color: THEME.textMuted, fontWeight: '700' }}>QUALITY</div>
+                                                <div style={{ fontSize: '14px', fontWeight: '700', color: 'white' }}>{scanData.data.percentage}%</div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Simplified Actions based on Session Mode */}
+                                    {sessionMode === 'IN' && (
+                                        <ActionButton
+                                            onClick={() => setMode('IN_FORM')}
+                                            disabled={false} // Always allow editing/re-stocking
+                                            label={scanData?.data?.status === 'IN' ? "EDIT STOCK IN" : "STOCK IN"}
+                                            sub={scanData?.data?.status === 'IN' ? "(Update Details)" : null}
+                                            icon="📥"
+                                            color={THEME.success}
+                                        />
+                                    )}
+
+                                    {/* Fallback Action if needed or for single checks */}
                                     <ActionButton
                                         onClick={reset}
                                         label="CANCEL"
@@ -355,13 +745,20 @@ const WorkScreen = () => {
 
                                     <InputGroup label="METRE" value={form.metre} onChange={v => setForm({ ...form, metre: v })} />
                                     <InputGroup label="WEIGHT (KG)" value={form.weight} onChange={v => setForm({ ...form, weight: v })} />
-                                    <InputGroup label="QUALITY %" value={form.percentage} onChange={v => setForm({ ...form, percentage: v })} />
+                                    <div style={{ opacity: 0.7 }}>
+                                        <InputGroup
+                                            label="QUALITY % (AUTO)"
+                                            value={form.percentage}
+                                            onChange={() => { }} // No-op
+                                            readOnly={true}
+                                        />
+                                    </div>
 
                                     <ActionButton
-                                        onClick={() => executeSubmit(mode === 'IN_FORM' ? 'IN' : 'OUT')}
+                                        onClick={() => executeSubmit('IN')}
                                         label="CONFIRM"
                                         icon="✅"
-                                        color={mode === 'IN_FORM' ? THEME.success : THEME.error}
+                                        color={THEME.success}
                                     />
                                     <ActionButton onClick={() => setMode('ACTION')} label="BACK" variant="ghost" />
                                 </div>
@@ -371,101 +768,220 @@ const WorkScreen = () => {
                 )}
             </div>
 
-            {showMenu && (
-                <div style={modalBackdropStyle} onClick={() => setShowMenu(false)}>
-                    <div style={menuStyle} onClick={e => e.stopPropagation()}>
-                        <div style={{ padding: '24px', borderBottom: `1px solid ${THEME.border}` }}>
-                            <h2 style={{ margin: 0, color: 'white', fontSize: '18px' }}>Menu</h2>
+            {/* PREVIEW MODAL (CONFIRM ADD TO LIST) */}
+            {
+                previewItem && (
+                    <div style={modalBackdropStyle}>
+                        <div style={{ ...alertBoxStyle, maxWidth: '400px', textAlign: 'left' }}>
+                            <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
+                                <div style={{ fontSize: '3rem', marginBottom: '0.5rem' }}>📦</div>
+                                <h3 style={{ margin: 0, color: 'white' }}>Confirm Item</h3>
+                                <p style={{ color: THEME.textMuted, fontSize: '0.9rem' }}>Check details before adding to list</p>
+                            </div>
+
+                            <div style={{ background: THEME.secondary, padding: '1.5rem', borderRadius: '16px', marginBottom: '1.5rem', border: `1px solid ${THEME.border}` }}>
+                                <div style={{ fontSize: '0.8rem', color: THEME.textMuted, fontWeight: '700', letterSpacing: '1px', marginBottom: '4px' }}>BARCODE</div>
+                                <div style={{ fontSize: '1.5rem', fontFamily: 'monospace', fontWeight: '800', color: 'white', marginBottom: '1.5rem' }}>{previewItem.barcode}</div>
+
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                                    <div>
+                                        <div style={{ fontSize: '0.7rem', color: THEME.textMuted, fontWeight: '700' }}>METRE</div>
+                                        <div style={{ fontSize: '1.2rem', fontWeight: '700', color: THEME.success }}>{previewItem.details.metre} m</div>
+                                    </div>
+                                    <div>
+                                        <div style={{ fontSize: '0.7rem', color: THEME.textMuted, fontWeight: '700' }}>WEIGHT</div>
+                                        <div style={{ fontSize: '1.2rem', fontWeight: '700', color: THEME.accent }}>{previewItem.details.weight} kg</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div style={{ display: 'flex', gap: '1rem' }}>
+                                <button onClick={confirmAddItem} style={{ ...btnPrimaryStyle, background: THEME.success, flex: 1 }}>PROCEED</button>
+                                <button onClick={cancelAddItem} style={{ ...btnGhostStyle, flex: 1 }}>CANCEL</button>
+                            </div>
                         </div>
-                        <MenuItem
-                            icon="⬇️"
-                            label="Install App / APK"
-                            onClick={() => {
-                                if (deferredPrompt) {
-                                    installApp();
-                                } else {
-                                    setShowMenu(false);
-                                    setShowInstallHelp(true);
+                    </div>
+                )
+            }
+
+            {/* REVIEW MODAL (Bulk Out) */}
+            {
+                showReview && (
+                    <div style={{ position: 'fixed', inset: 0, background: THEME.primary, zIndex: 2000, display: 'flex', flexDirection: 'column' }}>
+                        <div style={{ padding: '20px', borderBottom: `1px solid ${THEME.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <h2 style={{ margin: 0, color: 'white', fontSize: '1.2rem' }}>Review List ({sessionList.length})</h2>
+                            <button onClick={() => setShowReview(false)} style={{ background: 'transparent', border: 'none', color: THEME.textMuted, fontSize: '1.5rem' }}>✕</button>
+                        </div>
+
+                        <div style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
+                            {sessionList.length === 0 ? (
+                                <div style={{ textAlign: 'center', color: THEME.textMuted, marginTop: '50px' }}>List is empty</div>
+                            ) : (
+                                displayList(sessionList, removeItemFromSession, THEME)
+                            )}
+                        </div>
+
+                        <div style={{ padding: '20px', borderTop: `1px solid ${THEME.border}` }}>
+                            <ActionButton
+                                onClick={submitBatchOut}
+                                label={`SUBMIT ALL (${sessionList.length})`}
+                                icon="🚀"
+                                color={THEME.error}
+                                disabled={sessionList.length === 0 || isProcessing}
+                            />
+                        </div>
+                    </div>
+                )
+            }
+
+            {/* ... Menus and Alerts (Keep existing) ... */}
+            {
+                showMenu && (
+                    <div style={modalBackdropStyle} onClick={() => setShowMenu(false)}>
+                        <div style={menuStyle} onClick={e => e.stopPropagation()}>
+                            <div style={{ padding: '24px', borderBottom: `1px solid ${THEME.border}` }}>
+                                <h2 style={{ margin: 0, color: 'white', fontSize: '18px' }}>Menu</h2>
+                            </div>
+                            <MenuItem
+                                icon="⬇️"
+                                label="Install App / APK"
+                                onClick={() => {
+                                    if (deferredPrompt) {
+                                        installApp();
+                                    } else {
+                                        setShowMenu(false);
+                                        setShowInstallHelp(true);
+                                    }
+                                }}
+                                sub={!deferredPrompt ? "(Manual Install)" : ""}
+                            />
+                            <MenuItem
+                                icon="🏁"
+                                label="Finish Session"
+                                sub="End session & view report"
+                                color={THEME.accent}
+                                onClick={handleFinishSession}
+                            />
+                            <MenuItem icon="⚙️" label="Server IP" onClick={() => setShowIpInput(true)} />
+                            <MenuItem icon="📋" label="Missing Scans" onClick={() => { setShowMissing(true); setShowMenu(false); }} />
+                            <MenuItem icon="🔓" label="Switch User" color={THEME.warning} onClick={() => {
+                                if (window.confirm('Switch user?')) {
+                                    localStorage.removeItem('employee');
+                                    window.location.reload();
                                 }
-                            }}
-                            sub={!deferredPrompt ? "(Manual Install)" : ""}
-                        />
-                        <MenuItem icon="⚙️" label="Server IP" onClick={() => setShowIpInput(true)} />
-                        <MenuItem icon="📋" label="Missing Scans" onClick={() => { setShowMissing(true); setShowMenu(false); }} />
-                        <MenuItem icon="🔓" label="Unpair" color={THEME.error} onClick={() => unpair()} />
-                        <div style={{ padding: '20px' }}>
-                            <button onClick={() => setShowMenu(false)} style={btnPrimaryStyle}>CLOSE</button>
+                            }} />
+                            <MenuItem icon="🚫" label="Unpair Device" color={THEME.error} onClick={() => unpair()} />
+                            <div style={{ padding: '20px' }}>
+                                <button onClick={() => setShowMenu(false)} style={btnPrimaryStyle}>CLOSE</button>
+                            </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )
+            }
 
-            {showInstallHelp && (
-                <div style={modalBackdropStyle}>
-                    <div style={alertBoxStyle}>
-                        <div style={{ fontSize: '32px', marginBottom: '16px' }}>📱</div>
-                        <h3 style={{ color: 'white', margin: '0 0 16px 0' }}>Install Manually</h3>
-                        <p style={{ color: '#94a3b8', fontSize: '14px', marginBottom: '20px', lineHeight: '1.5' }}>
-                            To install as an App (APK style):
-                        </p>
-                        <ol style={{ textAlign: 'left', color: 'white', fontSize: '14px', lineHeight: '1.8', marginBottom: '24px', paddingLeft: '20px' }}>
-                            <li>Tap browser menu (<b>⋮</b> or <b>Share</b>)</li>
-                            <li>Select <b>"Add to Home Screen"</b> or <b>"Install App"</b></li>
-                            <li>Confirm installation</li>
-                        </ol>
-                        <button onClick={() => setShowInstallHelp(false)} style={btnPrimaryStyle}>OK, GOT IT</button>
-                    </div>
-                </div>
-            )}
-
-            {alertState.show && (
-                <div style={modalBackdropStyle} onClick={closeAlert}>
-                    <div style={alertBoxStyle} onClick={e => e.stopPropagation()}>
-                        <div style={{ fontSize: '40px', marginBottom: '16px' }}>
-                            {alertState.type === 'error' ? '❌' : '✅'}
-                        </div>
-                        <h3 style={{ margin: '0 0 8px 0', color: 'white' }}>{alertState.title || (alertState.type === 'error' ? 'Error' : 'Success')}</h3>
-                        <p style={{ margin: '0 0 24px 0', color: THEME.textMuted, whiteSpace: 'pre-wrap' }}>{alertState.message}</p>
-                        <button onClick={closeAlert} style={btnPrimaryStyle}>OK</button>
-                    </div>
-                </div>
-            )}
-
-            {showMissing && (
-                <div style={{ position: 'fixed', inset: 0, background: THEME.primary, zIndex: 2000, display: 'flex', flexDirection: 'column' }}>
-                    <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}><MissingScans /></div>
-                    <button onClick={() => setShowMissing(false)} style={{ padding: '20px', background: THEME.secondary, border: 'none', color: 'white', fontWeight: 'bold' }}>CLOSE</button>
-                </div>
-            )}
-
-            {showManualInput && (
-                <div style={modalBackdropStyle}>
-                    <div style={alertBoxStyle}>
-                        <h3 style={{ color: 'white', margin: '0 0 16px 0' }}>Enter Barcode</h3>
-                        <input autoFocus value={manualBarcode} onChange={e => setManualBarcode(e.target.value)} style={inputStyle} placeholder="Barcode..." />
-                        <div style={{ display: 'flex', gap: '10px', marginTop: '16px' }}>
-                            <button onClick={() => { if (manualBarcode) { handleBarCodeScanned(manualBarcode); setManualBarcode(''); setShowManualInput(false); } }} style={{ ...btnPrimaryStyle, flex: 1 }}>GO</button>
-                            <button onClick={() => setShowManualInput(false)} style={{ ...btnGhostStyle, flex: 1 }}>CANCEL</button>
+            {
+                showInstallHelp && (
+                    <div style={modalBackdropStyle}>
+                        <div style={alertBoxStyle}>
+                            <div style={{ fontSize: '32px', marginBottom: '16px' }}>📱</div>
+                            <h3 style={{ color: 'white', margin: '0 0 16px 0' }}>Install Manually</h3>
+                            <p style={{ color: '#94a3b8', fontSize: '14px', marginBottom: '20px', lineHeight: '1.5' }}>
+                                To install as an App (APK style):
+                            </p>
+                            <ol style={{ textAlign: 'left', color: 'white', fontSize: '14px', lineHeight: '1.8', marginBottom: '24px', paddingLeft: '20px' }}>
+                                <li>Tap browser menu (<b>⋮</b> or <b>Share</b>)</li>
+                                <li>Select <b>"Add to Home Screen"</b> or <b>"Install App"</b></li>
+                                <li>Confirm installation</li>
+                            </ol>
+                            <button onClick={() => setShowInstallHelp(false)} style={btnPrimaryStyle}>OK, GOT IT</button>
                         </div>
                     </div>
-                </div>
-            )}
+                )
+            }
 
-            {showIpInput && (
-                <div style={modalBackdropStyle}>
-                    <div style={alertBoxStyle}>
-                        <h3 style={{ color: 'white', margin: '0 0 16px 0' }}>Server IP</h3>
-                        <input value={serverIp} onChange={e => setServerIp(e.target.value)} style={inputStyle} />
-                        <div style={{ display: 'flex', gap: '10px', marginTop: '16px' }}>
-                            <button onClick={() => setShowIpInput(false)} style={{ ...btnPrimaryStyle, flex: 1 }}>SAVE</button>
+            {
+                alertState.show && (
+                    <div style={modalBackdropStyle} onClick={closeAlert}>
+                        <div style={alertBoxStyle} onClick={e => e.stopPropagation()}>
+                            <div style={{ fontSize: '40px', marginBottom: '16px' }}>
+                                {alertState.type === 'error' ? '❌' : '✅'}
+                            </div>
+                            <h3 style={{ margin: '0 0 8px 0', color: 'white' }}>{alertState.title || (alertState.type === 'error' ? 'Error' : 'Success')}</h3>
+                            <p style={{ margin: '0 0 24px 0', color: THEME.textMuted, whiteSpace: 'pre-wrap' }}>{alertState.message}</p>
+                            <button onClick={closeAlert} style={btnPrimaryStyle}>OK</button>
                         </div>
                     </div>
-                </div>
-            )}
+                )
+            }
 
-        </div>
+            {
+                showMissing && (
+                    <div style={{ position: 'fixed', inset: 0, background: THEME.primary, zIndex: 2000, display: 'flex', flexDirection: 'column' }}>
+                        <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}><MissingScans /></div>
+                        <button onClick={() => setShowMissing(false)} style={{ padding: '20px', background: THEME.secondary, border: 'none', color: 'white', fontWeight: 'bold' }}>CLOSE</button>
+                    </div>
+                )
+            }
+
+            {
+                showManualInput && (
+                    <div style={modalBackdropStyle}>
+                        <div style={alertBoxStyle}>
+                            <h3 style={{ color: 'white', margin: '0 0 16px 0' }}>Enter Barcode</h3>
+                            <input autoFocus value={manualBarcode} onChange={e => setManualBarcode(e.target.value)} style={inputStyle} placeholder="Barcode..." />
+                            <div style={{ display: 'flex', gap: '10px', marginTop: '16px' }}>
+                                <button onClick={() => { if (manualBarcode) { handleBarCodeScanned(manualBarcode); setManualBarcode(''); setShowManualInput(false); } }} style={{ ...btnPrimaryStyle, flex: 1 }}>GO</button>
+                                <button onClick={() => setShowManualInput(false)} style={{ ...btnGhostStyle, flex: 1 }}>CANCEL</button>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+
+            {
+                showIpInput && (
+                    <div style={modalBackdropStyle}>
+                        <div style={alertBoxStyle}>
+                            <h3 style={{ color: 'white', margin: '0 0 16px 0' }}>Server IP</h3>
+                            <input value={serverIp} onChange={e => setServerIp(e.target.value)} style={inputStyle} />
+                            <div style={{ display: 'flex', gap: '10px', marginTop: '16px' }}>
+                                <button onClick={() => setShowIpInput(false)} style={{ ...btnPrimaryStyle, flex: 1 }}>SAVE</button>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+
+        </div >
     );
 };
+
+// Helper for Review List
+const displayList = (list, onRemove, THEME) => list.map((item, i) => (
+    <div key={i} style={{
+        background: 'rgba(30, 41, 59, 0.6)', backdropFilter: 'blur(10px)',
+        marginBottom: '12px', padding: '16px', borderRadius: '16px',
+        border: '1px solid rgba(255,255,255,0.05)',
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+    }}>
+        <div>
+            <div style={{ fontWeight: '800', fontSize: '1.2rem', fontFamily: 'monospace', color: 'white', letterSpacing: '-0.5px' }}>{item.barcode}</div>
+            <div style={{ fontSize: '0.85rem', color: THEME.textMuted, marginTop: '2px' }}>
+                <span style={{ color: THEME.success, fontWeight: '700' }}>{item.details.metre}m</span>
+                <span style={{ margin: '0 6px', opacity: 0.3 }}>|</span>
+                <span style={{ color: THEME.accent, fontWeight: '700' }}>{item.details.weight}kg</span>
+            </div>
+        </div>
+        <button
+            onClick={() => onRemove(i)}
+            style={{
+                background: 'rgba(239, 68, 68, 0.1)', color: THEME.error, border: '1px solid rgba(239, 68, 68, 0.2)',
+                width: '40px', height: '40px', borderRadius: '12px', fontSize: '1.2rem',
+                display: 'flex', alignItems: 'center', justifyContent: 'center'
+            }}
+        >×</button>
+    </div>
+));
 
 const ActionButton = ({ onClick, disabled, label, sub, icon, color, variant = 'solid' }) => (
     <button
@@ -488,10 +1004,28 @@ const ActionButton = ({ onClick, disabled, label, sub, icon, color, variant = 's
     </button>
 );
 
-const InputGroup = ({ label, value, onChange }) => (
-    <div>
-        <label style={{ display: 'block', color: '#94a3b8', fontSize: '11px', fontWeight: '700', marginBottom: '6px', letterSpacing: '1px' }}>{label}</label>
-        <input type="number" value={value} onChange={e => onChange(e.target.value)} style={inputStyle} />
+const InputGroup = ({ label, value, onChange, type = "number", readOnly = false }) => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <label style={{ fontSize: '11px', fontWeight: '800', color: '#94a3b8', letterSpacing: '1px', marginLeft: '4px' }}>{label}</label>
+        <input
+            type={type}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            readOnly={readOnly}
+            step="0.01"
+            style={{
+                background: readOnly ? 'rgba(15, 23, 42, 0.5)' : '#1e293b',
+                border: '1px solid #334155',
+                color: 'white',
+                padding: '16px',
+                borderRadius: '16px',
+                fontSize: '18px',
+                fontWeight: '700',
+                outline: 'none',
+                width: '100%',
+                fontFamily: 'monospace'
+            }}
+        />
     </div>
 );
 
@@ -505,12 +1039,23 @@ const MenuItem = ({ icon, label, onClick, sub, color }) => (
     </button>
 );
 
-const modalBackdropStyle = { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(4px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' };
-const alertBoxStyle = { background: '#1e293b', padding: '32px', borderRadius: '24px', width: '90%', maxWidth: '340px', textAlign: 'center', boxShadow: '0 20px 50px rgba(0,0,0,0.5)' };
+const modalBackdropStyle = { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(3px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' };
+// Native-like Alert Style (iOS/Android hybrid look)
+const alertBoxStyle = {
+    background: 'rgba(30, 41, 59, 1)',
+    backdropFilter: 'blur(24px)',
+    padding: '24px',
+    borderRadius: '24px',
+    width: '85%',
+    maxWidth: '340px',
+    textAlign: 'center',
+    boxShadow: '0 20px 50px rgba(0,0,0,0.5)',
+    border: '1px solid rgba(255,255,255,0.1)'
+};
 const menuStyle = { background: '#0f172a', width: '100%', maxWidth: '360px', borderRadius: '24px', overflow: 'hidden', border: '1px solid #334155' };
 const iconBtnStyle = { background: 'rgba(255,255,255,0.1)', border: 'none', color: 'white', width: '40px', height: '40px', borderRadius: '12px', fontSize: '18px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' };
-const inputStyle = { width: '100%', background: '#0f172a', border: '1px solid #334155', color: 'white', padding: '16px', borderRadius: '12px', fontSize: '18px', outline: 'none', boxSizing: 'border-box' };
-const btnPrimaryStyle = { width: '100%', padding: '16px', background: '#6366f1', color: 'white', border: 'none', borderRadius: '12px', fontWeight: '700', fontSize: '16px' };
-const btnGhostStyle = { width: '100%', padding: '16px', background: 'transparent', color: '#94a3b8', border: '1px solid #334155', borderRadius: '12px', fontWeight: '700', fontSize: '16px' };
+const inputStyle = { width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid #334155', color: 'white', padding: '12px', borderRadius: '8px', fontSize: '16px', outline: 'none', boxSizing: 'border-box', textAlign: 'center' };
+const btnPrimaryStyle = { width: '100%', padding: '12px', background: '#6366f1', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '600', fontSize: '15px' };
+const btnGhostStyle = { width: '100%', padding: '12px', background: 'transparent', color: '#94a3b8', border: '1px solid #334155', borderRadius: '8px', fontWeight: '600', fontSize: '15px' };
 
 export default WorkScreen;

@@ -6,11 +6,63 @@ const AuditLog = require('../models/AuditLog');
 const MissedScan = require('../models/MissedScan');
 
 // Check barcode status (Scan Logic)
+router.get('/ping', async (req, res) => {
+    try {
+        if (req.scanner) {
+            req.scanner.lastSeen = new Date();
+            await req.scanner.save();
+            res.json({ status: 'OK' });
+        } else {
+            res.status(401).json({ error: 'Unauthorized Scanner' });
+        }
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 router.get('/scan/:barcode', async (req, res) => {
     try {
         const { barcode } = req.params;
+        const sessionId = req.headers['x-session-id'] || req.query.sessionId;
+
         const validBarcode = await Barcode.findOne({ full_barcode: barcode });
         const clothRoll = await ClothRoll.findOne({ barcode });
+
+        // --- SESSION VALIDATION ---
+        if (sessionId) {
+            const Session = require('../models/Session');
+            const session = await Session.findById(sessionId);
+
+            if (session && session.status === 'ACTIVE') {
+                // Check Size
+                const barcodeParts = barcode.split('-'); // YY-SZ-XXXX
+                if (barcodeParts.length === 3) {
+                    const scannedSize = barcodeParts[1];
+                    if (scannedSize !== session.targetSize) {
+                        return res.json({
+                            status: 'WRONG_SIZE',
+                            message: `Wrong Size! Expected ${session.targetSize}, Scanned ${scannedSize}`,
+                            expected: session.targetSize,
+                            actual: scannedSize
+                        });
+                    }
+                }
+
+                // Check Type (If session is OUT, but item is not IN, etc? - Maybe handle in transaction, but early warning is good)
+                if (session.type === 'OUT' && (!clothRoll || clothRoll.status === 'OUT')) {
+                    // Allow scanning to proceed to "transaction" where it will fail, OR fail here with specific message
+                    // Standard behavior: let it pass as "EXISTING" or "NEW" and let transaction handle status check detalils?
+                    // But user wants to know if they can scan.
+                    // If OUT session, and item doesn't exist -> Error
+                    if (!clothRoll) {
+                        return res.json({ status: 'INVALID', message: 'Roll not found for Stock Out' });
+                    }
+                }
+            } else if (session && session.status !== 'ACTIVE') {
+                return res.json({ status: 'SESSION_ENDED', message: 'Session is no longer active' });
+            }
+        }
+        // -------------------------
 
         if (!clothRoll) {
             if (!validBarcode) {
@@ -57,7 +109,8 @@ router.get('/scan/:barcode', async (req, res) => {
 // Handle Stock In / Stock Out
 router.post('/transaction', async (req, res) => {
     try {
-        let { barcode, type, details, metre, weight, percentage } = req.body;
+        let { barcode, type, details, metre, weight, percentage, employeeId, employeeName } = req.body;
+        const sessionId = req.headers['x-session-id'] || req.body.sessionId; // Capture Session ID
         let gapWarning = null;
 
         // Auto-resolve common legacy/display types to standard 'IN'
@@ -141,10 +194,14 @@ router.post('/transaction', async (req, res) => {
                 clothRoll.metre = metre;
                 clothRoll.weight = weight;
                 clothRoll.percentage = percentage;
+                clothRoll.employeeId = employeeId;
+                clothRoll.employeeName = employeeName;
                 clothRoll.transactionHistory.push({
-                    status: 'IN',
                     details: details || 'Re-Stock In',
-                    date: new Date()
+                    date: new Date(),
+                    employeeId,
+                    employeeName,
+                    sessionId // Add Session ID
                 });
             } else {
                 // New Roll Creation
@@ -154,10 +211,14 @@ router.post('/transaction', async (req, res) => {
                     metre,
                     weight,
                     percentage,
+                    employeeId,
+                    employeeName,
                     transactionHistory: [{
-                        status: 'IN',
                         details: details || 'Initial Stock In',
-                        date: new Date()
+                        date: new Date(),
+                        employeeId,
+                        employeeName,
+                        sessionId // Add Session ID
                     }]
                 });
             }
@@ -175,10 +236,14 @@ router.post('/transaction', async (req, res) => {
             }
 
             clothRoll.status = 'OUT';
+            clothRoll.employeeId = employeeId;
+            clothRoll.employeeName = employeeName;
             clothRoll.transactionHistory.push({
-                status: 'OUT',
                 details: details || 'Stock Out',
-                date: new Date()
+                date: new Date(),
+                employeeId,
+                employeeName,
+                sessionId // Add Session ID
             });
         }
 
@@ -195,8 +260,11 @@ router.post('/transaction', async (req, res) => {
         // AUDIT LOGGING
         await AuditLog.create({
             action: type === 'IN' ? 'STOCK_IN' : 'STOCK_OUT',
-            user: 'MobileUser', // Ideally req.user if auth existed
-            details: { barcode, metre, weight, percentage },
+            user: employeeName || 'MobileUser', // Ideally req.user if auth existed
+            employeeId,
+            employeeName,
+            employeeName,
+            details: { barcode, metre, weight, percentage, sessionId },
             ipAddress: req.ip
         });
 
@@ -206,7 +274,8 @@ router.post('/transaction', async (req, res) => {
                 type: type,
                 barcode: barcode,
                 details: { metre, weight, percentage }, // Emitting details
-                timestamp: new Date()
+                timestamp: new Date(),
+                user: employeeName
             });
         }
 
@@ -222,6 +291,92 @@ router.get('/missing-scans', async (req, res) => {
     try {
         const missed = await MissedScan.find({ status: 'PENDING' }).sort({ detectedAt: -1 });
         res.json(missed);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Batch Transaction (Bulk Stock Out)
+router.post('/batch-transaction', async (req, res) => {
+    try {
+        const { type, items, employeeId, employeeName } = req.body; // items = [{ barcode, details, ... }]
+
+        if (!items || !Array.isArray(items) || items.length === 0) {
+            return res.status(400).json({ error: 'No items provided for batch processing' });
+        }
+
+        if (type !== 'OUT') {
+            return res.status(400).json({ error: 'Batch processing currently only supported for Stock OUT' });
+        }
+
+        const results = {
+            success: [],
+            failed: []
+        };
+
+        // Process sequentially to avoid race conditions on same docs (unlikely but safe)
+        for (const item of items) {
+            const { barcode, details } = item;
+
+            try {
+                const clothRoll = await ClothRoll.findOne({ barcode });
+
+                if (!clothRoll) {
+                    results.failed.push({ barcode, error: 'Roll not found' });
+                    continue;
+                }
+
+                if (clothRoll.status === 'OUT') {
+                    results.failed.push({ barcode, error: 'Already Checked Out' });
+                    continue;
+                }
+
+                // Update Status
+                clothRoll.status = 'OUT';
+                clothRoll.employeeId = employeeId;
+                clothRoll.employeeName = employeeName;
+                clothRoll.transactionHistory.push({
+                    status: 'OUT',
+                    details: details || 'Bulk Stock Out',
+                    date: new Date(),
+                    employeeId,
+                    employeeName
+                });
+
+                await clothRoll.save();
+
+                // Audit Log
+                await AuditLog.create({
+                    action: 'STOCK_OUT',
+                    user: employeeName || 'MobileBatch',
+                    employeeId,
+                    employeeName,
+                    details: { barcode, method: 'BATCH' },
+                    ipAddress: req.ip
+                });
+
+                results.success.push({ barcode });
+
+            } catch (err) {
+                console.error(`Batch Error for ${barcode}:`, err);
+                results.failed.push({ barcode, error: err.message });
+            }
+        }
+
+        // Global Event for Dashboard Refresh
+        if (req.io && results.success.length > 0) {
+            req.io.emit('batch_stock_update', {
+                type: 'OUT',
+                count: results.success.length,
+                timestamp: new Date()
+            });
+        }
+
+        res.json({
+            message: `Processed ${results.success.length} items. ${results.failed.length} failed.`,
+            results
+        });
+
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

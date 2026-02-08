@@ -8,7 +8,7 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "electron:dev": "concurrently \"vite\" \"wait-on tcp:5173 && cross-env NODE_EXTRA_CA_CERTS=C:/Users/varun/AppData/Local/mkcert/rootCA.pem ELECTRON_START_URL=http://localhost:5173 electron .\"",
+    "electron:dev": "concurrently \"vite\" \"wait-on tcp:5173 && cross-env ELECTRON_START_URL=http://localhost:5173 electron .\"",
     "dist": "vite build && electron-builder"
   },
   "dependencies": {
@@ -16,6 +16,7 @@
     "html5-qrcode": "^2.3.8",
     "jsbarcode": "^3.12.3",
     "jspdf": "^4.0.0",
+    "jspdf-autotable": "^5.0.7",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-qr-code": "^2.0.18",
