@@ -44,9 +44,9 @@ const Login = () => {
             <button onClick={() => setShowSettings(true)} style={settingsBtnStyle}>⚙️</button>
 
             <div className="panel animate-fade-in glass" style={loginPanelStyle}>
-                <div style={logoCircleStyle}>S</div>
-                <h1 style={{ fontSize: '1.5rem', marginBottom: '0.25rem', fontWeight: '700' }}>SRI LAKSHMI</h1>
-                <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '2.5rem' }}>Inventory Management Console</p>
+                <div style={logoCircleStyle}>P</div>
+                <h1 style={{ fontSize: '1.5rem', marginBottom: '0.25rem', fontWeight: '700' }}>PRODEXA</h1>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '2.5rem' }}>Inventory for Sri Lakshmi Textiles</p>
 
                 {error && (
                     <div style={errorStyle}>

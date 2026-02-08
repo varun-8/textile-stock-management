@@ -32,8 +32,8 @@ const AppLayout = ({ children }) => {
                         boxShadow: '0 4px 12px rgba(99, 102, 241, 0.4)'
                     }}>SL</div>
                     <div style={{ display: 'flex', flexDirection: 'column' }}>
-                        <span style={{ fontWeight: '800', fontSize: '1.1rem', letterSpacing: '-0.02em', color: 'var(--text-primary)' }}>SRI LAKSHMI</span>
-                        <span style={{ fontSize: '0.65rem', fontWeight: '700', color: 'var(--accent-color)', letterSpacing: '0.1em' }}>WAREHOUSE PRO</span>
+                        <span style={{ fontWeight: '800', fontSize: '1.1rem', letterSpacing: '-0.02em', color: 'var(--text-primary)' }}>PRODEXA</span>
+                        <span style={{ fontSize: '0.65rem', fontWeight: '700', color: 'var(--accent-color)', letterSpacing: '0.1em' }}>SRI LAKSHMI TEXTILES</span>
                     </div>
                 </div>
 

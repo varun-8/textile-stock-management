@@ -141,7 +141,7 @@ const BarcodeGenerator = () => {
                 <div style={{ marginBottom: '3rem' }}>
                     <div style={{ color: 'var(--accent-color)', fontWeight: '700', fontSize: '0.75rem', letterSpacing: '0.1em', marginBottom: '0.5rem' }}>LOGISTICS & TRACKING</div>
                     <h1 style={{ fontSize: '1.75rem', margin: 0 }}>Sequence Generation</h1>
-                    <p style={{ opacity: 0.6, fontSize: '0.9rem' }}>Sri Lakshmi Textiles Automated Barcode System</p>
+                    <p style={{ opacity: 0.6, fontSize: '0.9rem' }}>Prodexa Barcode System</p>
                 </div>
 
                 {/* Sequence Cards */}

@@ -1,6 +1,6 @@
 {
-    "name": "Sri Lakshmi Warehouse Scanner",
-    "short_name": "SL Scanner",
+    "name": "Prodexa Inventory Scanner",
+    "short_name": "Prodexa",
     "description": "Mobile inventory management scanner - Works offline",
     "start_url": "/pwa/",
     "scope": "/pwa/",
@@ -9,7 +9,10 @@
     "background_color": "#0f172a",
     "theme_color": "#6366f1",
     "prefer_related_applications": false,
-    "categories": ["productivity", "business"],
+    "categories": [
+        "productivity",
+        "business"
+    ],
     "icons": [
         {
             "src": "/pwa/pwa-192x192.svg",

@@ -43,7 +43,7 @@
   "main": "electron-main.cjs",
   "build": {
     "appId": "com.srilakshmitextiles.inventory",
-    "productName": "Sri Lakshmi Textiles",
+    "productName": "Prodexa",
     "files": [
       "dist/**/*",
       "electron-main.cjs",
