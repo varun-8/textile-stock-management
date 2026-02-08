@@ -2,9 +2,10 @@ import React from 'react';
 import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
+import DetailedStats from './pages/DetailedStats';
 import BarcodeGenerator from './pages/BarcodeGenerator';
 import MobileScanner from './pages/MobileScanner';
-import Reports from './pages/Reports';
+
 import Scanners from './pages/Scanners';
 import Configuration from './pages/Configuration';
 import Settings from './pages/Settings';
@@ -33,13 +34,14 @@ function App() {
               </AppLayout>
             </ProtectedRoute>
           } />
-          <Route path="/reports" element={
+          <Route path="/dashboard/:type" element={
             <ProtectedRoute>
               <AppLayout>
-                <Reports />
+                <DetailedStats />
               </AppLayout>
             </ProtectedRoute>
           } />
+
           <Route path="/barcode" element={
             <ProtectedRoute>
               <AppLayout>

@@ -5,7 +5,7 @@ const Employee = require('../models/Employee');
 // GET all (Active & Terminated)
 router.get('/', async (req, res) => {
     try {
-        const employees = await Employee.find().sort({ createdAt: -1 });
+        const employees = await Employee.find().sort({ lastActive: -1, createdAt: -1 });  // Sort by recent activity first
         res.json(employees);
     } catch (err) {
         res.status(500).json({ error: err.message });

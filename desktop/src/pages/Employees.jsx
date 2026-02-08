@@ -118,12 +118,34 @@ const Employees = () => {
         }
     };
 
-    return (
-        <div style={{ padding: '2rem', height: '100%', overflowY: 'auto' }}>
-            <div className="animate-fade-in" style={{ maxWidth: '900px', margin: '0 auto' }}>
+    const thStyle = {
+        padding: '1rem 1.5rem', textAlign: 'left', fontWeight: '800', fontSize: '0.75rem',
+        color: 'var(--text-secondary)', letterSpacing: '0.05em', textTransform: 'uppercase'
+    };
+    const tdStyle = {
+        padding: '1rem 1.5rem', borderBottom: '1px solid var(--border-color)', verticalAlign: 'middle'
+    };
+    const labelStyle = {
+        display: 'block', marginBottom: '0.5rem', fontSize: '0.75rem', fontWeight: '700',
+        color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em'
+    };
+    const inputStyle = {
+        width: '100%', padding: '0.9rem', borderRadius: '8px',
+        border: '1px solid var(--border-color)', background: 'var(--bg-primary)',
+        color: 'var(--text-primary)', fontSize: '0.95rem', fontWeight: '500'
+    };
 
-                {/* Header */}
-                <div style={{ marginBottom: '3rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+
+    return (
+        <div style={{ padding: '0', height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--bg-primary)' }} className="animate-fade-in">
+            {/* Header */}
+            <header style={{
+                padding: '1.5rem 2.5rem',
+                background: 'var(--bg-secondary)',
+                borderBottom: '1px solid var(--border-color)',
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+            }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
                     <div style={{
                         width: '48px', height: '48px', borderRadius: '12px',
                         background: 'var(--bg-tertiary)', color: 'var(--text-primary)',
@@ -133,70 +155,50 @@ const Employees = () => {
                     </div>
                     <div>
                         <div style={{ color: 'var(--accent-color)', fontWeight: '700', fontSize: '0.75rem', letterSpacing: '0.1em', marginBottom: '0.2rem' }}>ADMINISTRATION</div>
-                        <h1 style={{ fontSize: '1.75rem', margin: 0 }}>Employee Management</h1>
+                        <h1 style={{ fontSize: '1.5rem', fontWeight: '800', margin: 0, letterSpacing: '-0.02em', color: 'var(--text-primary)' }}>
+                            Employee Management
+                        </h1>
                     </div>
                 </div>
+            </header>
 
-                <div className="panel" style={{ padding: '2.5rem' }}>
-                    <h3 style={{ marginBottom: '1.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '1rem' }}>Registered Staff</h3>
+            <div style={{ flex: 1, padding: '2rem 2.5rem', overflowY: 'auto' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 350px', gap: '2rem', height: '100%' }}>
 
-                    {/* Add New Employee */}
-                    <form onSubmit={handleAdd} style={{ display: 'flex', gap: '1rem', marginBottom: '2rem', alignItems: 'flex-end' }}>
-                        <div style={{ flex: 2 }}>
-                            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Name</label>
-                            <input
-                                type="text"
-                                value={newName}
-                                onChange={e => setNewName(e.target.value)}
-                                placeholder="John Doe"
-                                style={{ width: '100%', padding: '0.8rem', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}
-                            />
+                    {/* Left: Employee List */}
+                    <div className="panel" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', background: 'var(--bg-secondary)', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
+                        <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-color)', background: 'var(--bg-secondary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text-primary)' }}>Staff Roster</h3>
+                            <span style={{ fontSize: '0.8rem', fontWeight: '600', color: 'var(--text-secondary)' }}>{employees.length} Registered</span>
                         </div>
-                        <div style={{ flex: 1 }}>
-                            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>PIN</label>
-                            <input
-                                type="text"
-                                value={newPin}
-                                onChange={e => setNewPin(e.target.value.replace(/\D/g, ''))}
-                                placeholder="1234"
-                                maxLength={6}
-                                style={{ width: '100%', padding: '0.8rem', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}
-                            />
-                        </div>
-                        <button
-                            type="submit"
-                            disabled={adding || !newName.trim() || !newPin.trim()}
-                            className="btn btn-primary"
-                            style={{ padding: '0.8rem 1.5rem', height: '42px', display: 'flex', alignItems: 'center' }}
-                        >
-                            {adding ? 'Adding...' : 'Add Staff'}
-                        </button>
-                    </form>
 
-                    {error && <div style={{ color: 'var(--error-color)', background: 'var(--error-bg)', padding: '1rem', borderRadius: '8px', marginBottom: '1.5rem' }}>{error}</div>}
-
-                    {/* Employee List */}
-                    {loading ? (
-                        <div style={{ padding: '2rem', textAlign: 'center', opacity: 0.5 }}>Loading staff...</div>
-                    ) : (
-                        <div style={{ overflowX: 'auto' }}>
+                        <div style={{ flex: 1, overflowY: 'auto' }}>
                             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
-                                <thead>
-                                    <tr style={{ borderBottom: '2px solid var(--border-color)', textAlign: 'left' }}>
-                                        <th style={{ padding: '1rem', color: 'var(--text-secondary)' }}>ID</th>
-                                        <th style={{ padding: '1rem', color: 'var(--text-secondary)' }}>Name</th>
-                                        <th style={{ padding: '1rem', color: 'var(--text-secondary)' }}>PIN</th>
-                                        <th style={{ padding: '1rem', color: 'var(--text-secondary)' }}>Status</th>
-                                        <th style={{ padding: '1rem', color: 'var(--text-secondary)' }}>Joined</th>
-                                        <th style={{ padding: '1rem', color: 'var(--text-secondary)', textAlign: 'right' }}>Actions</th>
+                                <thead style={{ position: 'sticky', top: 0, background: 'var(--bg-secondary)', zIndex: 10 }}>
+                                    <tr style={{ borderBottom: '1px solid var(--border-color)', textAlign: 'left' }}>
+                                        <th style={thStyle}>ID</th>
+                                        <th style={thStyle}>NAME</th>
+                                        <th style={thStyle}>ACCESS PIN</th>
+                                        <th style={thStyle}>LAST ACTIVE</th>
+                                        <th style={thStyle}>LAST DEVICE</th>
+                                        <th style={thStyle}>STATUS</th>
+                                        <th style={{ ...thStyle, textAlign: 'right' }}>ACTIONS</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {employees.map(emp => (
-                                        <tr key={emp._id} style={{ borderBottom: '1px solid var(--border-color)', opacity: emp.status === 'TERMINATED' ? 0.6 : 1 }}>
-                                            <td style={{ padding: '1rem', fontFamily: 'monospace', fontWeight: 'bold' }}>{emp.employeeId || '-'}</td>
-                                            <td style={{ padding: '1rem', fontWeight: 'bold' }}>{emp.name}</td>
-                                            <td style={{ padding: '1rem' }}>
+                                    {loading ? (
+                                        <tr><td colSpan="7" style={{ padding: '3rem', textAlign: 'center' }}>Loading...</td></tr>
+                                    ) : employees.length === 0 ? (
+                                        <tr><td colSpan="7" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>No employees found.</td></tr>
+                                    ) : employees.map((emp, i) => (
+                                        <tr key={emp._id} style={{
+                                            borderBottom: '1px solid var(--border-color)',
+                                            background: i % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.02)',
+                                            opacity: emp.status === 'TERMINATED' ? 0.6 : 1
+                                        }}>
+                                            <td style={{ ...tdStyle, fontFamily: 'monospace', fontWeight: '700', color: 'var(--accent-color)' }}>{emp.employeeId || '-'}</td>
+                                            <td style={{ ...tdStyle, fontWeight: '600', color: 'var(--text-primary)' }}>{emp.name}</td>
+                                            <td style={tdStyle}>
                                                 {editingPinId === emp._id ? (
                                                     <div style={{ display: 'flex', gap: '0.5rem' }}>
                                                         <input
@@ -205,61 +207,65 @@ const Employees = () => {
                                                             maxLength={6}
                                                             value={editPinValue}
                                                             onChange={e => setEditPinValue(e.target.value.replace(/\D/g, ''))}
-                                                            placeholder="New PIN"
-                                                            style={{ width: '80px', padding: '4px', borderRadius: '4px', border: '1px solid var(--accent-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}
+                                                            placeholder="PIN"
+                                                            style={{ width: '60px', padding: '4px', borderRadius: '4px', border: '1px solid var(--accent-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)', outline: 'none' }}
                                                         />
-                                                        <button onClick={() => saveNewPin(emp._id)} style={{ background: 'var(--success-color)', border: 'none', borderRadius: '4px', color: 'white', cursor: 'pointer', padding: '0 4px', fontSize: '0.8rem' }}>Save</button>
-                                                        <button onClick={() => setEditingPinId(null)} style={{ background: 'var(--border-color)', border: 'none', borderRadius: '4px', color: 'var(--text-primary)', cursor: 'pointer', padding: '0 4px', fontSize: '0.8rem' }}>X</button>
+                                                        <button onClick={() => saveNewPin(emp._id)} style={{ background: 'var(--success-color)', border: 'none', borderRadius: '4px', color: 'white', cursor: 'pointer', padding: '0 6px', fontSize: '0.7rem', fontWeight: 'bold' }}>✓</button>
+                                                        <button onClick={() => setEditingPinId(null)} style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '4px', color: 'var(--text-primary)', cursor: 'pointer', padding: '0 6px', fontSize: '0.7rem' }}>✕</button>
                                                     </div>
                                                 ) : (
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                                        <span style={{ fontFamily: 'monospace', minWidth: '40px' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
+                                                        <span style={{ fontFamily: 'monospace', fontSize: '1rem', letterSpacing: '2px', minWidth: '40px', color: 'var(--text-primary)' }}>
                                                             {visiblePins[emp._id] ? emp.pin : '••••'}
                                                         </span>
-                                                        <button
-                                                            onClick={() => togglePinVisibility(emp._id)}
-                                                            style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex' }}
-                                                            title={visiblePins[emp._id] ? "Hide PIN" : "Show PIN"}
-                                                        >
-                                                            {visiblePins[emp._id] ? <IconEyeOff /> : <IconEye />}
-                                                        </button>
-                                                        {emp.status === 'ACTIVE' && (
+                                                        <div style={{ display: 'flex', gap: '4px', opacity: 0.5 }}>
                                                             <button
-                                                                onClick={() => startEditPin(emp)}
-                                                                style={{ background: 'transparent', border: 'none', color: 'var(--accent-color)', cursor: 'pointer', display: 'flex' }}
-                                                                title="Change PIN"
+                                                                onClick={() => togglePinVisibility(emp._id)}
+                                                                style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', padding: 0 }}
                                                             >
-                                                                <IconEdit />
+                                                                {visiblePins[emp._id] ? <IconEyeOff /> : <IconEye />}
                                                             </button>
-                                                        )}
+                                                            {emp.status === 'ACTIVE' && (
+                                                                <button
+                                                                    onClick={() => startEditPin(emp)}
+                                                                    style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', padding: 0 }}
+                                                                >
+                                                                    <IconEdit />
+                                                                </button>
+                                                            )}
+                                                        </div>
                                                     </div>
                                                 )}
                                             </td>
-                                            <td style={{ padding: '1rem' }}>
+                                            <td style={{ ...tdStyle, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                                {emp.lastActive ? new Date(emp.lastActive).toLocaleString() : <span style={{ opacity: 0.4 }}>Never</span>}
+                                            </td>
+                                            <td style={tdStyle}>
+                                                {emp.lastScanner ? (
+                                                    <span style={{
+                                                        background: 'var(--bg-tertiary)', padding: '4px 8px', borderRadius: '4px',
+                                                        fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-primary)', border: '1px solid var(--border-color)'
+                                                    }}>
+                                                        📱 {emp.lastScanner}
+                                                    </span>
+                                                ) : <span style={{ opacity: 0.4, fontSize: '0.8rem' }}>-</span>}
+                                            </td>
+                                            <td style={tdStyle}>
                                                 <span style={{
-                                                    background: emp.status === 'ACTIVE' ? 'rgba(76, 175, 80, 0.1)' : 'rgba(239, 83, 80, 0.1)',
-                                                    color: emp.status === 'ACTIVE' ? '#4CAF50' : '#EF5350',
-                                                    padding: '4px 8px', borderRadius: '4px', fontSize: '0.8rem'
+                                                    padding: '4px 10px', borderRadius: '20px', fontSize: '0.7rem', fontWeight: '800',
+                                                    background: emp.status === 'ACTIVE' ? 'var(--success-bg)' : 'var(--error-bg)',
+                                                    color: emp.status === 'ACTIVE' ? 'var(--success-color)' : 'var(--error-color)',
+                                                    letterSpacing: '0.05em'
                                                 }}>
                                                     {emp.status}
                                                 </span>
                                             </td>
-                                            <td style={{ padding: '1rem', color: 'var(--text-muted)' }}>
-                                                {new Date(emp.createdAt).toLocaleDateString()}
-                                            </td>
-                                            <td style={{ padding: '1rem', textAlign: 'right' }}>
+                                            <td style={{ ...tdStyle, textAlign: 'right' }}>
                                                 {emp.status === 'ACTIVE' && (
                                                     <button
                                                         onClick={() => handleDelete(emp._id, emp.name)}
-                                                        style={{
-                                                            background: 'transparent',
-                                                            border: 'none',
-                                                            cursor: 'pointer',
-                                                            color: 'var(--error-color)',
-                                                            padding: '6px',
-                                                            borderRadius: '6px'
-                                                        }}
-                                                        title="Terminate"
+                                                        className="btn-icon-danger"
+                                                        title="Terminate Access"
                                                     >
                                                         <IconTrash />
                                                     </button>
@@ -267,19 +273,81 @@ const Employees = () => {
                                             </td>
                                         </tr>
                                     ))}
-                                    {employees.length === 0 && (
-                                        <tr>
-                                            <td colSpan="6" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>
-                                                No employees registered.
-                                            </td>
-                                        </tr>
-                                    )}
                                 </tbody>
                             </table>
                         </div>
-                    )}
+                    </div>
+
+                    {/* Right: Add Form */}
+                    <div className="panel" style={{ height: 'fit-content', position: 'sticky', top: 0, background: 'var(--bg-secondary)', borderRadius: '12px', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
+                        <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-color)' }}>
+                            <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text-primary)' }}>Register New Staff</h3>
+                            <p style={{ margin: '0.5rem 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                Create access credentials for floor staff.
+                            </p>
+                        </div>
+                        <div style={{ padding: '1.5rem' }}>
+                            <form onSubmit={handleAdd} style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem' }}>
+                                <div>
+                                    <label style={labelStyle}>Employee Name</label>
+                                    <input
+                                        type="text"
+                                        value={newName}
+                                        onChange={e => setNewName(e.target.value)}
+                                        placeholder="e.g. Michael Scott"
+                                        style={inputStyle}
+                                    />
+                                </div>
+                                <div>
+                                    <label style={labelStyle}>Access PIN (4-6 Digits)</label>
+                                    <input
+                                        type="text"
+                                        value={newPin}
+                                        onChange={e => setNewPin(e.target.value.replace(/\D/g, ''))}
+                                        placeholder="e.g. 1985"
+                                        maxLength={6}
+                                        style={{ ...inputStyle, fontFamily: 'monospace', letterSpacing: '2px', fontSize: '1.1rem' }}
+                                    />
+                                </div>
+
+                                <div style={{ height: '1rem' }}></div>
+
+                                <button
+                                    type="submit"
+                                    disabled={adding || !newName.trim() || !newPin.trim()}
+                                    className="btn btn-primary"
+                                    style={{ width: '100%', justifyContent: 'center', padding: '1rem', cursor: adding ? 'not-allowed' : 'pointer' }}
+                                >
+                                    {adding ? 'Creating Profile...' : 'Create Employee Profile'}
+                                </button>
+                            </form>
+
+                            {error && (
+                                <div style={{ marginTop: '1.5rem', padding: '1rem', background: 'var(--error-bg)', color: 'var(--error-color)', borderRadius: '8px', fontSize: '0.85rem', fontWeight: '600' }}>
+                                    ⚠️ {error}
+                                </div>
+                            )}
+                        </div>
+                        <div style={{ padding: '1.5rem', borderTop: '1px solid var(--border-color)', background: 'var(--bg-tertiary)' }}>
+                            <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: 0, lineHeight: '1.5' }}>
+                                Note: Employees can use their ID and PIN to log in to any authorized scanner device on the floor.
+                            </p>
+                        </div>
+                    </div>
+
                 </div>
             </div>
+
+            <style>{`
+                .btn-icon-danger {
+                    background: transparent; border: none; cursor: pointer;
+                    color: var(--text-secondary); padding: 8px; borderRadius: 8px;
+                    transition: all 0.2s;
+                }
+                .btn-icon-danger:hover {
+                    background: var(--error-bg); color: var(--error-color);
+                }
+            `}</style>
         </div>
     );
 };

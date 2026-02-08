@@ -20,7 +20,9 @@ const EmployeeSchema = new mongoose.Schema({
         type: String,
         enum: ['ACTIVE', 'TERMINATED'],
         default: 'ACTIVE'
-    }
+    },
+    lastScanner: String,
+    lastActive: Date
 }, { timestamps: true });
 
 // Prevent duplicate names? Maybe not strictly required, but good practice.

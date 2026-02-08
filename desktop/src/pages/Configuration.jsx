@@ -1,76 +1,106 @@
 import React, { useState, useEffect, useCallback, memo } from 'react';
 import { useConfig } from '../context/ConfigContext';
-import { IconSettings } from '../components/Icons';
+import { IconSettings, IconTrash, IconCloud } from '../components/Icons';
 
-// Memoized Table Component
+// Styled Components / Variables
+const thStyle = {
+    padding: '1rem 1.5rem', textAlign: 'left', fontWeight: '800', fontSize: '0.75rem',
+    color: 'var(--text-secondary)', letterSpacing: '0.05em', textTransform: 'uppercase'
+};
+const tdStyle = {
+    padding: '1rem 1.5rem', borderBottom: '1px solid var(--border-color)', verticalAlign: 'middle'
+};
+
 const SizeTable = memo(({ sizes, onDelete }) => {
     return (
         <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
-                <thead>
-                    <tr style={{ borderBottom: '2px solid var(--border-color)', textAlign: 'left' }}>
-                        <th style={{ padding: '1rem', color: 'var(--text-secondary)' }}>Size Code</th>
-                        <th style={{ padding: '1rem', color: 'var(--text-secondary)', textAlign: 'center' }}>Barcodes Generated</th>
-                        <th style={{ padding: '1rem', color: 'var(--text-secondary)', textAlign: 'center' }}>In Stock</th>
-                        <th style={{ padding: '1rem', color: 'var(--text-secondary)', textAlign: 'center' }}>Dispatched (Out)</th>
-                        <th style={{ padding: '1rem', color: 'var(--text-secondary)', textAlign: 'right' }}>Actions</th>
+                <thead style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)' }}>
+                    <tr>
+                        <th style={thStyle}>SIZE CODE</th>
+                        <th style={{ ...thStyle, textAlign: 'center' }}>TOTAL BARCODES</th>
+                        <th style={{ ...thStyle, textAlign: 'center' }}>IN STOCK</th>
+                        <th style={{ ...thStyle, textAlign: 'center' }}>DISPATCHED</th>
+                        <th style={{ ...thStyle, textAlign: 'right' }}>ACTIONS</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {sizes.map(size => {
+                    {sizes.length === 0 ? (
+                        <tr>
+                            <td colSpan="5" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>
+                                <div style={{ fontSize: '2rem', marginBottom: '1rem', opacity: 0.5 }}>📏</div>
+                                No size codes configured. Add a size on the right to get started.
+                            </td>
+                        </tr>
+                    ) : sizes.map((size, i) => {
                         const stats = size.stats || { generated: 0, inStock: 0, outStock: 0 };
                         const canDelete = stats.generated === 0 && stats.inStock === 0 && stats.outStock === 0;
 
                         return (
-                            <tr key={size._id} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                                <td style={{ padding: '1rem', fontWeight: 'bold' }}>{size.code}</td>
-                                <td style={{ padding: '1rem', textAlign: 'center' }}>
+                            <tr key={size._id} style={{
+                                borderBottom: '1px solid var(--border-color)',
+                                background: i % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.02)',
+                                transition: 'all 0.2s'
+                            }}>
+                                <td style={{ ...tdStyle, fontWeight: '700', fontSize: '1rem', fontFamily: 'monospace', color: 'var(--text-primary)' }}>
+                                    {size.code}
+                                </td>
+                                <td style={{ ...tdStyle, textAlign: 'center' }}>
                                     <span style={{
-                                        background: 'var(--bg-tertiary)', padding: '4px 12px', borderRadius: '12px', fontSize: '0.85rem'
+                                        background: 'var(--bg-tertiary)', padding: '4px 12px', borderRadius: '12px',
+                                        fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-secondary)'
                                     }}>
                                         {stats.generated}
                                     </span>
                                 </td>
-                                <td style={{ padding: '1rem', textAlign: 'center', color: 'var(--success-color)' }}>
+                                <td style={{ ...tdStyle, textAlign: 'center' }}>
                                     {stats.inStock > 0 ? (
-                                        <span style={{ fontWeight: 'bold' }}>{stats.inStock}</span>
-                                    ) : '-'}
+                                        <span style={{
+                                            color: 'var(--success-color)', background: 'var(--success-bg)',
+                                            padding: '4px 12px', borderRadius: '12px', fontWeight: '700', fontSize: '0.85rem'
+                                        }}>
+                                            {stats.inStock}
+                                        </span>
+                                    ) : <span style={{ opacity: 0.3 }}>-</span>}
                                 </td>
-                                <td style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-                                    {stats.outStock > 0 ? stats.outStock : '-'}
+                                <td style={{ ...tdStyle, textAlign: 'center' }}>
+                                    {stats.outStock > 0 ? (
+                                        <span style={{
+                                            color: 'var(--accent-color)', background: 'var(--accent-bg)',
+                                            padding: '4px 12px', borderRadius: '12px', fontWeight: '700', fontSize: '0.85rem'
+                                        }}>
+                                            {stats.outStock}
+                                        </span>
+                                    ) : <span style={{ opacity: 0.3 }}>-</span>}
                                 </td>
-                                <td style={{ padding: '1rem', textAlign: 'right' }}>
-                                    <button
-                                        onClick={() => onDelete(size._id)}
-                                        disabled={!canDelete}
-                                        style={{
-                                            background: canDelete ? 'var(--error-bg)' : 'transparent',
-                                            border: 'none',
-                                            cursor: canDelete ? 'pointer' : 'not-allowed',
-                                            color: canDelete ? 'var(--error-color)' : 'var(--text-muted)',
-                                            opacity: canDelete ? 1 : 0.3,
-                                            padding: '6px 12px',
-                                            borderRadius: '6px',
-                                            fontWeight: 'bold',
-                                            fontSize: '0.8rem'
-                                        }}
-                                        title={canDelete ? "Remove Size" : "Cannot delete: Size is in use"}
-                                    >
-                                        {canDelete ? 'DELETE' : 'IN USE'}
-                                    </button>
+                                <td style={{ ...tdStyle, textAlign: 'right' }}>
+                                    {canDelete ? (
+                                        <button
+                                            onClick={() => onDelete(size._id)}
+                                            style={{
+                                                background: 'transparent', border: 'none', cursor: 'pointer',
+                                                color: 'var(--text-secondary)', padding: '8px', borderRadius: '8px',
+                                                transition: 'all 0.2s'
+                                            }}
+                                            className="hover-danger"
+                                            title="Delete Size"
+                                        >
+                                            <IconTrash />
+                                        </button>
+                                    ) : (
+                                        <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-secondary)', opacity: 0.5, cursor: 'not-allowed' }} title="Cannot delete: Size is in use">
+                                            LOCKED
+                                        </span>
+                                    )}
                                 </td>
                             </tr>
                         );
                     })}
-                    {sizes.length === 0 && (
-                        <tr>
-                            <td colSpan="5" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>
-                                No sizes configured. Add a size code to get started.
-                            </td>
-                        </tr>
-                    )}
                 </tbody>
             </table>
+            <style>{`
+                .hover-danger:hover { background: var(--error-bg) !important; color: var(--error-color) !important; }
+            `}</style>
         </div>
     );
 });
@@ -91,8 +121,7 @@ const Configuration = () => {
             setSizes(data);
         } catch (err) {
             console.error(err);
-            console.log('Fetch URL:', `${apiUrl}/api/sizes`);
-            setError(`Failed to load sizes from ${apiUrl}. Backend might be down or URL incorrect.`);
+            setError(`Failed to load sizes.`);
         } finally {
             setLoading(false);
         }
@@ -140,11 +169,16 @@ const Configuration = () => {
     }, [apiUrl, fetchSizes]);
 
     return (
-        <div style={{ padding: '2rem', height: '100%', overflowY: 'auto' }}>
-            <div className="animate-fade-in" style={{ maxWidth: '800px', margin: '0 auto' }}>
+        <div style={{ padding: '0', height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--bg-primary)' }} className="animate-fade-in">
 
-                {/* Header */}
-                <div style={{ marginBottom: '3rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            {/* Header */}
+            <header style={{
+                padding: '1.5rem 2.5rem',
+                background: 'var(--bg-secondary)',
+                borderBottom: '1px solid var(--border-color)',
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+            }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
                     <div style={{
                         width: '48px', height: '48px', borderRadius: '12px',
                         background: 'var(--bg-tertiary)', color: 'var(--text-primary)',
@@ -154,46 +188,102 @@ const Configuration = () => {
                     </div>
                     <div>
                         <div style={{ color: 'var(--accent-color)', fontWeight: '700', fontSize: '0.75rem', letterSpacing: '0.1em', marginBottom: '0.2rem' }}>ADMINISTRATION</div>
-                        <h1 style={{ fontSize: '1.75rem', margin: 0 }}>System Configuration</h1>
+                        <h1 style={{ fontSize: '1.5rem', fontWeight: '800', margin: 0, letterSpacing: '-0.02em', color: 'var(--text-primary)' }}>
+                            System Configuration
+                        </h1>
                     </div>
                 </div>
+            </header>
 
-                <div className="panel" style={{ padding: '2.5rem' }}>
-                    <h3 style={{ marginBottom: '1.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '1rem' }}>Article Size Codes</h3>
-                    <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '2rem' }}>
-                        Manage the available size codes for barcode generation and reporting. Deleting a size will not affect historical data but will remove it from new selections.
-                    </p>
+            <div style={{ flex: 1, padding: '2rem 2.5rem', overflowY: 'auto' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 350px', gap: '2rem', height: '100%' }}>
 
-                    {/* Add New Size */}
-                    <form onSubmit={handleAdd} style={{ display: 'flex', gap: '1rem', marginBottom: '2rem', alignItems: 'flex-end' }}>
-                        <div style={{ flex: 1 }}>
-                            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>New Size Code</label>
-                            <input
-                                type="text"
-                                value={newSize}
-                                onChange={e => setNewSize(e.target.value)}
-                                placeholder="e.g. 40"
-                                style={{ width: '100%', padding: '0.8rem', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}
-                            />
+                    {/* Left Panel: Size Table */}
+                    <div className="panel" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', background: 'var(--bg-secondary)', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
+                        <div style={{
+                            padding: '1.5rem', borderBottom: '1px solid var(--border-color)',
+                            display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+                        }}>
+                            <div>
+                                <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text-primary)' }}>Defined Article Sizes</h3>
+                                <p style={{ margin: '0.3rem 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                    Configure dimensions used for barcode generation and sorting.
+                                </p>
+                            </div>
+                            <div style={{
+                                padding: '6px 12px', borderRadius: '20px', background: 'var(--bg-tertiary)',
+                                fontSize: '0.8rem', fontWeight: '700', color: 'var(--text-primary)'
+                            }}>
+                                {sizes.length} Sizes Active
+                            </div>
                         </div>
-                        <button
-                            type="submit"
-                            disabled={adding || !newSize.trim()}
-                            className="btn btn-primary"
-                            style={{ padding: '0.8rem 1.5rem', height: '42px', display: 'flex', alignItems: 'center' }}
-                        >
-                            {adding ? 'Adding...' : 'Add Size'}
-                        </button>
-                    </form>
 
-                    {error && <div style={{ color: 'var(--error-color)', background: 'var(--error-bg)', padding: '1rem', borderRadius: '8px', marginBottom: '1.5rem' }}>{error}</div>}
+                        <div style={{ flex: 1, overflowY: 'auto' }}>
+                            {loading ? (
+                                <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>Loading configuration...</div>
+                            ) : (
+                                <SizeTable sizes={sizes} onDelete={handleDelete} />
+                            )}
+                        </div>
+                    </div>
 
-                    {/* Size List Table */}
-                    {loading ? (
-                        <div style={{ padding: '2rem', textAlign: 'center', opacity: 0.5 }}>Loading current configuration...</div>
-                    ) : (
-                        <SizeTable sizes={sizes} onDelete={handleDelete} />
-                    )}
+                    {/* Right Panel: Add Form */}
+                    <div className="panel" style={{ height: 'fit-content', position: 'sticky', top: 0, background: 'var(--bg-secondary)', borderRadius: '12px', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
+                        <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-color)' }}>
+                            <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text-primary)' }}>Add New Dimension</h3>
+                            <p style={{ margin: '0.5rem 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                Define a new size code for inventory items.
+                            </p>
+                        </div>
+                        <div style={{ padding: '1.5rem' }}>
+                            <form onSubmit={handleAdd} style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem' }}>
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                        Size Code
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={newSize}
+                                        onChange={e => setNewSize(e.target.value)}
+                                        placeholder="e.g. 90x108"
+                                        style={{
+                                            width: '100%', padding: '0.9rem', borderRadius: '8px',
+                                            border: '1px solid var(--border-color)', background: 'var(--bg-primary)',
+                                            color: 'var(--text-primary)', fontSize: '1rem', fontWeight: '600',
+                                            fontFamily: 'monospace'
+                                        }}
+                                    />
+                                </div>
+
+                                <div style={{ height: '0.5rem' }}></div>
+
+                                <button
+                                    type="submit"
+                                    disabled={adding || !newSize.trim()}
+                                    className="btn btn-primary"
+                                    style={{
+                                        width: '100%', justifyContent: 'center', padding: '1rem',
+                                        cursor: adding || !newSize.trim() ? 'not-allowed' : 'pointer',
+                                        opacity: adding || !newSize.trim() ? 0.7 : 1
+                                    }}
+                                >
+                                    {adding ? 'Adding Configuration...' : 'Add Size Configuration'}
+                                </button>
+                            </form>
+
+                            {error && (
+                                <div style={{ marginTop: '1.5rem', padding: '1rem', background: 'var(--error-bg)', color: 'var(--error-color)', borderRadius: '8px', fontSize: '0.85rem', fontWeight: '600' }}>
+                                    ⚠️ {error}
+                                </div>
+                            )}
+                        </div>
+                        <div style={{ padding: '1.5rem', borderTop: '1px solid var(--border-color)', background: 'var(--bg-tertiary)' }}>
+                            <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: 0, lineHeight: '1.5' }}>
+                                <strong>Tip:</strong> Size codes are unique identifiers. Once a size has associated stock data, it cannot be deleted to preserve audit integrity.
+                            </p>
+                        </div>
+                    </div>
+
                 </div>
             </div>
         </div>

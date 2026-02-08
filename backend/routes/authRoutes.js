@@ -33,16 +33,30 @@ router.post('/pair', async (req, res) => {
         // Generate permanent identity
         const scannerId = crypto.randomUUID();
 
+
+        // Generate Name if needed (Auto-Assign Logic)
+        let finalName = name;
+        if (!name || name === 'AUTO_ASSIGN' || name.startsWith('Mobile -')) {
+            const allScanners = await Scanner.find({});
+            const numbers = allScanners.map(s => {
+                const match = (s.name || '').match(/^Scanner (\d+)$/);
+                return match ? parseInt(match[1]) : 0;
+            });
+            const nextNum = numbers.length > 0 ? Math.max(...numbers) + 1 : 1;
+            finalName = `Scanner ${nextNum}`;
+        }
+
         const newScanner = await Scanner.create({
-            uuid: scannerId,
-            name: name || 'Mobile Scanner',
+            uuid: scannerId, // Generated above
+            name: finalName,
             status: 'ACTIVE'
         });
 
         res.json({
             success: true,
             scannerId: newScanner.uuid,
-            message: 'Scanner Paired Successfully'
+            name: newScanner.name,
+            message: `Paired as ${newScanner.name}`
         });
     } catch (err) {
         res.status(500).json({ error: err.message });

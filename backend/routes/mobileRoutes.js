@@ -4,6 +4,9 @@ const ClothRoll = require('../models/ClothRoll');
 const Barcode = require('../models/Barcode');
 const AuditLog = require('../models/AuditLog');
 const MissedScan = require('../models/MissedScan');
+const Employee = require('../models/Employee');
+const Session = require('../models/Session');
+const Scanner = require('../models/Scanner');
 
 // Check barcode status (Scan Logic)
 router.get('/ping', async (req, res) => {
@@ -256,6 +259,43 @@ router.post('/transaction', async (req, res) => {
         }
 
         await clothRoll.save();
+        // --- UPDATE EMPLOYEE CONTEXT ---
+        if (employeeId) {
+            try {
+                const updateData = { lastActive: new Date() };
+                let scannerName = null;
+
+                // 1. Try Direct Header (Best)
+                const headerScannerId = req.headers['x-scanner-id'];
+                if (headerScannerId) {
+                    const directScanner = await Scanner.findOne({ uuid: headerScannerId });
+                    if (directScanner) {
+                        scannerName = directScanner.name;
+                    }
+                }
+
+                // 2. Fallback to Session Association if Header failed
+                if (!scannerName && sessionId) {
+                    const session = await Session.findById(sessionId);
+                    if (session && session.activeScanners && session.activeScanners.length > 0) {
+                        // Heuristic: Use first scanner if multiple
+                        const sessionScanner = await Scanner.findOne({ uuid: session.activeScanners[0] });
+                        if (sessionScanner) {
+                            scannerName = sessionScanner.name;
+                        }
+                    }
+                }
+
+                if (scannerName) {
+                    updateData.lastScanner = scannerName;
+                }
+
+                await Employee.findByIdAndUpdate(employeeId, updateData);
+            } catch (empErr) {
+                console.error("Failed to update employee context", empErr);
+            }
+        }
+        // -------------------------------
 
         // AUDIT LOGGING
         await AuditLog.create({

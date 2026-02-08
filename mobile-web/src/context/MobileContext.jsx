@@ -134,7 +134,11 @@ export const MobileProvider = ({ children }) => {
             // Save to localStorage
             localStorage.setItem('SL_SCANNER_ID', newScannerId);
             localStorage.setItem('SL_SERVER_IP', ip);
-            // Save name locally too if needed, but not critical
+
+            if (res.data.name) {
+                localStorage.setItem('SL_SCANNER_NAME', res.data.name);
+                console.log('📝 Scanner Assigned Name:', res.data.name);
+            }
 
             // Update Context State
             setScannerId(newScannerId);

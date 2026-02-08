@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useConfig } from '../context/ConfigContext';
-import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import QRCode from 'react-qr-code';
+import { IconBroadcast, IconTrash, IconScan } from '../components/Icons';
 
 const Scanners = () => {
-    const navigate = useNavigate();
     const { apiUrl } = useConfig();
     const [scanners, setScanners] = useState([]);
     const [setupToken] = useState('FACTORY_SETUP_2026');
@@ -22,9 +21,10 @@ const Scanners = () => {
         return () => clearInterval(interval);
     }, [apiUrl]);
 
+    // Fetch IP when QR modal opens
     useEffect(() => {
-        if (showQr) fetchServerIp();
-    }, [showQr]);
+        if (showQr && !serverIp) fetchServerIp();
+    }, [showQr, serverIp]); // Optimized dependency
 
     const fetchServerIp = async () => {
         try {
@@ -38,12 +38,11 @@ const Scanners = () => {
 
     const fetchScanners = async () => {
         try {
-            setLoading(true);
+            if (scanners.length === 0) setLoading(true); // Only show loading on initial fetch
             const res = await axios.get(`${apiUrl}/api/admin/scanners`);
             setScanners(res.data || []);
         } catch (err) {
             console.error("Failed to fetch scanners:", err);
-            setScanners([]);
         } finally {
             setLoading(false);
         }
@@ -54,7 +53,7 @@ const Scanners = () => {
             setDeleting(true);
             const res = await axios.delete(`${apiUrl}/api/admin/scanners/${scannerId}`);
             if (res.status === 200) {
-                setScanners(scanners.filter(s => s.scannerId !== scannerId));
+                setScanners(prev => prev.filter(s => s.scannerId !== scannerId));
                 setDeleteConfirm(null);
             }
         } catch (err) {
@@ -66,107 +65,137 @@ const Scanners = () => {
 
     const getPairingUrl = () => {
         if (!serverIp) return '';
-        const lanUrl = `https://${serverIp}:5000`;
+        const lanUrl = `https://${serverIp}:5000`; // Ensure HTTPS for PWA features
         return `${lanUrl}/pwa/index.html?token=${setupToken}&server=${encodeURIComponent(lanUrl)}`;
     };
 
     return (
-        <div style={{ padding: '2rem', height: '100%', overflowY: 'auto' }}>
-            <div className="animate-fade-in" style={{ maxWidth: '900px', margin: '0 auto', paddingBottom: '3rem' }}>
-
-                {/* Header Block */}
-                <div style={{ marginBottom: '3rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div>
-                        <div style={{ color: 'var(--accent-color)', fontWeight: '700', fontSize: '0.75rem', letterSpacing: '0.1em', marginBottom: '0.5rem' }}>CONNECTED DEVICES</div>
-                        <h1 style={{ fontSize: '1.75rem', margin: 0 }}>Scanner Fleet</h1>
-                        <p style={{ opacity: 0.6, fontSize: '0.9rem' }}>Monitor and manage your active warehouse scanners.</p>
+        <div style={{ padding: '0', height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--bg-primary)' }} className="animate-fade-in">
+            {/* Header */}
+            <header style={{
+                padding: '1.5rem 2.5rem',
+                background: 'var(--bg-secondary)',
+                borderBottom: '1px solid var(--border-color)',
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+            }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+                    <div style={{
+                        width: '48px', height: '48px', borderRadius: '12px',
+                        background: 'var(--bg-tertiary)', color: 'var(--text-primary)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center'
+                    }}>
+                        <IconBroadcast />
                     </div>
-
-                    <button
-                        onClick={() => setShowQr(true)}
-                        className="btn btn-primary"
-                        style={{ padding: '0.8rem 1.5rem' }}
-                    >
-                        <span>+</span> Pair New Device
-                    </button>
+                    <div>
+                        <div style={{ color: 'var(--accent-color)', fontWeight: '700', fontSize: '0.75rem', letterSpacing: '0.1em', marginBottom: '0.2rem' }}>DEVICE MANAGEMENT</div>
+                        <h1 style={{ fontSize: '1.5rem', fontWeight: '800', margin: 0, letterSpacing: '-0.02em', color: 'var(--text-primary)' }}>
+                            Scanner Fleet
+                        </h1>
+                    </div>
                 </div>
+                <button
+                    onClick={() => setShowQr(true)}
+                    className="btn btn-primary"
+                    style={{ padding: '0.8rem 1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+                >
+                    <IconScan /> <span>Pair New Device</span>
+                </button>
+            </header>
+
+            <div style={{ flex: 1, padding: '2rem 2.5rem', overflowY: 'auto' }}>
 
                 {error && (
-                    <div style={{ background: 'var(--error-bg)', color: 'var(--error-color)', padding: '1rem', borderRadius: '8px', marginBottom: '1.5rem', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                        <span style={{ fontSize: '1.2rem' }}>⚠</span> {error}
+                    <div style={{ background: 'var(--error-bg)', color: 'var(--error-color)', padding: '1rem', borderRadius: '8px', marginBottom: '1.5rem', fontSize: '0.85rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                        <span>⚠️</span> {error}
                     </div>
                 )}
 
                 {/* Empty State */}
-                {scanners.length === 0 && !loading && (
-                    <div className="panel" style={{ textAlign: 'center', padding: '4rem 2rem', borderStyle: 'dashed', background: 'transparent' }}>
-                        <div style={{ fontSize: '3rem', marginBottom: '1rem', opacity: 0.3 }}>📱</div>
-                        <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1.1rem' }}>No scanners connected</h3>
-                        <p style={{ margin: 0, opacity: 0.6, fontSize: '0.9rem' }}>
-                            Your fleet is currently empty. Click <b style={{ color: 'var(--accent-color)' }}>Pair New Device</b> to get started.
+                {scanners.length === 0 && !loading ? (
+                    <div style={{
+                        height: '60vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                        border: '2px dashed var(--border-color)', borderRadius: '16px', color: 'var(--text-secondary)'
+                    }}>
+                        <div style={{ fontSize: '4rem', marginBottom: '1rem', opacity: 0.2 }}>📱</div>
+                        <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1.2rem', color: 'var(--text-primary)' }}>No scanners connected</h3>
+                        <p style={{ margin: 0, opacity: 0.6, maxWidth: '400px', textAlign: 'center' }}>
+                            Your fleet is currently empty. Click the <b>Pair New Device</b> button above to connect a mobile scanner.
                         </p>
                     </div>
-                )}
-
-                {/* Scanners Grid */}
-                {scanners.length > 0 && (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1.5rem' }}>
+                ) : (
+                    /* Grid */
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1.5rem' }}>
                         {scanners.map((scanner) => {
-                            const isOnline = scanner.status === 'ONLINE';
-                            const statusColor = isOnline ? 'var(--success-color)' : 'var(--text-secondary)';
-                            const statusBg = isOnline ? 'rgba(16, 185, 129, 0.1)' : 'var(--bg-tertiary)';
+                            const isOnline = scanner.status === 'ONLINE'; // Assuming backend handles this dynamically or we fallback to Last Seen check
+                            // Simple heuristic for "Online" if backend doesn't provide strict status: < 2 mins ago
+                            const lastSeenTime = new Date(scanner.lastSeen).getTime();
+                            const isActiveRecently = (Date.now() - lastSeenTime) < 2 * 60 * 1000;
+                            const statusDisplay = isActiveRecently ? 'Online' : 'Offline';
+                            const statusColor = isActiveRecently ? 'var(--success-color)' : 'var(--text-secondary)';
+                            const statusBg = isActiveRecently ? 'var(--success-bg)' : 'var(--bg-tertiary)';
 
                             return (
-                                <div key={scanner.scannerId} className="panel glass" style={{ padding: '2rem', position: 'relative', overflow: 'hidden', borderLeft: `4px solid ${statusColor}` }}>
-
-                                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
+                                <div key={scanner.scannerId} className="panel" style={{
+                                    padding: '1.5rem', position: 'relative', overflow: 'hidden',
+                                    border: '1px solid var(--border-color)', borderRadius: '16px',
+                                    transition: 'transform 0.2s, box-shadow 0.2s',
+                                    background: 'var(--bg-secondary)'
+                                }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
                                         <div style={{
-                                            width: '56px', height: '56px', borderRadius: '12px',
-                                            background: statusBg,
-                                            color: statusColor,
+                                            width: '50px', height: '50px', borderRadius: '12px',
+                                            background: statusBg, color: statusColor,
                                             display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem'
                                         }}>
-                                            {isOnline ? '📱' : '🔌'}
+                                            {isActiveRecently ? '📶' : '💤'}
                                         </div>
-                                        {/* Status Pill */}
                                         <div style={{
-                                            padding: '4px 10px', borderRadius: '100px',
-                                            border: `1px solid ${statusColor}`,
-                                            background: statusBg,
-                                            color: statusColor, fontSize: '0.7rem', fontWeight: '700', textTransform: 'uppercase'
+                                            padding: '4px 10px', borderRadius: '20px',
+                                            background: statusBg, color: statusColor,
+                                            fontSize: '0.7rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.05em'
                                         }}>
-                                            {isOnline ? 'Online' : 'Offline'}
+                                            {statusDisplay}
                                         </div>
                                     </div>
 
-                                    <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1.1rem', fontWeight: '700' }}>
-                                        {scanner.name || `Scanner ${scanner.scannerId.substring(0, 4)}`}
+                                    <h3 style={{ margin: '0 0 0.3rem 0', fontSize: '1.1rem', fontWeight: '700', color: 'var(--text-primary)' }}>
+                                        {scanner.name || 'Unnamed Scanner'}
                                     </h3>
-                                    <p style={{ margin: 0, fontSize: '0.8rem', opacity: 0.5, fontFamily: 'monospace' }}>
-                                        ID: {scanner.scannerId.substring(0, 12)}...
-                                    </p>
+                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontFamily: 'monospace', background: 'var(--bg-tertiary)', padding: '4px 8px', borderRadius: '4px', width: 'fit-content' }}>
+                                        UID: {scanner.scannerId.substring(0, 8)}...
+                                    </div>
 
                                     <div style={{ marginTop: '1.5rem', paddingTop: '1rem', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                         <div>
-                                            <div style={labelStyle}>LAST SEEN</div>
-                                            <div style={{ fontSize: '0.9rem', fontWeight: '600' }}>
+                                            <div style={{ fontSize: '0.7rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '2px' }}>LAST SEEN</div>
+                                            <div style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-primary)' }}>
                                                 {scanner.lastSeen ? new Date(scanner.lastSeen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Never'}
                                             </div>
                                         </div>
 
                                         {deleteConfirm === scanner.scannerId ? (
                                             <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                                <button onClick={() => removeScannerDevice(scanner.scannerId)} className="btn" style={{ background: 'var(--error-color)', color: 'white', padding: '0.4rem 0.8rem', fontSize: '0.75rem' }}>Delete</button>
-                                                <button onClick={() => setDeleteConfirm(null)} className="btn btn-secondary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.75rem' }}>Cancel</button>
+                                                <button
+                                                    onClick={() => removeScannerDevice(scanner.scannerId)}
+                                                    style={{ background: 'var(--error-bg)', color: 'var(--error-color)', border: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '700', cursor: 'pointer' }}
+                                                >
+                                                    Confirm
+                                                </button>
+                                                <button
+                                                    onClick={() => setDeleteConfirm(null)}
+                                                    style={{ background: 'var(--bg-tertiary)', color: 'var(--text-primary)', border: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '0.75rem', cursor: 'pointer' }}
+                                                >
+                                                    Cancel
+                                                </button>
                                             </div>
                                         ) : (
                                             <button
                                                 onClick={() => setDeleteConfirm(scanner.scannerId)}
-                                                style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--text-secondary)', opacity: 0.5, fontSize: '1.1rem' }}
-                                                onMouseOver={e => { e.currentTarget.style.opacity = 1; e.currentTarget.style.color = 'var(--error-color)'; }}
-                                                onMouseOut={e => { e.currentTarget.style.opacity = 0.5; e.currentTarget.style.color = 'var(--text-secondary)'; }}
+                                                style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '8px', borderRadius: '8px', transition: 'all 0.2s' }}
+                                                className="btn-icon-danger"
+                                                title="Remove Device"
                                             >
-                                                🗑
+                                                <IconTrash />
                                             </button>
                                         )}
                                     </div>
@@ -177,50 +206,72 @@ const Scanners = () => {
                 )}
             </div>
 
-            {/* QR Backdrop */}
+            {/* QR Backdrop Modal */}
             {showQr && (
                 <div style={{
                     position: 'fixed', inset: 0, zIndex: 1000,
-                    background: 'var(--modal-overlay)', backdropFilter: 'blur(8px)',
+                    background: 'var(--modal-overlay)', backdropFilter: 'blur(5px)',
                     display: 'flex', alignItems: 'center', justifyContent: 'center'
-                }}>
-                    <div className="panel animate-fade-in" style={{ width: '100%', maxWidth: '480px', padding: '3rem', position: 'relative', textAlign: 'center' }}>
-
-                        <button
-                            onClick={() => setShowQr(false)}
-                            style={{ position: 'absolute', top: '1.5rem', right: '1.5rem', background: 'none', border: 'none', color: 'var(--text-secondary)', fontSize: '1.5rem', cursor: 'pointer' }}
-                        >✕</button>
-
-                        <div style={{ margin: '0 auto 1.5rem', width: '64px', height: '64px', borderRadius: '16px', background: 'rgba(99, 102, 241, 0.1)', color: 'var(--accent-color)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2rem' }}>
-                            🔗
-                        </div>
-
-                        <h2 style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>Pair Mobile Scanner</h2>
-                        <p style={{ fontSize: '0.9rem', opacity: 0.6, marginBottom: '2rem' }}>Scan this code with the WH Flow mobile app to connect.</p>
-
-                        {!serverIp ? (
-                            <div style={{ padding: '2rem' }}>
-                                <div style={{ width: '30px', height: '30px', border: '3px solid var(--border-color)', borderTopColor: 'var(--accent-color)', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto' }}></div>
-                                <p style={{ marginTop: '1rem', fontSize: '0.8rem', opacity: 0.5 }}>Resolving Server IP...</p>
-                                <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
+                }} className="animate-fade-in">
+                    <div style={{
+                        width: '90%', maxWidth: '420px', background: 'var(--bg-secondary)',
+                        borderRadius: '24px', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+                        border: '1px solid var(--border-color)', overflow: 'hidden'
+                    }}>
+                        <div style={{ padding: '2rem', textAlign: 'center' }}>
+                            <div style={{
+                                width: '64px', height: '64px', borderRadius: '20px',
+                                background: 'var(--accent-bg)', color: 'var(--accent-color)',
+                                margin: '0 auto 1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center'
+                            }}>
+                                <IconBroadcast />
                             </div>
-                        ) : (
-                            <>
-                                <div style={{ background: 'white', padding: '1.5rem', borderRadius: '16px', display: 'inline-block', marginBottom: '2rem' }}>
+
+                            <h2 style={{ fontSize: '1.5rem', fontWeight: '800', margin: '0 0 0.5rem', color: 'var(--text-primary)' }}>Connect Scanner</h2>
+                            <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', margin: '0 0 2rem' }}>
+                                Scan this QR code with your mobile device to pair it with this system.
+                            </p>
+
+                            {!serverIp ? (
+                                <div style={{ padding: '3rem', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                    <div className="spinner" style={{ width: '32px', height: '32px', border: '3px solid var(--border-color)', borderTopColor: 'var(--accent-color)', borderRadius: '50%' }}></div>
+                                    <p style={{ marginTop: '1rem', fontSize: '0.8rem', opacity: 0.7 }}>Generating Secure Link...</p>
+                                </div>
+                            ) : (
+                                <div style={{ background: 'white', padding: '1.5rem', borderRadius: '16px', display: 'inline-block', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}>
                                     <QRCode value={getPairingUrl()} size={200} />
                                 </div>
-                                <div style={{ background: 'var(--bg-tertiary)', padding: '1rem', borderRadius: '8px', fontSize: '0.8rem', fontFamily: 'monospace', color: 'var(--text-secondary)' }}>
-                                    Server: {serverIp}:5000
-                                </div>
-                            </>
-                        )}
+                            )}
+
+                            <div style={{ marginTop: '2rem', padding: '1rem', background: 'var(--bg-tertiary)', borderRadius: '12px', fontSize: '0.8rem' }}>
+                                <div style={{ fontWeight: '700', color: 'var(--text-secondary)', marginBottom: '4px' }}>SERVER ADDRESS</div>
+                                <code style={{ fontFamily: 'monospace', color: 'var(--accent-color)', fontSize: '1rem' }}>{serverIp || 'Resolving...'}</code>
+                            </div>
+                        </div>
+
+                        <div style={{ padding: '1rem', background: 'var(--bg-tertiary)', borderTop: '1px solid var(--border-color)', display: 'flex' }}>
+                            <button
+                                onClick={() => setShowQr(false)}
+                                style={{
+                                    width: '100%', padding: '1rem', background: 'var(--bg-primary)',
+                                    border: '1px solid var(--border-color)', borderRadius: '12px',
+                                    color: 'var(--text-primary)', fontWeight: '700', cursor: 'pointer'
+                                }}
+                            >
+                                Close Window
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}
+
+            <style>{`
+                .spinner { animation: spin 1s linear infinite; }
+                @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+                .btn-icon-danger:hover { background: var(--error-bg) !important; color: var(--error-color) !important; }
+            `}</style>
         </div>
     );
 };
-
-const labelStyle = { fontSize: '0.7rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '0.4rem' };
 
 export default Scanners;

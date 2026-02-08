@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useConfig } from '../context/ConfigContext';
 import { io } from "socket.io-client";
-import DetailedViewModal from '../components/DetailedViewModal';
+
 
 // --- Icons ---
 const IconBox = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" /><path d="m3.3 7 8.7 5 8.7-5" /><path d="M12 22V12" /></svg>;
@@ -30,17 +30,12 @@ const Dashboard = () => {
 
     const [recentLogs, setRecentLogs] = useState([]);
     const [activeTab, setActiveTab] = useState('LIVE');
-    const [filteredLogs, setFilteredLogs] = useState([]);
-    const [startDate, setStartDate] = useState('');
-    const [endDate, setEndDate] = useState('');
+
+    // Filters for "Recent Logs" only (Live view)
     const [searchTerm, setSearchTerm] = useState('');
     const [editItem, setEditItem] = useState(null);
     const [isTodayOnly, setIsTodayOnly] = useState(false);
-    const [sessionStartTime, setSessionStartTime] = useState(null); // Deprecated state kept null
     const [activeSessionCount, setActiveSessionCount] = useState(0);
-
-    // Detailed View Modal State
-    const [detailedView, setDetailedView] = useState({ isOpen: false, type: null });
 
     // Modal State
     const [modalConfig, setModalConfig] = useState({ isOpen: false, type: 'info', title: '', message: '', onConfirm: null });
@@ -77,34 +72,22 @@ const Dashboard = () => {
     };
 
     const fetchRecentLogs = async () => {
-        if (false) { // Deprecated check removed
-            setRecentLogs([]);
-            return;
-        }
-
         try {
-            // Fetch logs for today by default if no range is set and activeTab is LIVE
-            // If sessionStartTime was null, we fetched nothing. Now we fetch recent.
-            // Using existing API that supports limit=all or date range.
-            // Let's use getTodayRange() if no explicit range.
+            let url = `${apiUrl}/api/stats/list/recent?limit=50`;
 
-            let url = `${apiUrl}/api/stats/list/recent?limit=50`; // Default to last 50
-
-            // If today view is toggled, force today's range
             if (isTodayOnly) {
                 const { startDate, endDate } = getTodayRange();
                 url += `&startDate=${startDate}&endDate=${endDate}`;
             }
 
-            // Using sessionStartTime logic was: ?startDate=${sessionStartTime}&limit=all
-            // We remove that. Now it's just recent logs.
             const res = await fetch(url);
             const data = await res.json();
             const normalized = data.map(item => ({
                 time: new Date(item.updatedAt || item.detectedAt || item.createdAt).toLocaleString(),
                 barcode: item.barcode,
                 type: item.status || 'UNKNOWN',
-                details: { metre: item.metre, weight: item.weight, percentage: item.percentage }
+                details: { metre: item.metre, weight: item.weight, percentage: item.percentage },
+                employee: item.employeeName || item.userId || 'System'
             }));
             setRecentLogs(normalized);
         } catch (err) { console.error(err); }
@@ -128,12 +111,13 @@ const Dashboard = () => {
             transports: ['websocket', 'polling']
         });
         socket.on('stock_update', (data) => {
-            if (activeTab === 'LIVE') { // Removed sessionStartTime check
+            if (activeTab === 'LIVE') {
                 const newLog = {
                     time: new Date().toLocaleTimeString(),
                     barcode: data.barcode,
                     type: data.type,
-                    details: data.details
+                    details: data.details,
+                    employee: data.user || 'System'
                 };
                 setRecentLogs(prev => [newLog, ...prev]);
             }
@@ -145,56 +129,19 @@ const Dashboard = () => {
         });
 
         return () => socket.disconnect();
-    }, [apiUrl, activeTab, isTodayOnly, sessionStartTime]);
+    }, [apiUrl, activeTab, isTodayOnly]);
 
-    useEffect(() => {
-        if (activeTab !== 'LIVE') handleCardClick(activeTab);
-    }, [startDate, endDate, isTodayOnly]);
 
-    const handleCardClick = async (key) => {
-        setActiveTab(key);
-        setFilteredLogs([]);
-
-        let url = `${apiUrl}/api/stats/list/${key}`;
-        const params = new URLSearchParams();
-        if (isTodayOnly) {
-            const range = getTodayRange();
-            params.append('startDate', range.startDate);
-            params.append('endDate', range.endDate);
-        } else if (startDate || endDate) {
-            if (startDate) params.append('startDate', startDate);
-            if (endDate) params.append('endDate', endDate);
-        }
-
-        if (params.toString()) {
-            url += `?${params.toString()}`;
-        }
-
-        try {
-            const res = await fetch(url);
-            const data = await res.json();
-            const normalized = data.map(item => ({
-                time: new Date(item.updatedAt || item.detectedAt || item.createdAt).toLocaleString(),
-                barcode: item.barcode,
-                type: item.status || (key === 'missingCount' ? 'MISSING' : 'UNKNOWN'),
-                details: { metre: item.metre, weight: item.weight, percentage: item.percentage }
-            }));
-            setFilteredLogs(normalized);
-        } catch (err) { console.error(err); }
-    };
-
-    const handleCardDoubleClick = (key) => {
-        // Only allow detailed view for main inventory types
-        if (key === 'totalRolls' || key === 'stockIn' || key === 'stockOut') {
-            setDetailedView({ isOpen: true, type: key });
-        }
+    const handleCardClick = (key) => {
+        // Navigate to the detailed view page
+        navigate(`/dashboard/${key}`);
     };
 
     const handleDelete = async (barcode) => {
         if (!window.confirm("Move this roll back to Missing items?")) return;
         try {
             const res = await fetch(`${apiUrl}/api/mobile/inventory/delete/${barcode}`, { method: 'DELETE' });
-            if (res.ok) { handleCardClick(activeTab); fetchStats(); }
+            if (res.ok) { fetchRecentLogs(); fetchStats(); }
         } catch (err) { console.error(err); }
     };
 
@@ -202,7 +149,7 @@ const Dashboard = () => {
         if (!window.confirm("Mark this barcode as DAMAGED? It will be removed from the missing list and ignored by the system.")) return;
         try {
             const res = await fetch(`${apiUrl}/api/mobile/missing/damaged/${barcode}`, { method: 'PATCH' });
-            if (res.ok) { handleCardClick(activeTab); fetchStats(); }
+            if (res.ok) { fetchRecentLogs(); fetchStats(); }
             else { alert("Operation failed."); }
         } catch (err) { console.error(err); }
     };
@@ -210,7 +157,7 @@ const Dashboard = () => {
     const handleSaveEdit = async () => {
         if (!editItem) return;
         try {
-            const isMissingResolve = activeTab === 'missingCount';
+            const isMissingResolve = activeTab === 'missingCount'; // Not really used in LIVE view but kept for safety if we reuse logic
             const endpoint = isMissingResolve ? `${apiUrl}/api/mobile/transaction` : `${apiUrl}/api/mobile/inventory/update`;
             const method = isMissingResolve ? 'POST' : 'PUT';
 
@@ -220,8 +167,8 @@ const Dashboard = () => {
                 metre: parseFloat(editItem.details.metre || 0),
                 weight: parseFloat(editItem.details.weight || 0),
                 percentage: parseFloat(editItem.details.percentage || 100),
-                type: editItem.type || 'IN', // For transaction route
-                status: editItem.type || 'IN' // For inventory/update route
+                type: editItem.type || 'IN',
+                status: editItem.type || 'IN'
             };
 
             if (payload.metre <= 0 || payload.weight <= 0) {
@@ -237,7 +184,7 @@ const Dashboard = () => {
             const result = await res.json();
             if (res.ok) {
                 setEditItem(null);
-                handleCardClick(activeTab);
+                fetchRecentLogs();
                 fetchStats();
             } else {
                 alert(result.error || "System rejected transaction. Verify data format.");
@@ -249,7 +196,8 @@ const Dashboard = () => {
     };
 
     const displayList = (() => {
-        const rawList = activeTab === 'LIVE' ? recentLogs : filteredLogs;
+        // Only showing recent logs on dashboard now
+        const rawList = recentLogs;
         if (!Array.isArray(rawList)) return [];
         return rawList.filter(log => {
             const term = searchTerm.toLowerCase();
@@ -257,10 +205,10 @@ const Dashboard = () => {
         });
     })();
 
+    // Totals for the *visible* list (Recent Logs)
     const totals = React.useMemo(() => {
         if (!displayList.length) return { metre: 0, weight: 0 };
         return displayList.reduce((acc, item) => {
-            // Only count if it has metre/weight details
             if (item.details) {
                 acc.metre += parseFloat(item.details.metre || 0);
                 acc.weight += parseFloat(item.details.weight || 0);
@@ -299,389 +247,323 @@ const Dashboard = () => {
         }
     };
 
-    // Legacy Session handlers removed
-
     return (
-        <>
-            {/* --- MAIN CONTENT (Native App Feel) --- */}
-            <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
 
-                {/* Header (Drag area for Electron) */}
-                <header style={{
-                    padding: '1rem 2.5rem',
-                    background: 'var(--bg-secondary)',
-                    borderBottom: '1px solid var(--border-color)',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    zIndex: 5
-                }} className="app-region-drag">
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }} className="app-region-no-drag">
-                        <div>
-                            <h1 style={{ fontSize: '1.4rem', fontWeight: '800', margin: 0, letterSpacing: '-0.02em' }}>
-                                {activeTab === 'LIVE' ? 'Real-time Logistics' : 'Inventory Management'}
-                            </h1>
-                            <p style={{ fontSize: '0.75rem', fontWeight: '600', opacity: 0.6 }}>SYSTEM OPERATIONAL • {new Date().toDateString().toUpperCase()}</p>
-                        </div>
-                        <div style={{ display: 'flex', gap: '0.5rem' }}>
-                            <button
-                                onClick={() => setIsTodayOnly(!isTodayOnly)}
-                                style={{
-                                    background: 'transparent',
-                                    color: isTodayOnly ? 'var(--accent-color)' : 'var(--text-secondary)',
-                                    border: isTodayOnly ? '2px solid var(--accent-color)' : '1px solid var(--border-color)',
-                                    padding: '0.4rem 1.2rem',
-                                    borderRadius: '6px',
-                                    fontSize: '0.75rem',
-                                    fontFamily: '"Segoe UI", sans-serif',
-                                    fontWeight: '600',
-                                    cursor: 'pointer',
-                                    transition: 'all 0.2s',
-                                    letterSpacing: '0.02em',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '0.5rem'
-                                }}
-                            >
-                                <span style={{ fontSize: '1rem' }}>{isTodayOnly ? '●' : '○'}</span>
-                                {isTodayOnly ? 'Today\'s View' : 'All History'}
-                            </button>
-                            <button
-                                onClick={downloadCSV}
-                                style={{
-                                    background: 'transparent',
-                                    color: 'var(--text-primary)',
-                                    border: '1px solid var(--border-color)',
-                                    padding: '0.4rem 1.2rem',
-                                    borderRadius: '6px',
-                                    fontSize: '0.75rem',
-                                    fontFamily: '"Segoe UI", sans-serif',
-                                    fontWeight: '600',
-                                    cursor: 'pointer',
-                                    transition: 'all 0.2s',
-                                    letterSpacing: '0.02em',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '0.5rem'
-                                }}
-                            >
-                                <span style={{ opacity: 0.7 }}>📥</span> Export
-                            </button>
-
-                            <div style={{ width: '1px', height: '20px', background: 'var(--border-color)', margin: '0 0.5rem' }}></div>
-
-                            <button
-                                onClick={() => navigate('/sessions')}
-                                style={{
-                                    padding: '0.4rem 1.2rem',
-                                    background: activeSessionCount > 0 ? 'var(--accent-bg)' : 'var(--bg-primary)',
-                                    border: activeSessionCount > 0 ? '1px solid var(--accent-color)' : '1px solid var(--border-color)',
-                                    borderRadius: '6px',
-                                    fontSize: '0.75rem',
-                                    fontWeight: '700',
-                                    color: activeSessionCount > 0 ? 'var(--accent-color)' : 'var(--text-secondary)',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '0.5rem',
-                                    cursor: 'pointer',
-                                    transition: 'all 0.2s'
-                                }}
-                            >
-                                <IconSignal />
-                                {activeSessionCount > 0 ? `${activeSessionCount} ACTIVE SESSIONS` : 'NO ACTIVE SESSIONS'}
-                            </button>
-                            <style>{`@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.4); } 70% { box-shadow: 0 0 0 6px rgba(220, 38, 38, 0); } 100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); } }`}</style>
-                        </div>
+            {/* Header (Drag area) */}
+            <header style={{
+                padding: '1rem 2.5rem',
+                background: 'var(--bg-secondary)',
+                borderBottom: '1px solid var(--border-color)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                zIndex: 5
+            }} className="app-region-drag">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }} className="app-region-no-drag">
+                    <div>
+                        <h1 style={{ fontSize: '1.4rem', fontWeight: '800', margin: 0, letterSpacing: '-0.02em' }}>
+                            Operations Dashboard
+                        </h1>
+                        <p style={{ fontSize: '0.75rem', fontWeight: '600', opacity: 0.6 }}>SYSTEM OPERATIONAL • {new Date().toDateString().toUpperCase()}</p>
                     </div>
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        <button
+                            onClick={() => setIsTodayOnly(!isTodayOnly)}
+                            style={{
+                                background: 'transparent',
+                                color: isTodayOnly ? 'var(--accent-color)' : 'var(--text-secondary)',
+                                border: isTodayOnly ? '2px solid var(--accent-color)' : '1px solid var(--border-color)',
+                                padding: '0.4rem 1.2rem',
+                                borderRadius: '6px',
+                                fontSize: '0.75rem',
+                                fontFamily: '"Segoe UI", sans-serif',
+                                fontWeight: '600',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s',
+                                letterSpacing: '0.02em',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.5rem'
+                            }}
+                        >
+                            <span style={{ fontSize: '1rem' }}>{isTodayOnly ? '●' : '○'}</span>
+                            {isTodayOnly ? 'Today\'s View' : 'All History'}
+                        </button>
+                        <button
+                            onClick={downloadCSV}
+                            style={{
+                                background: 'transparent',
+                                color: 'var(--text-primary)',
+                                border: '1px solid var(--border-color)',
+                                padding: '0.4rem 1.2rem',
+                                borderRadius: '6px',
+                                fontSize: '0.75rem',
+                                fontFamily: '"Segoe UI", sans-serif',
+                                fontWeight: '600',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s',
+                                letterSpacing: '0.02em',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.5rem'
+                            }}
+                        >
+                            <span style={{ opacity: 0.7 }}>📥</span> Export Log
+                        </button>
 
-                    <div className="app-region-no-drag" style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                        <div style={{ position: 'relative' }}>
-                            <input
-                                type="text"
-                                placeholder="Search inventory databases..."
-                                value={searchTerm}
-                                onChange={e => setSearchTerm(e.target.value)}
-                                style={{
-                                    width: '320px',
-                                    background: 'var(--bg-primary)',
-                                    paddingLeft: '2.8rem',
-                                    borderRadius: '10px',
-                                    border: '1px solid var(--border-color)',
-                                    height: '42px'
-                                }}
-                            />
-                            <span style={{ position: 'absolute', left: '1.1rem', top: '50%', transform: 'translateY(-50%)', fontSize: '1.1rem' }}>🔍</span>
-                        </div>
+                        <div style={{ width: '1px', height: '20px', background: 'var(--border-color)', margin: '0 0.5rem' }}></div>
+
+                        <button
+                            onClick={() => navigate('/sessions')}
+                            style={{
+                                padding: '0.4rem 1.2rem',
+                                background: activeSessionCount > 0 ? 'var(--accent-bg)' : 'var(--bg-primary)',
+                                border: activeSessionCount > 0 ? '1px solid var(--accent-color)' : '1px solid var(--border-color)',
+                                borderRadius: '6px',
+                                fontSize: '0.75rem',
+                                fontWeight: '700',
+                                color: activeSessionCount > 0 ? 'var(--accent-color)' : 'var(--text-secondary)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.5rem',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s'
+                            }}
+                        >
+                            <IconSignal />
+                            {activeSessionCount > 0 ? `${activeSessionCount} ACTIVE SESSIONS` : 'NO ACTIVE SESSIONS'}
+                        </button>
                     </div>
-                </header>
+                </div>
 
-                {/* Page View with Padded Inset */}
-                <div style={{ flex: 1, padding: '2rem 2.5rem', overflowY: 'auto' }} className="animate-fade-in native-scroll">
+                <div className="app-region-no-drag" style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                    <div style={{ position: 'relative' }}>
+                        <input
+                            type="text"
+                            placeholder="Search recent logs..."
+                            value={searchTerm}
+                            onChange={e => setSearchTerm(e.target.value)}
+                            style={{
+                                width: '320px',
+                                background: 'var(--bg-primary)',
+                                paddingLeft: '2.8rem',
+                                borderRadius: '10px',
+                                border: '1px solid var(--border-color)',
+                                height: '42px'
+                            }}
+                        />
+                        <span style={{ position: 'absolute', left: '1.1rem', top: '50%', transform: 'translateY(-50%)', fontSize: '1.1rem' }}>🔍</span>
+                    </div>
+                </div>
+            </header>
 
-                    {/* Industrial Metrics Grid */}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1.5rem', marginBottom: '2.5rem' }}>
-                        {stats.map((stat, i) => (
-                            <div
-                                key={i}
-                                className="panel glass"
-                                onClick={() => handleCardClick(stat.key)}
-                                onDoubleClick={() => handleCardDoubleClick(stat.key)}
-                                title="Double-click for Detailed Analysis & Filters"
-                                style={{
-                                    cursor: 'pointer',
-                                    borderTop: `4px solid ${stat.color}`,
-                                    transform: activeTab === stat.key ? 'translateY(-4px)' : 'none',
-                                    transition: 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-                                    padding: '1.8rem',
-                                    position: 'relative'
-                                }}
-                            >
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                    <div>
-                                        <span style={{ fontSize: '1rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{stat.label}</span>
-                                        <div style={{ fontSize: '3rem', fontWeight: '800', margin: '0.75rem 0', letterSpacing: '-0.03em' }}>{stat.value}</div>
-                                    </div>
-                                    <div style={{ fontSize: '1.5rem', opacity: 0.8 }}>{stat.icon}</div>
+            {/* Page View with Padded Inset */}
+            <div style={{ flex: 1, padding: '2rem 2.5rem', overflowY: 'auto' }} className="animate-fade-in native-scroll">
+
+                {/* Industrial Metrics Grid */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1.5rem', marginBottom: '2.5rem' }}>
+                    {stats.map((stat, i) => (
+                        <div
+                            key={i}
+                            className="panel glass"
+                            onClick={() => handleCardClick(stat.key)}
+                            title="Click for Detailed Report"
+                            style={{
+                                cursor: 'pointer',
+                                borderTop: `4px solid ${stat.color}`,
+                                transition: 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+                                padding: '1.8rem',
+                                position: 'relative'
+                            }}
+                            onMouseOver={e => e.currentTarget.style.transform = 'translateY(-4px)'}
+                            onMouseOut={e => e.currentTarget.style.transform = 'translateY(0)'}
+                        >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                <div>
+                                    <span style={{ fontSize: '1rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{stat.label}</span>
+                                    <div style={{ fontSize: '3rem', fontWeight: '800', margin: '0.75rem 0', letterSpacing: '-0.03em' }}>{stat.value}</div>
                                 </div>
-                                <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                    <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: stat.color }}></span>
-                                    {stat.change}
-                                </div>
-                                {['totalRolls', 'stockIn', 'stockOut'].includes(stat.key) && (
-                                    <div style={{ position: 'absolute', top: '10px', right: '10px', opacity: 0, transition: 'opacity 0.2s', fontSize: '0.7rem' }} className="hover-hint">
-                                        Double-click for Details ↗
-                                    </div>
-                                )}
+                                <div style={{ fontSize: '1.5rem', opacity: 0.8 }}>{stat.icon}</div>
                             </div>
-                        ))}
+                            <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: stat.color }}></span>
+                                {stat.change}
+                            </div>
+                            <div style={{ position: 'absolute', top: '10px', right: '10px', opacity: 0, transition: 'opacity 0.2s', fontSize: '0.7rem' }} className="hover-hint">
+                                View Details ↗
+                            </div>
+                        </div>
+                    ))}
+                </div>
+
+                <style>{`
+                    .panel:hover .hover-hint { opacity: 0.6 !important; }
+                `}</style>
+
+                {/* Content Table Area */}
+                <div className="panel" style={{ background: 'var(--bg-secondary)', padding: 0 }}>
+                    <div style={{ padding: '1.5rem 2rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+                            <h2 style={{ fontSize: '1.1rem', margin: 0 }}>
+                                Real-time Operations Log
+                            </h2>
+                        </div>
                     </div>
 
-                    <style>{`
-                        .panel:hover .hover-hint { opacity: 0.6 !important; }
-                    `}</style>
+                    <div style={{ width: '100%' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                            <thead style={{ position: 'sticky', top: 0, zIndex: 1, background: 'var(--table-header-bg)' }}>
+                                <tr>
+                                    <th style={thStyle}>TIMESTAMPS</th>
+                                    <th style={thStyle}>BARCODE ID</th>
+                                    <th style={thStyle}>FLOW STATUS</th>
+                                    <th style={thStyle}>METRICS (M/KG)</th>
+                                    <th style={thStyle}>OPERATOR</th>
+                                    <th style={{ ...thStyle, textAlign: 'right' }}>CONTROL</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {displayList.length === 0 ? (
+                                    <tr><td colSpan="6" style={{ padding: '4rem', textAlign: 'center', color: 'var(--text-secondary)' }}>No transactions recorded in this period.</td></tr>
+                                ) : displayList.map((log, i) => {
+                                    return (
+                                        <tr key={i} style={{ borderBottom: '1px solid var(--border-color)', background: i % 2 === 0 ? 'var(--row-alt-bg)' : 'transparent' }}>
+                                            <td style={tdStyle}><span style={{ opacity: 0.8, fontWeight: '500' }}>{log.time}</span></td>
+                                            <td style={{ ...tdStyle, fontSize: '1.25rem', fontWeight: '800', color: 'var(--accent-color)', fontFamily: 'monospace' }}>{log.barcode}</td>
+                                            <td style={tdStyle}>
+                                                <StatusBadge type={log.type} />
+                                            </td>
+                                            <td style={tdStyle}>
+                                                {log.details?.metre ? (
+                                                    <div style={{ display: 'flex', gap: '1.25rem' }}>
+                                                        <Metric label="M" value={log.details.metre} />
+                                                        <Metric label="KG" value={log.details.weight} />
+                                                        <Metric label="Q" value={Number(log.details.percentage).toFixed(2) + '%'} color={Number(log.details.percentage) < 80 ? 'var(--warning-color)' : 'var(--text-secondary)'} />
+                                                    </div>
+                                                ) : <span style={{ opacity: 0.4 }}>PENDING REGISTRATION</span>}
+                                            </td>
+                                            <td style={tdStyle}>
+                                                <span style={{ fontSize: '0.9rem', fontWeight: '600', color: 'var(--text-primary)', opacity: 0.9 }}>
+                                                    {log.employee || <span style={{ opacity: 0.4, fontStyle: 'italic' }}>System</span>}
+                                                </span>
+                                            </td>
+                                            <td style={{ ...tdStyle, textAlign: 'right' }}>
+                                                <button
+                                                    onClick={() => {
+                                                        const isInvalidType = log.type === 'MISSING' || log.type === 'PENDING' || !log.type;
+                                                        setEditItem({
+                                                            ...log,
+                                                            type: isInvalidType ? 'IN' : (log.type === 'OUT' ? 'OUT' : 'IN'),
+                                                            details: {
+                                                                metre: log.details.metre || '',
+                                                                weight: log.details.weight || '',
+                                                                percentage: log.details.percentage || '100'
+                                                            }
+                                                        });
+                                                    }}
+                                                    className="btn"
+                                                    title="Edit"
+                                                    style={{
+                                                        padding: '8px',
+                                                        fontSize: '11px',
+                                                        background: 'var(--bg-tertiary)',
+                                                        color: 'inherit',
+                                                        border: 'none',
+                                                        fontWeight: '800',
+                                                        borderRadius: '8px',
+                                                        minWidth: '36px',
+                                                        display: 'inline-flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center'
+                                                    }}
+                                                >
+                                                    <IconEdit />
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            {/* Edit Modal */}
+            {
+                editItem && (
+                    <div className="panel animate-fade-in" style={{ width: '400px', position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 200, boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)' }}>
+                        <h3 style={{ marginBottom: '1rem' }}>Adjust Roll Parameters</h3>
+                        <p style={{ fontSize: '0.8rem', color: 'var(--accent-color)', marginBottom: '1.5rem', fontWeight: '700' }}>ROLL ID: {editItem.barcode}</p>
 
-                    {/* Content Table Area */}
-                    <div className="panel" style={{ background: 'var(--bg-secondary)', padding: 0 }}>
-                        <div style={{ padding: '1.5rem 2rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
-                                <h2 style={{ fontSize: '1.1rem', margin: 0 }}>
-                                    {activeTab === 'LIVE' ? 'Real-time Operations' : `Inventory: ${activeTab.split('stock').join('').toUpperCase()}`}
-                                </h2>
-
-                                {(activeTab === 'stockIn' || activeTab === 'stockOut') && (
-                                    <div style={{ display: 'flex', gap: '1rem', background: 'var(--bg-primary)', padding: '0.4rem 1rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                                        <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'baseline' }}>
-                                            <span style={{ fontSize: '0.7rem', fontWeight: '800', opacity: 0.6, letterSpacing: '0.05em' }}>TOTAL LENGTH:</span>
-                                            <span style={{ fontSize: '0.9rem', fontWeight: '800', color: 'var(--success-color)', fontFamily: 'monospace' }}>{totals.metre.toLocaleString()} M</span>
-                                        </div>
-                                        <div style={{ width: '1px', background: 'var(--border-color)' }}></div>
-                                        <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'baseline' }}>
-                                            <span style={{ fontSize: '0.7rem', fontWeight: '800', opacity: 0.6, letterSpacing: '0.05em' }}>TOTAL WEIGHT:</span>
-                                            <span style={{ fontSize: '0.9rem', fontWeight: '800', color: 'var(--accent-color)', fontFamily: 'monospace' }}>{totals.weight.toLocaleString()} KG</span>
-                                        </div>
-                                    </div>
-                                )}
+                        <div style={{ display: 'grid', gap: '1.25rem' }}>
+                            <div>
+                                <label style={labelStyle}>Length (Metres)</label>
+                                <input type="number" value={editItem.details.metre} onChange={e => setEditItem({ ...editItem, details: { ...editItem.details, metre: e.target.value } })} style={{ width: '100%' }} />
                             </div>
-
-                            {/* ... (date inputs) ... */}
-
-                            <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                                {activeTab !== 'LIVE' && (
-                                    <div style={{ display: 'flex', gap: '0.5rem', background: 'var(--bg-primary)', padding: '0.25rem', borderRadius: '8px' }}>
-                                        <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} style={{ border: 'none', background: 'transparent', padding: '0.4rem' }} />
-                                        <span style={{ opacity: 0.3, alignSelf: 'center' }}>|</span>
-                                        <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} style={{ border: 'none', background: 'transparent', padding: '0.4rem' }} />
-                                    </div>
-                                )}
-                                {activeTab !== 'LIVE' && (
-                                    <button onClick={() => { setActiveTab('LIVE'); setStartDate(''); setEndDate(''); }} className="btn btn-secondary">BACK TO LIVE</button>
-                                )}
+                            <div>
+                                <label style={labelStyle}>Weight (Kilograms)</label>
+                                <input type="number" value={editItem.details.weight} onChange={e => setEditItem({ ...editItem, details: { ...editItem.details, weight: e.target.value } })} style={{ width: '100%' }} />
+                            </div>
+                            <div>
+                                <label style={labelStyle}>Quality Index (%)</label>
+                                <input type="number" value={editItem.details.percentage} onChange={e => setEditItem({ ...editItem, details: { ...editItem.details, percentage: e.target.value } })} style={{ width: '100%' }} />
+                            </div>
+                            <div>
+                                <label style={labelStyle}>Flow Status</label>
+                                <select
+                                    value={editItem.type}
+                                    onChange={e => setEditItem({ ...editItem, type: e.target.value })}
+                                    style={{ width: '100%', padding: '0.8rem', background: 'var(--bg-primary)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '8px' }}
+                                >
+                                    <option value="IN">STOCK-IN</option>
+                                    <option value="OUT">DISPATCH (OUT)</option>
+                                </select>
                             </div>
                         </div>
 
-                        <div style={{ width: '100%' }}>
-                            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                                <thead style={{ position: 'sticky', top: 0, zIndex: 1, background: 'var(--table-header-bg)' }}>
-                                    <tr>
-                                        <th style={thStyle}>TIMESTAMPS</th>
-                                        <th style={thStyle}>BARCODE ID</th>
-                                        <th style={thStyle}>FLOW STATUS</th>
-                                        <th style={thStyle}>METRICS (M/KG)</th>
-                                        {(activeTab === 'totalRolls' || activeTab === 'stockIn' || activeTab === 'missingCount') && <th style={{ ...thStyle, textAlign: 'right' }}>CONTROL</th>}
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {displayList.length === 0 ? (
-                                        <tr><td colSpan="5" style={{ padding: '4rem', textAlign: 'center', color: 'var(--text-secondary)' }}>No transactions recorded in this period.</td></tr>
-                                    ) : displayList.map((log, i) => {
-                                        const isMissing = activeTab === 'missingCount';
-                                        return (
-                                            <tr key={i} style={{ borderBottom: '1px solid var(--border-color)', background: i % 2 === 0 ? 'var(--row-alt-bg)' : 'transparent' }}>
-                                                <td style={tdStyle}><span style={{ opacity: 0.8, fontWeight: '500' }}>{log.time}</span></td>
-                                                <td style={{ ...tdStyle, fontSize: '1.25rem', fontWeight: '800', color: 'var(--accent-color)', fontFamily: 'monospace' }}>{log.barcode}</td>
-                                                <td style={tdStyle}>
-                                                    <StatusBadge type={log.type} />
-                                                </td>
-                                                <td style={tdStyle}>
-                                                    {log.details?.metre ? (
-                                                        <div style={{ display: 'flex', gap: '1.25rem' }}>
-                                                            <Metric label="M" value={log.details.metre} />
-                                                            <Metric label="KG" value={log.details.weight} />
-                                                            <Metric label="Q" value={Number(log.details.percentage).toFixed(2) + '%'} color={Number(log.details.percentage) < 80 ? 'var(--warning-color)' : 'var(--text-secondary)'} />
-                                                        </div>
-                                                    ) : <span style={{ opacity: 0.4 }}>PENDING REGISTRATION</span>}
-                                                </td>
-                                                {(activeTab === 'totalRolls' || activeTab === 'stockIn' || activeTab === 'missingCount') && (
-                                                    <td style={{ ...tdStyle, textAlign: 'right' }}>
-                                                        <button
-                                                            onClick={() => {
-                                                                const isInvalidType = log.type === 'MISSING' || log.type === 'PENDING' || !log.type;
-                                                                setEditItem({
-                                                                    ...log,
-                                                                    type: isInvalidType ? 'IN' : (log.type === 'OUT' ? 'OUT' : 'IN'),
-                                                                    details: {
-                                                                        metre: log.details.metre || '',
-                                                                        weight: log.details.weight || '',
-                                                                        percentage: log.details.percentage || '100'
-                                                                    }
-                                                                });
-                                                            }}
-                                                            className="btn"
-                                                            title="Edit"
-                                                            style={{
-                                                                padding: '8px',
-                                                                fontSize: '11px',
-                                                                background: 'var(--bg-tertiary)',
-                                                                color: isMissing ? 'var(--warning-color)' : 'inherit',
-                                                                border: isMissing ? '1px solid var(--warning-color)' : 'none',
-                                                                fontWeight: '800',
-                                                                borderRadius: '8px',
-                                                                minWidth: '36px',
-                                                                display: 'inline-flex',
-                                                                alignItems: 'center',
-                                                                justifyContent: 'center'
-                                                            }}
-                                                        >
-                                                            <IconEdit />
-                                                        </button>
-                                                        {activeTab === 'totalRolls' && (
-                                                            <button
-                                                                onClick={() => handleDelete(log.barcode)}
-                                                                className="btn"
-                                                                title="Delete"
-                                                                style={{
-                                                                    padding: '8px',
-                                                                    fontSize: '11px',
-                                                                    marginLeft: '6px',
-                                                                    color: 'var(--error-color)',
-                                                                    border: '1px solid var(--error-color)',
-                                                                    fontWeight: '700',
-                                                                    borderRadius: '8px',
-                                                                    minWidth: '36px',
-                                                                    display: 'inline-flex',
-                                                                    alignItems: 'center',
-                                                                    justifyContent: 'center'
-                                                                }}
-                                                            >
-                                                                <IconTrash />
-                                                            </button>
-                                                        )}
-                                                        {activeTab === 'missingCount' && (
-                                                            <button onClick={() => handleMarkDamaged(log.barcode)} className="btn" style={{ padding: '8px 16px', fontSize: '11px', marginLeft: '6px', color: 'var(--text-secondary)', border: '1px solid var(--border-color)', fontWeight: '700', borderRadius: '8px' }}>IGNORE</button>
-                                                        )}
-                                                    </td>
-                                                )}
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
+                        <div style={{ display: 'flex', gap: '1rem', marginTop: '2rem' }}>
+                            <button onClick={handleSaveEdit} className="btn btn-primary" style={{ flex: 1 }}>SAVE CHANGES</button>
+                            <button onClick={() => setEditItem(null)} className="btn btn-secondary" style={{ flex: 1 }}>DISCARD</button>
+                        </div>
+                    </div>
+                )
+            }
+            {/* Custom Confirmation Modal */}
+            {modalConfig.isOpen && (
+                <div style={modalOverlayStyle}>
+                    <div className="panel animate-fade-in" style={{ width: '400px', borderTop: `4px solid ${modalConfig.type === 'error' ? 'var(--error-color)' : (modalConfig.type === 'success' ? 'var(--success-color)' : 'var(--accent-color)')}` }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                <div style={{
+                                    fontSize: '1.5rem',
+                                    color: modalConfig.type === 'error' ? 'var(--error-color)' : (modalConfig.type === 'success' ? 'var(--success-color)' : 'var(--accent-color)')
+                                }}>
+                                    {modalConfig.type === 'error' ? '⚠️' : (modalConfig.type === 'success' ? '✅' : 'ℹ️')}
+                                </div>
+                                <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: '700' }}>{modalConfig.title}</h3>
+                            </div>
+                            <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', lineHeight: '1.5', margin: 0 }}>
+                                {modalConfig.message}
+                            </p>
+                            <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1rem', justifyContent: 'flex-end' }}>
+                                {modalConfig.type === 'confirm' ? (
+                                    <>
+                                        <button onClick={closeModal} className="btn btn-secondary">Cancel</button>
+                                        <button onClick={() => { modalConfig.onConfirm(); closeModal(); }} className="btn btn-primary">Confirm</button>
+                                    </>
+                                ) : (
+                                    <button onClick={closeModal} className="btn btn-secondary" style={{ width: '100%' }}>Close</button>
+                                )}
+                            </div>
                         </div>
                     </div>
                 </div>
-                {/* Edit Modal */}
-                {
-                    editItem && (
-                        <div className="panel animate-fade-in" style={{ width: '400px' }}>
-                            <h3 style={{ marginBottom: '1rem' }}>Adjust Roll Parameters</h3>
-                            <p style={{ fontSize: '0.8rem', color: 'var(--accent-color)', marginBottom: '1.5rem', fontWeight: '700' }}>ROLL ID: {editItem.barcode}</p>
-
-                            <div style={{ display: 'grid', gap: '1.25rem' }}>
-                                <div>
-                                    <label style={labelStyle}>Length (Metres)</label>
-                                    <input type="number" value={editItem.details.metre} onChange={e => setEditItem({ ...editItem, details: { ...editItem.details, metre: e.target.value } })} style={{ width: '100%' }} />
-                                </div>
-                                <div>
-                                    <label style={labelStyle}>Weight (Kilograms)</label>
-                                    <input type="number" value={editItem.details.weight} onChange={e => setEditItem({ ...editItem, details: { ...editItem.details, weight: e.target.value } })} style={{ width: '100%' }} />
-                                </div>
-                                <div>
-                                    <label style={labelStyle}>Quality Index (%)</label>
-                                    <input type="number" value={editItem.details.percentage} onChange={e => setEditItem({ ...editItem, details: { ...editItem.details, percentage: e.target.value } })} style={{ width: '100%' }} />
-                                </div>
-                                <div>
-                                    <label style={labelStyle}>Flow Status</label>
-                                    <select
-                                        value={editItem.type}
-                                        onChange={e => setEditItem({ ...editItem, type: e.target.value })}
-                                        style={{ width: '100%', padding: '0.8rem', background: 'var(--bg-primary)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '8px' }}
-                                    >
-                                        <option value="IN">STOCK-IN</option>
-                                        <option value="OUT">DISPATCH (OUT)</option>
-                                    </select>
-                                </div>
-                            </div>
-
-                            <div style={{ display: 'flex', gap: '1rem', marginTop: '2rem' }}>
-                                <button onClick={handleSaveEdit} className="btn btn-primary" style={{ flex: 1 }}>SAVE CHANGES</button>
-                                <button onClick={() => setEditItem(null)} className="btn btn-secondary" style={{ flex: 1 }}>DISCARD</button>
-                            </div>
-                        </div>
-                    )
-                }
-                {/* Custom Confirmation Modal */}
-                {modalConfig.isOpen && (
-                    <div style={modalOverlayStyle}>
-                        <div className="panel animate-fade-in" style={{ width: '400px', borderTop: `4px solid ${modalConfig.type === 'error' ? 'var(--error-color)' : (modalConfig.type === 'success' ? 'var(--success-color)' : 'var(--accent-color)')}` }}>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                                    <div style={{
-                                        fontSize: '1.5rem',
-                                        color: modalConfig.type === 'error' ? 'var(--error-color)' : (modalConfig.type === 'success' ? 'var(--success-color)' : 'var(--accent-color)')
-                                    }}>
-                                        {modalConfig.type === 'error' ? '⚠️' : (modalConfig.type === 'success' ? '✅' : 'ℹ️')}
-                                    </div>
-                                    <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: '700' }}>{modalConfig.title}</h3>
-                                </div>
-                                <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', lineHeight: '1.5', margin: 0 }}>
-                                    {modalConfig.message}
-                                </p>
-                                <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1rem', justifyContent: 'flex-end' }}>
-                                    {modalConfig.type === 'confirm' ? (
-                                        <>
-                                            <button onClick={closeModal} className="btn btn-secondary">Cancel</button>
-                                            <button onClick={() => { modalConfig.onConfirm(); closeModal(); }} className="btn btn-primary">Confirm</button>
-                                        </>
-                                    ) : (
-                                        <button onClick={closeModal} className="btn btn-secondary" style={{ width: '100%' }}>Close</button>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                )}
-            </div >
-
-            {/* Detailed View Modal Integration */}
-            <DetailedViewModal
-                isOpen={detailedView.isOpen}
-                onClose={() => setDetailedView({ ...detailedView, isOpen: false })}
-                type={detailedView.type}
-                apiUrl={apiUrl}
-            />
-        </>
+            )}
+        </div >
     );
 };
+
 
 // --- Sub-components ---
 
