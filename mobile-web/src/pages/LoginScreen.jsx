@@ -29,7 +29,7 @@ const LoginScreen = () => {
     return (
         <div className="min-h-screen bg-primary flex flex-col">
             {/* StatusBar */}
-            <StatusBar 
+            <StatusBar
                 icon="👤"
                 title="Worker Login"
                 subtitle={`Device: ${scannerId?.slice(0, 8)}...`}
@@ -40,24 +40,22 @@ const LoginScreen = () => {
                 <div className="absolute w-96 h-96 bg-accent/5 rounded-full blur-3xl"></div>
                 <div className="absolute -top-40 -right-40 w-80 h-80 bg-accent/3 rounded-full blur-3xl"></div>
             </div>
-            
+
             <div className="relative flex-1 flex flex-col items-center justify-center px-6 py-12">
                 {/* Header Section */}
                 <div className="w-full max-w-sm mb-12 text-center">
-                    {/* Logo Circle - Desktop Style */}
+                    {/* Logo */}
                     <div className="flex justify-center mb-8">
-                        <div className="w-20 h-20 rounded-3xl flex items-center justify-center"
-                             style={{
-                               backgroundImage: 'linear-gradient(to bottom right, #6366f1, #4f46e5)',
-                               boxShadow: '0 10px 30px rgba(99, 102, 241, 0.3)'
-                             }}>
-                            <span className="text-3xl font-bold text-white">S</span>
-                        </div>
+                        <img
+                            src="/logo.svg"
+                            alt="Logo"
+                            className="w-24 h-24 filter drop-shadow-xl"
+                        />
                     </div>
-                    
-                    <h1 className="text-3xl font-bold text-textPrimary mb-2">SRI LAKSHMI</h1>
-                    <p className="text-textSecondary text-sm font-medium mb-8">Stock Management Console</p>
-                    
+
+                    <h1 className="text-3xl font-bold text-textPrimary mb-2">PRODEXA</h1>
+                    <p className="text-textSecondary text-sm font-medium mb-8">Inventory for Sri Lakshmi Textiles</p>
+
                     {/* Device Info Card - Desktop Glass Style */}
                     <div className="glass rounded-xl p-4 mb-8">
                         <p className="text-xs text-textSecondary font-semibold uppercase tracking-wider mb-2">Connected Device</p>
@@ -101,8 +99,8 @@ const LoginScreen = () => {
                     </div>
 
                     {/* Authenticate Button - Desktop Style */}
-                    <button 
-                        type="submit" 
+                    <button
+                        type="submit"
                         disabled={loading}
                         className="w-full mt-6 px-4 py-3 btn-primary uppercase tracking-wider font-bold"
                     >
@@ -120,9 +118,9 @@ const LoginScreen = () => {
                     </div>
 
                     {/* Unpair Button - Desktop Style */}
-                    <button 
+                    <button
                         type="button"
-                        onClick={unpair} 
+                        onClick={unpair}
                         className="w-full px-4 py-3 btn-secondary"
                     >
                         Unpair This Device

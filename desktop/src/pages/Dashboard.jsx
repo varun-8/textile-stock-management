@@ -411,8 +411,8 @@ const Dashboard = () => {
                         </div>
                     </div>
 
-                    <div style={{ width: '100%' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <div style={{ width: '100%', overflowX: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1000px' }}>
                             <thead style={{ position: 'sticky', top: 0, zIndex: 1, background: 'var(--table-header-bg)' }}>
                                 <tr>
                                     <th style={thStyle}>TIMESTAMPS</th>
@@ -436,7 +436,7 @@ const Dashboard = () => {
                                             </td>
                                             <td style={tdStyle}>
                                                 {log.details?.metre ? (
-                                                    <div style={{ display: 'flex', gap: '1.25rem' }}>
+                                                    <div style={{ display: 'flex', gap: '0.5rem' }}>
                                                         <Metric label="M" value={log.details.metre} />
                                                         <Metric label="KG" value={log.details.weight} />
                                                         <Metric label="Q" value={Number(log.details.percentage).toFixed(2) + '%'} color={Number(log.details.percentage) < 80 ? 'var(--warning-color)' : 'var(--text-secondary)'} />
@@ -492,39 +492,41 @@ const Dashboard = () => {
             {/* Edit Modal */}
             {
                 editItem && (
-                    <div className="panel animate-fade-in" style={{ width: '400px', position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 200, boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)' }}>
-                        <h3 style={{ marginBottom: '1rem' }}>Adjust Roll Parameters</h3>
-                        <p style={{ fontSize: '0.8rem', color: 'var(--accent-color)', marginBottom: '1.5rem', fontWeight: '700' }}>ROLL ID: {editItem.barcode}</p>
+                    <div style={modalOverlayStyle}>
+                        <div className="panel animate-fade-in" style={{ width: '400px', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)' }}>
+                            <h3 style={{ marginBottom: '1rem' }}>Adjust Roll Parameters</h3>
+                            <p style={{ fontSize: '0.8rem', color: 'var(--accent-color)', marginBottom: '1.5rem', fontWeight: '700' }}>ROLL ID: {editItem.barcode}</p>
 
-                        <div style={{ display: 'grid', gap: '1.25rem' }}>
-                            <div>
-                                <label style={labelStyle}>Length (Metres)</label>
-                                <input type="number" value={editItem.details.metre} onChange={e => setEditItem({ ...editItem, details: { ...editItem.details, metre: e.target.value } })} style={{ width: '100%' }} />
+                            <div style={{ display: 'grid', gap: '1.25rem' }}>
+                                <div>
+                                    <label style={labelStyle}>Length (Metres)</label>
+                                    <input type="number" value={editItem.details.metre} onChange={e => setEditItem({ ...editItem, details: { ...editItem.details, metre: e.target.value } })} style={{ width: '100%' }} />
+                                </div>
+                                <div>
+                                    <label style={labelStyle}>Weight (Kilograms)</label>
+                                    <input type="number" value={editItem.details.weight} onChange={e => setEditItem({ ...editItem, details: { ...editItem.details, weight: e.target.value } })} style={{ width: '100%' }} />
+                                </div>
+                                <div>
+                                    <label style={labelStyle}>Quality Index (%)</label>
+                                    <input type="number" value={editItem.details.percentage} onChange={e => setEditItem({ ...editItem, details: { ...editItem.details, percentage: e.target.value } })} style={{ width: '100%' }} />
+                                </div>
+                                <div>
+                                    <label style={labelStyle}>Flow Status</label>
+                                    <select
+                                        value={editItem.type}
+                                        onChange={e => setEditItem({ ...editItem, type: e.target.value })}
+                                        style={{ width: '100%', padding: '0.8rem', background: 'var(--bg-primary)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '8px' }}
+                                    >
+                                        <option value="IN">STOCK-IN</option>
+                                        <option value="OUT">DISPATCH (OUT)</option>
+                                    </select>
+                                </div>
                             </div>
-                            <div>
-                                <label style={labelStyle}>Weight (Kilograms)</label>
-                                <input type="number" value={editItem.details.weight} onChange={e => setEditItem({ ...editItem, details: { ...editItem.details, weight: e.target.value } })} style={{ width: '100%' }} />
-                            </div>
-                            <div>
-                                <label style={labelStyle}>Quality Index (%)</label>
-                                <input type="number" value={editItem.details.percentage} onChange={e => setEditItem({ ...editItem, details: { ...editItem.details, percentage: e.target.value } })} style={{ width: '100%' }} />
-                            </div>
-                            <div>
-                                <label style={labelStyle}>Flow Status</label>
-                                <select
-                                    value={editItem.type}
-                                    onChange={e => setEditItem({ ...editItem, type: e.target.value })}
-                                    style={{ width: '100%', padding: '0.8rem', background: 'var(--bg-primary)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '8px' }}
-                                >
-                                    <option value="IN">STOCK-IN</option>
-                                    <option value="OUT">DISPATCH (OUT)</option>
-                                </select>
-                            </div>
-                        </div>
 
-                        <div style={{ display: 'flex', gap: '1rem', marginTop: '2rem' }}>
-                            <button onClick={handleSaveEdit} className="btn btn-primary" style={{ flex: 1 }}>SAVE CHANGES</button>
-                            <button onClick={() => setEditItem(null)} className="btn btn-secondary" style={{ flex: 1 }}>DISCARD</button>
+                            <div style={{ display: 'flex', gap: '1rem', marginTop: '2rem' }}>
+                                <button onClick={handleSaveEdit} className="btn btn-primary" style={{ flex: 1 }}>SAVE CHANGES</button>
+                                <button onClick={() => setEditItem(null)} className="btn btn-secondary" style={{ flex: 1 }}>DISCARD</button>
+                            </div>
                         </div>
                     </div>
                 )
@@ -583,15 +585,15 @@ const StatusBadge = ({ type }) => {
 };
 
 const Metric = ({ label, value, color }) => (
-    <div style={{ display: 'flex', alignItems: 'flex-start', flexDirection: 'column', gap: '2px', background: 'var(--bg-primary)', padding: '0.5rem 1rem', borderRadius: '8px', border: '1px solid var(--border-color)', minWidth: '80px' }}>
+    <div style={{ display: 'flex', alignItems: 'flex-start', flexDirection: 'column', gap: '2px', background: 'var(--bg-primary)', padding: '0.4rem 0.6rem', borderRadius: '8px', border: '1px solid var(--border-color)', minWidth: '70px' }}>
         <span style={{ fontSize: '0.7rem', fontWeight: '800', opacity: 0.5, letterSpacing: '0.05em' }}>{label}</span>
         <span style={{ fontSize: '1.2rem', fontWeight: '800', color: color || 'inherit', fontFamily: 'monospace' }}>{value}</span>
     </div>
 );
 
 // --- Styles ---
-const thStyle = { padding: '1.25rem 2rem', textAlign: 'left', fontSize: '0.85rem', fontWeight: '800', letterSpacing: '0.05em', color: 'var(--text-secondary)', textTransform: 'uppercase' };
-const tdStyle = { padding: '1rem 2rem', fontSize: '1.05rem', fontWeight: '500' };
+const thStyle = { padding: '1rem 1rem', textAlign: 'left', fontSize: '0.8rem', fontWeight: '800', letterSpacing: '0.05em', color: 'var(--text-secondary)', textTransform: 'uppercase' };
+const tdStyle = { padding: '0.8rem 1rem', fontSize: '1rem', fontWeight: '500' };
 const modalOverlayStyle = { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'var(--modal-overlay)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 };
 const labelStyle = { display: 'block', marginBottom: '0.4rem', fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.6 };
 

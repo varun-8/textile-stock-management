@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { IconBroadcast, IconPlus, IconTrash } from '../components/Icons';
+import { io } from "socket.io-client";
 
 const Sessions = () => {
     const [sessions, setSessions] = useState([]);
@@ -21,6 +22,41 @@ const Sessions = () => {
     // Report Preview State
     const [showReportModal, setShowReportModal] = useState(false);
     const [reportData, setReportData] = useState(null);
+
+    // Live View State
+    const [showLiveView, setShowLiveView] = useState(false);
+    const [liveSession, setLiveSession] = useState(null);
+    const [liveScans, setLiveScans] = useState([]);
+
+    // Socket Connection
+    useEffect(() => {
+        const socket = io('https://stock-system.local:5000', {
+            rejectUnauthorized: false,
+            transports: ['websocket', 'polling']
+        });
+
+        socket.on('stock_update', (data) => {
+            if (showLiveView && liveSession && data.sessionId === liveSession._id) {
+                setLiveScans(prev => [data, ...prev].slice(0, 50)); // Keep last 50
+            }
+            // Also refresh stats if in list view
+            if (!showLiveView) {
+                fetchSessions();
+            }
+        });
+
+        socket.on('session_update', () => {
+            fetchSessions();
+        });
+
+        return () => socket.disconnect();
+    }, [showLiveView, liveSession]);
+
+    const openLiveView = (session) => {
+        setLiveSession(session);
+        setLiveScans([]); // Clear previous
+        setShowLiveView(true);
+    };
 
     const fetchSessions = async () => {
         try {
@@ -63,7 +99,7 @@ const Sessions = () => {
         const interval = setInterval(() => {
             fetchSessions();
             fetchHistory();
-        }, 5000);
+        }, 2000); // Poll every 2 seconds for faster updates
         return () => clearInterval(interval);
     }, []);
 
@@ -219,6 +255,12 @@ const Sessions = () => {
 
                                     <div style={{ marginTop: '2rem', paddingTop: '1rem', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                         <div>
+                                            <div style={{ fontSize: '0.7rem', opacity: 0.5 }}>SCANNED</div>
+                                            <div style={{ fontSize: '1.5rem', fontWeight: '700', color: 'var(--accent-color)' }}>
+                                                {session.scannedCount || 0}
+                                            </div>
+                                        </div>
+                                        <div>
                                             <div style={{ fontSize: '0.7rem', opacity: 0.5 }}>STARTED AT</div>
                                             <div style={{ fontSize: '0.9rem', fontFamily: 'monospace' }}>
                                                 {new Date(session.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -234,6 +276,16 @@ const Sessions = () => {
                                             title="End Session"
                                         >
                                             <IconTrash /> END SESSION
+                                        </button>
+                                        <button
+                                            onClick={() => openLiveView(session)}
+                                            style={{
+                                                background: 'var(--accent-color)', color: 'white', border: 'none',
+                                                padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px',
+                                                fontWeight: '600', marginLeft: '10px'
+                                            }}
+                                        >
+                                            <IconBroadcast /> LIVE VIEW
                                         </button>
                                     </div>
                                 </div>
@@ -311,6 +363,95 @@ const Sessions = () => {
                     </div>
                 </div>
             </div>
+
+            {/* LIVE VIEW MODAL */}
+            {showLiveView && liveSession && (
+                <div style={{
+                    position: 'fixed', inset: 0, zIndex: 1100,
+                    background: 'var(--modal-overlay)', backdropFilter: 'blur(5px)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center'
+                }}>
+                    <div className="panel animate-fade-in" style={{ width: '90%', maxWidth: '900px', height: '80vh', display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' }}>
+                        {/* Live Header */}
+                        <div style={{ padding: '1.5rem 2rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-secondary)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                <div className="live-indicator">
+                                    <span className="blink">●</span> LIVE FEED
+                                </div>
+                                <div style={{ height: '20px', width: '1px', background: 'var(--border-color)' }}></div>
+                                <div>
+                                    <h2 style={{ fontSize: '1.2rem', margin: 0 }}>Session Monitor</h2>
+                                    <div style={{ fontSize: '0.8rem', opacity: 0.6 }}>target size {liveSession.targetSize} • {liveSession.type} Flow</div>
+                                </div>
+                            </div>
+                            <button onClick={() => setShowLiveView(false)} className="btn" style={{ padding: '8px 16px', border: '1px solid var(--border-color)', background: 'transparent' }}>CLOSE MONITOR</button>
+                        </div>
+
+                        <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+                            {/* Stats Side */}
+                            <div style={{ width: '250px', padding: '1.5rem', borderRight: '1px solid var(--border-color)', background: 'rgba(0,0,0,0.1)' }}>
+                                <div style={{ marginBottom: '2rem' }}>
+                                    <div style={{ fontSize: '0.7rem', fontWeight: '800', opacity: 0.5, marginBottom: '0.5rem' }}>ACTIVE SCANNERS</div>
+                                    <div style={{ fontSize: '2.5rem', fontWeight: '800', color: 'var(--accent-color)' }}>
+                                        {liveSession.activeScanners ? liveSession.activeScanners.length : 0}
+                                    </div>
+                                    <div style={{ fontSize: '0.8rem', opacity: 0.7 }}>Devices Connected</div>
+                                </div>
+
+                                <div>
+                                    <div style={{ fontSize: '0.7rem', fontWeight: '800', opacity: 0.5, marginBottom: '0.5rem' }}>SESSION TOTAL</div>
+                                    <div style={{ fontSize: '2.5rem', fontWeight: '800' }}>
+                                        {liveScans.length + (liveSession.scannedCount || 0)}
+                                    </div>
+                                    <div style={{ fontSize: '0.8rem', opacity: 0.7 }}>Items Scanned</div>
+                                </div>
+                            </div>
+
+                            {/* Live Feed */}
+                            <div style={{ flex: 1, padding: '0', overflowY: 'auto', background: 'var(--bg-primary)' }}>
+                                {liveScans.length === 0 ? (
+                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', opacity: 0.4 }}>
+                                        <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>📡</div>
+                                        <p>Waiting for incoming scans...</p>
+                                    </div>
+                                ) : (
+                                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                        <thead style={{ position: 'sticky', top: 0, background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)' }}>
+                                            <tr>
+                                                <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '0.75rem', opacity: 0.6 }}>TIME</th>
+                                                <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '0.75rem', opacity: 0.6 }}>BARCODE</th>
+                                                <th style={{ padding: '12px 20px', textAlign: 'right', fontSize: '0.75rem', opacity: 0.6 }}>METRE</th>
+                                                <th style={{ padding: '12px 20px', textAlign: 'right', fontSize: '0.75rem', opacity: 0.6 }}>WEIGHT</th>
+                                                <th style={{ padding: '12px 20px', textAlign: 'right', fontSize: '0.75rem', opacity: 0.6 }}>USER</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {liveScans.map((scan, i) => (
+                                                <tr key={i} className="animate-slide-in" style={{ borderBottom: '1px solid var(--border-color)', animationDelay: `${i * 0.05}s` }}>
+                                                    <td style={{ padding: '12px 20px', fontFamily: 'monospace' }}>
+                                                        {new Date(scan.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                                    </td>
+                                                    <td style={{ padding: '12px 20px', fontWeight: 'bold', color: 'var(--accent-color)', fontFamily: 'monospace' }}>
+                                                        {scan.barcode}
+                                                    </td>
+                                                    <td style={{ padding: '12px 20px', textAlign: 'right' }}>{scan.details?.metre}</td>
+                                                    <td style={{ padding: '12px 20px', textAlign: 'right' }}>{scan.details?.weight}</td>
+                                                    <td style={{ padding: '12px 20px', textAlign: 'right', opacity: 0.8 }}>{scan.user || 'Unknown'}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                    <style>{`
+                        .blink { animation: blinker 1.5s linear infinite; color: var(--error-color); margin-right: 6px; }
+                        @keyframes blinker { 50% { opacity: 0; } }
+                        .live-indicator { display: flex; alignItems: center; font-size: 0.75rem; font-weight: 800; letter-spacing: 1px; color: var(--error-color); background: rgba(239, 68, 68, 0.1); padding: 4px 10px; border-radius: 20px; border: 1px solid rgba(239, 68, 68, 0.2); }
+                    `}</style>
+                </div>
+            )}
 
             {/* PREVIEW MODAL */}
             {showPreview && previewStats && (

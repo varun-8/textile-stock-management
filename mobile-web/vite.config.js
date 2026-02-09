@@ -13,7 +13,16 @@ export default defineConfig({
   // Build to backend public folder so it's served by the server
   build: {
     outDir: '../backend/public/pwa',
-    emptyOutDir: true
+    emptyOutDir: true,
+    chunkSizeWarningLimit: 1000,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'html5-qrcode': ['html5-qrcode'],
+          'axios': ['axios']
+        }
+      }
+    }
   },
   base: '/pwa/'
 })

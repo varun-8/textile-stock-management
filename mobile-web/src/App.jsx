@@ -24,7 +24,49 @@ const SessionGuard = ({ children }) => {
 };
 
 function AppContent() {
-  const { scannerId } = useMobile();
+  const { scannerId, scannerDeletedError, setScannerDeletedError } = useMobile();
+
+  // If scanner was deleted - show error screen
+  if (scannerDeletedError) {
+    return (
+      <div style={{
+        height: '100vh',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: '#0f172a',
+        color: '#f8fafc',
+        padding: '20px',
+        textAlign: 'center'
+      }}>
+        <div style={{ marginBottom: '20px', fontSize: '48px' }}>⚠️</div>
+        <h1 style={{ fontSize: '24px', fontWeight: 'bold', margin: '0 0 10px' }}>Site Cannot Be Reached</h1>
+        <p style={{ fontSize: '14px', color: '#94a3b8', maxWidth: '300px', margin: '0 0 30px', lineHeight: '1.5' }}>
+          {scannerDeletedError}
+        </p>
+        <button
+          onClick={() => {
+            localStorage.clear();
+            setScannerDeletedError(null);
+            window.location.reload();
+          }}
+          style={{
+            padding: '12px 24px',
+            background: '#6366f1',
+            color: 'white',
+            border: 'none',
+            borderRadius: '8px',
+            fontWeight: '600',
+            cursor: 'pointer',
+            fontSize: '14px'
+          }}
+        >
+          Pair New Device
+        </button>
+      </div>
+    );
+  }
 
   // If no scanner ID, show setup screen (Global check)
   if (!scannerId) {
@@ -38,19 +80,20 @@ function AppContent() {
   return (
     <Routes>
       <Route path="/pin" element={<PinScreen />} />
-      <Route path="/session" element={
+      <Route path="/sessions" element={
         <ProtectedRoute>
           <SessionManager />
         </ProtectedRoute>
       } />
-      <Route path="/" element={
+      <Route path="/work" element={
         <ProtectedRoute>
           <SessionGuard>
             <WorkScreen />
           </SessionGuard>
         </ProtectedRoute>
       } />
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route path="/" element={<Navigate to="/sessions" replace />} />
+      <Route path="*" element={<Navigate to="/sessions" replace />} />
     </Routes>
   );
 }

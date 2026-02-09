@@ -7,8 +7,49 @@ const ExcelJS = require('exceljs');
 // Get Active Sessions
 router.get('/active', async (req, res) => {
     try {
-        const sessions = await Session.find({ status: 'ACTIVE' }).sort({ createdAt: -1 });
-        res.json(sessions);
+        const Session = require('../models/Session');
+        const Scanner = require('../models/Scanner');
+
+        // 1. Fetch active sessions
+        let sessions = await Session.find({ status: 'ACTIVE' }).sort({ createdAt: -1 });
+
+        // 2. Cleanup stale scanners (lazy cleanup on read)
+        const TWO_MINUTES_AGO = new Date(Date.now() - 2 * 60 * 1000);
+
+        // Parallel cleanups for all sessions
+        await Promise.all(sessions.map(async (session) => {
+            if (session.activeScanners && session.activeScanners.length > 0) {
+                // Find scanners that are still "alive" (seen recently)
+                const activeScanners = await Scanner.find({
+                    uuid: { $in: session.activeScanners },
+                    lastSeen: { $gte: TWO_MINUTES_AGO }
+                }).select('uuid');
+
+                const activeScannerIds = activeScanners.map(s => s.uuid);
+
+                // If count changed, update the session
+                if (activeScannerIds.length !== session.activeScanners.length) {
+                    session.activeScanners = activeScannerIds;
+                    await session.save();
+                }
+            }
+        }));
+
+        // 3. Re-fetch or use updated sessions (documents are updated in memory by save())
+        // Continue with population logic...
+
+        // Populate scanned count for each session
+        const sessionsWithCount = await Promise.all(sessions.map(async (session) => {
+            const scannedCount = await ClothRoll.countDocuments({
+                sessionId: session._id
+            });
+            return {
+                ...session.toObject(),
+                scannedCount
+            };
+        }));
+
+        res.json(sessionsWithCount);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -45,7 +86,8 @@ router.post('/create', async (req, res) => {
             type,
             targetSize,
             createdBy: createdBy || 'Admin',
-            status: 'ACTIVE'
+            status: 'ACTIVE',
+            activeScanners: [] // Initialize as empty - scanners join explicitly
         });
 
         await session.save();
@@ -64,6 +106,9 @@ router.post('/create', async (req, res) => {
 router.post('/join', async (req, res) => {
     try {
         const { sessionId, scannerId } = req.body;
+        const headerScannerId = req.headers['x-scanner-id'];
+        const effectiveScannerId = scannerId || headerScannerId;
+        console.log('📥 Join request received:', { sessionId, scannerId, headerScannerId, effectiveScannerId });
 
         const session = await Session.findById(sessionId);
         if (!session) {
@@ -74,10 +119,77 @@ router.post('/join', async (req, res) => {
             return res.status(400).json({ error: 'Session is not active' });
         }
 
-        // Add scanner to active list if not present
-        if (scannerId && !session.activeScanners.includes(scannerId)) {
-            session.activeScanners.push(scannerId);
+        if (effectiveScannerId) {
+            // CRITICAL FIX: Ensure scanner is removed from ALL other active sessions first
+            // This prevents "double counting" when switching sessions immediately
+            await Session.updateMany(
+                {
+                    status: 'ACTIVE',
+                    activeScanners: effectiveScannerId,
+                    _id: { $ne: sessionId } // Don't remove from target if already there (handled below)
+                },
+                { $pull: { activeScanners: effectiveScannerId } }
+            );
+
+            // Add scanner to active list if not present
+            if (!session.activeScanners.includes(effectiveScannerId)) {
+                session.activeScanners.push(effectiveScannerId);
+                await session.save();
+                console.log('✅ Added scanner to session:', effectiveScannerId);
+            }
+
+            // UPDATE LAST SEEN to prevent immediate cleanup
+            const Scanner = require('../models/Scanner');
+            await Scanner.findOneAndUpdate(
+                { uuid: effectiveScannerId },
+                { lastSeen: new Date() }
+            );
+
+            // REAL-TIME UPDATE
+            if (req.io) {
+                const updatedSession = await Session.findById(sessionId); // Get fresh data
+                req.io.emit('session_update', { action: 'UPDATE', session: updatedSession });
+            }
+        }
+
+        res.json({ success: true, session });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Leave Session (PWA Scanner)
+router.post('/:id/leave', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { scannerId } = req.body;
+        const headerScannerId = req.headers['x-scanner-id'];
+        const effectiveScannerId = scannerId || headerScannerId;
+        console.log('📤 Leave request received:', { id, scannerId, headerScannerId, effectiveScannerId });
+
+        const session = await Session.findById(id);
+        if (!session) {
+            return res.status(404).json({ error: 'Session not found' });
+        }
+
+        // Remove scanner from active list
+        if (effectiveScannerId && session.activeScanners.includes(effectiveScannerId)) {
+            session.activeScanners = session.activeScanners.filter(id => id !== effectiveScannerId);
             await session.save();
+            console.log('✅ Scanner removed from session:', effectiveScannerId);
+        } else if (session.activeScanners.length === 1) {
+            // Fallback: If only 1 scanner is there, assume it's the one leaving (Fixes ghost ids)
+            const removed = session.activeScanners[0];
+            session.activeScanners = [];
+            await session.save();
+            console.log('✅ Fallback removed sole scanner (ID Mismatch or Missing):', removed);
+        } else {
+            console.log('ℹ️ No scanner removed:', { effectiveScannerId, current: session.activeScanners });
+        }
+
+        if (req.io) {
+            const updatedSession = await Session.findById(id);
+            req.io.emit('session_update', { action: 'UPDATE', session: updatedSession });
         }
 
         res.json({ success: true, session });

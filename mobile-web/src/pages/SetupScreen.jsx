@@ -44,19 +44,91 @@ const SetupScreen = () => {
         const params = new URLSearchParams(window.location.search);
         const serverParam = params.get('server');
         const tokenParam = params.get('token');
+        const scannerIdParam = params.get('scannerId'); // NEW
+        const nameParam = params.get('name'); // NEW
 
         if (serverParam && tokenParam) {
-            console.log('🔗 Deep Link Detected');
-            setPendingUrlPair({ token: tokenParam, server: serverParam });
+            console.log('🔗 Deep Link Detected - Auto-triggering pairing');
+
+            // 🧹 IMMEDIATELY Clear URL to prevent reload loops
+            // We do this BEFORE pairing succeeds to ensure safety
+            const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
+            window.history.replaceState({ path: cleanUrl }, '', cleanUrl);
+
+            setPendingUrlPair({ token: tokenParam, server: serverParam, scannerId: scannerIdParam });
             // Auto-trigger pairing
-            executePairing(tokenParam, serverParam, 'AUTO_ASSIGN');
+            executePairing(tokenParam, serverParam, nameParam || 'AUTO_ASSIGN', scannerIdParam);
         } else {
             // Auto-advance to SCAN (Skip manual name entry)
             setStep('SCAN');
         }
     }, []);
 
-    // ... (Camera Management stays same)
+    // --- CAMERA MANAGEMENT ---
+    const startCamera = async () => {
+        try {
+            if (html5QrCodeRef.current) return;
+
+            console.log('📱 Starting QR camera...');
+            setCameraError(null);
+
+            const html5QrCode = new Html5Qrcode("setup-setup-reader");
+            html5QrCodeRef.current = html5QrCode;
+
+            const config = {
+                fps: 5,
+                qrbox: { width: 250, height: 250 },
+                disableFlip: false,
+                experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+                formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE]
+            };
+
+            await html5QrCode.start(
+                { facingMode: "environment" },
+                config,
+                (decodedText) => {
+                    if (isScanningRef.current) return;
+                    if (decodedText && decodedText.length > 0) {
+                        isScanningRef.current = true;
+                        handleQRScan(decodedText);
+                    }
+                },
+                (errorMessage) => { /* Silent error handling */ }
+            );
+
+            console.log('✅ QR Camera started successfully');
+        } catch (err) {
+            console.error('❌ Camera error:', err);
+            setCameraError(`Camera Error: ${err.message || err.name}`);
+            html5QrCodeRef.current = null;
+        }
+    };
+
+    const stopCamera = async () => {
+        try {
+            if (html5QrCodeRef.current) {
+                if (html5QrCodeRef.current.isScanning) {
+                    await html5QrCodeRef.current.stop();
+                }
+                html5QrCodeRef.current.clear();
+                html5QrCodeRef.current = null;
+            }
+        } catch (e) {
+            console.warn('⚠️ Error stopping camera:', e);
+            html5QrCodeRef.current = null;
+        }
+    };
+
+    // Start camera when entering SCAN step
+    useEffect(() => {
+        if (step === 'SCAN') {
+            startCamera();
+        } else {
+            stopCamera();
+        }
+
+        return () => stopCamera();
+    }, [step]);
 
     // 3. Actions
     // handleNameSubmit is effectively deprecated but kept safe
@@ -68,15 +140,19 @@ const SetupScreen = () => {
         stopCamera();
         haptic.success();
         setIsConnecting(true);
+        isScanningRef.current = false; // Reset flag
 
         try {
             // Parse QR
-            let token, server;
+            let token, server, scannerId, name;
             if (decodedText.startsWith('http')) {
                 const url = new URL(decodedText);
                 server = url.searchParams.get('server');
                 token = url.searchParams.get('token');
+                scannerId = url.searchParams.get('scannerId');
+                name = url.searchParams.get('name');
             } else {
+                // Fallback for JSON (unlikely used now but safe to keep)
                 const data = JSON.parse(decodedText);
                 token = data.id;
                 server = data.url;
@@ -84,10 +160,11 @@ const SetupScreen = () => {
 
             if (!server || !token) throw new Error("Invalid QR Code");
 
-            // Send AUTO_ASSIGN for the name
-            executePairing(token, server, 'AUTO_ASSIGN');
+            // Send AUTO_ASSIGN for the name if not provided
+            executePairing(token, server, name || 'AUTO_ASSIGN', scannerId);
         } catch (err) {
             console.error(err);
+            isScanningRef.current = false; // Reset on error
             handlePairError("Invalid QR Code. Try again.");
         }
     };
@@ -103,14 +180,14 @@ const SetupScreen = () => {
         executePairing("FACTORY_SETUP_2026", url, 'AUTO_ASSIGN');
     };
 
-    const executePairing = async (token, url, nameOverride = null) => {
+    const executePairing = async (token, url, nameOverride = null, scannerId = null) => {
         setIsConnecting(true);
         setStep('CONNECTING');
 
         try {
             // Use override or 'AUTO_ASSIGN' if not provided
             const finalName = nameOverride || 'AUTO_ASSIGN';
-            await pairScanner(token, url, finalName);
+            await pairScanner(token, url, finalName, scannerId);
             // Success -> App component handles redirect based on context
         } catch (err) {
             handlePairError(err.message || 'Connection Failed');
@@ -121,14 +198,23 @@ const SetupScreen = () => {
         setIsConnecting(false);
         setError(msg);
         haptic.error();
-        // If we were scanning, go back to scan
-        if (step === 'CONNECTING' && !pendingUrlPair) {
+        
+        // Check for specific error types
+        const isAlreadyPaired = msg.includes('already paired') || msg.includes('ALREADY_PAIRED');
+        const isDuplicate = msg.includes('DUPLICATE_DEVICE') || msg.includes('already paired');
+        
+        // If we were scanning, go back to scan (unless it's a fundamental issue)
+        if (step === 'CONNECTING' && !pendingUrlPair && !isAlreadyPaired) {
             setTimeout(() => {
                 setError(null);
                 setStep('SCAN'); // Restart camera
-            }, 2500);
+            }, 3000);
+        } else if (isAlreadyPaired) {
+            // For already-paired, stay on error screen and show options
+            // Don't auto-retry, user must clear data or use repair link
+            setStep('SCAN');
         } else {
-            // If deep link failed, stay on name screen?
+            // If deep link failed, stay on name screen
             setStep('NAME');
         }
     };
@@ -302,8 +388,9 @@ const btnSecondaryStyle = {
 };
 
 const errorMessageStyle = {
-    background: 'rgba(239, 68, 68, 0.15)', color: THEME.error, padding: '12px',
-    borderRadius: '12px', marginBottom: '20px', fontSize: '14px', fontWeight: '600'
+    background: 'rgba(239, 68, 68, 0.15)', color: THEME.error, padding: '16px',
+    borderRadius: '12px', marginBottom: '20px', fontSize: '13px', fontWeight: '600',
+    lineHeight: '1.5', whiteSpace: 'pre-wrap', wordBreak: 'break-word'
 };
 
 // Camera Overlays

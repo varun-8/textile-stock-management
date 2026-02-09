@@ -10,7 +10,7 @@ const auditLogSchema = new mongoose.Schema({
         type: String, // Username or User ID
         default: 'System'
     },
-    employeeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Employee' },
+    employeeId: { type: String, ref: 'Employee' },
     employeeName: String,
     details: {
         type: Object

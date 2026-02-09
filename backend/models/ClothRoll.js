@@ -12,7 +12,7 @@ const transactionSchema = new mongoose.Schema({
     },
     details: String,
     userId: String, // Legacy Admin ID
-    employeeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Employee' },
+    employeeId: String, // Employee ID (E001, E002, etc.)
     employeeName: String, // Snapshot for history
     action: { type: String, enum: ['SCAN', 'BATCH'] }, // Optional context
     sessionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Session' } // Link to Session

@@ -2,13 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { useConfig } from '../context/ConfigContext';
 import axios from 'axios';
 import QRCode from 'react-qr-code';
-import { IconBroadcast, IconTrash, IconScan } from '../components/Icons';
+import { IconBroadcast, IconTrash, IconScan, IconX } from '../components/Icons';
 
 const Scanners = () => {
     const { apiUrl } = useConfig();
     const [scanners, setScanners] = useState([]);
     const [setupToken] = useState('FACTORY_SETUP_2026');
-    const [showQr, setShowQr] = useState(false);
+    const [qrTarget, setQrTarget] = useState(null); // null, 'NEW', or scanner object
     const [serverIp, setServerIp] = useState('');
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
@@ -23,8 +23,8 @@ const Scanners = () => {
 
     // Fetch IP when QR modal opens
     useEffect(() => {
-        if (showQr && !serverIp) fetchServerIp();
-    }, [showQr, serverIp]); // Optimized dependency
+        if (qrTarget && !serverIp) fetchServerIp();
+    }, [qrTarget, serverIp]); // Optimized dependency
 
     const fetchServerIp = async () => {
         try {
@@ -38,9 +38,17 @@ const Scanners = () => {
 
     const fetchScanners = async () => {
         try {
-            if (scanners.length === 0) setLoading(true); // Only show loading on initial fetch
+            if (scanners.length === 0) setLoading(true);
             const res = await axios.get(`${apiUrl}/api/admin/scanners`);
-            setScanners(res.data || []);
+
+            // Prevent flickering: Only update state if data actually changed
+            setScanners(prev => {
+                const newData = res.data || [];
+                if (JSON.stringify(prev) !== JSON.stringify(newData)) {
+                    return newData;
+                }
+                return prev;
+            });
         } catch (err) {
             console.error("Failed to fetch scanners:", err);
         } finally {
@@ -66,7 +74,19 @@ const Scanners = () => {
     const getPairingUrl = () => {
         if (!serverIp) return '';
         const lanUrl = `https://${serverIp}:5000`; // Ensure HTTPS for PWA features
-        return `${lanUrl}/pwa/index.html?token=${setupToken}&server=${encodeURIComponent(lanUrl)}`;
+
+        let tokenToUse = setupToken;
+        let urlParams = `server=${encodeURIComponent(lanUrl)}`;
+
+        if (qrTarget && qrTarget !== 'NEW') {
+            // RE-PAIR: Use the scanner's IMMUTABLE FINGERPRINT as the repair token
+            // Fingerprint never changes, but still validates scanner exists
+            // If scanner is deleted, this link gracefully fails with "expired link" message
+            tokenToUse = qrTarget.fingerprint || qrTarget.scannerId;
+            urlParams += `&scannerId=${qrTarget.scannerId}&fingerprint=${qrTarget.fingerprint}&name=${encodeURIComponent(qrTarget.name)}&repair=true`;
+        }
+
+        return `${lanUrl}/pwa/index.html?token=${tokenToUse}&${urlParams}`;
     };
 
     return (
@@ -94,7 +114,7 @@ const Scanners = () => {
                     </div>
                 </div>
                 <button
-                    onClick={() => setShowQr(true)}
+                    onClick={() => setQrTarget('NEW')}
                     className="btn btn-primary"
                     style={{ padding: '0.8rem 1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}
                 >
@@ -141,6 +161,7 @@ const Scanners = () => {
                                     transition: 'transform 0.2s, box-shadow 0.2s',
                                     background: 'var(--bg-secondary)'
                                 }}>
+
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
                                         <div style={{
                                             width: '50px', height: '50px', borderRadius: '12px',
@@ -161,9 +182,25 @@ const Scanners = () => {
                                     <h3 style={{ margin: '0 0 0.3rem 0', fontSize: '1.1rem', fontWeight: '700', color: 'var(--text-primary)' }}>
                                         {scanner.name || 'Unnamed Scanner'}
                                     </h3>
-                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontFamily: 'monospace', background: 'var(--bg-tertiary)', padding: '4px 8px', borderRadius: '4px', width: 'fit-content' }}>
+                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontFamily: 'monospace', background: 'var(--bg-tertiary)', padding: '4px 8px', borderRadius: '4px', width: 'fit-content', marginBottom: '0.5rem' }}>
                                         UID: {scanner.scannerId.substring(0, 8)}...
                                     </div>
+                                    {scanner.currentEmployee && (
+                                        <div style={{ 
+                                            fontSize: '0.75rem', 
+                                            color: 'var(--accent-color)', 
+                                            background: 'rgba(99, 102, 241, 0.1)', 
+                                            padding: '4px 8px', 
+                                            borderRadius: '4px', 
+                                            width: 'fit-content',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '4px',
+                                            fontWeight: '600'
+                                        }}>
+                                            👤 {scanner.currentEmployee.name} ({scanner.currentEmployee.employeeId})
+                                        </div>
+                                    )}
 
                                     <div style={{ marginTop: '1.5rem', paddingTop: '1rem', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                         <div>
@@ -189,14 +226,27 @@ const Scanners = () => {
                                                 </button>
                                             </div>
                                         ) : (
-                                            <button
-                                                onClick={() => setDeleteConfirm(scanner.scannerId)}
-                                                style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '8px', borderRadius: '8px', transition: 'all 0.2s' }}
-                                                className="btn-icon-danger"
-                                                title="Remove Device"
-                                            >
-                                                <IconTrash />
-                                            </button>
+                                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                                <button
+                                                    onClick={() => setQrTarget(scanner)}
+                                                    style={{
+                                                        background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)',
+                                                        color: 'var(--text-secondary)', padding: '6px 12px', borderRadius: '8px',
+                                                        fontSize: '0.7rem', fontWeight: '700', cursor: 'pointer',
+                                                        display: 'flex', alignItems: 'center', gap: '4px'
+                                                    }}
+                                                >
+                                                    <IconScan /> RE-PAIR
+                                                </button>
+                                                <button
+                                                    onClick={() => setDeleteConfirm(scanner.scannerId)}
+                                                    style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '8px', borderRadius: '8px', transition: 'all 0.2s' }}
+                                                    className="btn-icon-danger"
+                                                    title="Remove Device"
+                                                >
+                                                    <IconTrash />
+                                                </button>
+                                            </div>
                                         )}
                                     </div>
                                 </div>
@@ -207,18 +257,33 @@ const Scanners = () => {
             </div>
 
             {/* QR Backdrop Modal */}
-            {showQr && (
+            {qrTarget && (
                 <div style={{
                     position: 'fixed', inset: 0, zIndex: 1000,
                     background: 'var(--modal-overlay)', backdropFilter: 'blur(5px)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center'
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    padding: '20px'
                 }} className="animate-fade-in">
                     <div style={{
-                        width: '90%', maxWidth: '420px', background: 'var(--bg-secondary)',
+                        width: '100%', maxWidth: '420px', background: 'var(--bg-secondary)',
                         borderRadius: '24px', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
-                        border: '1px solid var(--border-color)', overflow: 'hidden'
+                        border: '1px solid var(--border-color)', overflow: 'hidden',
+                        position: 'relative', display: 'flex', flexDirection: 'column',
+                        maxHeight: '90vh' // Ensure it fits on screen
                     }}>
-                        <div style={{ padding: '2rem', textAlign: 'center' }}>
+                        {/* Close Button (X) */}
+                        <button
+                            onClick={() => setQrTarget(null)}
+                            style={{
+                                position: 'absolute', top: '15px', right: '15px',
+                                background: 'transparent', border: 'none', color: 'var(--text-secondary)',
+                                cursor: 'pointer', padding: '5px', zIndex: 10
+                            }}
+                        >
+                            <IconX />
+                        </button>
+
+                        <div style={{ padding: '2.5rem 2rem 2rem', textAlign: 'center', overflowY: 'auto' }}>
                             <div style={{
                                 width: '64px', height: '64px', borderRadius: '20px',
                                 background: 'var(--accent-bg)', color: 'var(--accent-color)',
@@ -227,9 +292,13 @@ const Scanners = () => {
                                 <IconBroadcast />
                             </div>
 
-                            <h2 style={{ fontSize: '1.5rem', fontWeight: '800', margin: '0 0 0.5rem', color: 'var(--text-primary)' }}>Connect Scanner</h2>
+                            <h2 style={{ fontSize: '1.5rem', fontWeight: '800', margin: '0 0 0.5rem', color: 'var(--text-primary)' }}>
+                                {qrTarget === 'NEW' ? 'Connect New Scanner' : 'Repair Scanner'}
+                            </h2>
                             <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', margin: '0 0 2rem' }}>
-                                Scan this QR code with your mobile device to pair it with this system.
+                                {qrTarget === 'NEW'
+                                    ? "Scan to register a NEW device. Do not use for existing scanners."
+                                    : `Scan to repair "${qrTarget.name}". Your device will keep its unique fingerprint and identity.`}
                             </p>
 
                             {!serverIp ? (
@@ -243,23 +312,14 @@ const Scanners = () => {
                                 </div>
                             )}
 
-                            <div style={{ marginTop: '2rem', padding: '1rem', background: 'var(--bg-tertiary)', borderRadius: '12px', fontSize: '0.8rem' }}>
-                                <div style={{ fontWeight: '700', color: 'var(--text-secondary)', marginBottom: '4px' }}>SERVER ADDRESS</div>
-                                <code style={{ fontFamily: 'monospace', color: 'var(--accent-color)', fontSize: '1rem' }}>{serverIp || 'Resolving...'}</code>
-                            </div>
-                        </div>
+                            {qrTarget !== 'NEW' && (
+                                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '1.5rem', padding: '0.75rem', background: 'var(--bg-tertiary)', borderRadius: '8px', textAlign: 'center' }}>
+                                    <div style={{ fontWeight: '700', marginBottom: '4px' }}>DEVICE FINGERPRINT</div>
+                                    <code style={{ fontSize: '0.65rem', fontFamily: 'monospace', wordBreak: 'break-all', color: 'var(--accent-color)' }}>{qrTarget.fingerprint || 'N/A'}</code>
+                                </div>
+                            )}
 
-                        <div style={{ padding: '1rem', background: 'var(--bg-tertiary)', borderTop: '1px solid var(--border-color)', display: 'flex' }}>
-                            <button
-                                onClick={() => setShowQr(false)}
-                                style={{
-                                    width: '100%', padding: '1rem', background: 'var(--bg-primary)',
-                                    border: '1px solid var(--border-color)', borderRadius: '12px',
-                                    color: 'var(--text-primary)', fontWeight: '700', cursor: 'pointer'
-                                }}
-                            >
-                                Close Window
-                            </button>
+
                         </div>
                     </div>
                 </div>

@@ -1,15 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useMobile } from '../context/MobileContext';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
 import { haptic } from '../utils/haptic';
-import MissingScans from '../components/MissingScans';
 
 const WorkScreen = () => {
-    const { api, serverIp, setServerIp, unpair, deferredPrompt, installApp } = useMobile();
+    const navigate = useNavigate();
+    const { api, serverIp, setServerIp, unpair, deferredPrompt, installApp, scannerId } = useMobile();
     const [scanned, setScanned] = useState(false);
     const [showIpInput, setShowIpInput] = useState(false);
-    const [showMissing, setShowMissing] = useState(false);
-    const [showMenu, setShowMenu] = useState(false);
+
     const [showInstallHelp, setShowInstallHelp] = useState(false);
     const [showManualInput, setShowManualInput] = useState(false);
     const [manualBarcode, setManualBarcode] = useState('');
@@ -89,7 +89,7 @@ const WorkScreen = () => {
     };
 
     useEffect(() => {
-        if (mode === 'SCAN' && !scanned && !showMissing && !showIpInput && !showMenu && !showReview) {
+        if (mode === 'SCAN' && !scanned && !showIpInput && !showReview) {
             startCamera();
         } else {
             stopCamera();
@@ -108,7 +108,7 @@ const WorkScreen = () => {
             stopCamera();
             document.removeEventListener('visibilitychange', handleVisibilityChange);
         };
-    }, [mode, scanned, showMissing, showIpInput, showMenu, showReview]);
+    }, [mode, scanned, showIpInput, showReview]);
 
     const startCamera = async () => {
         try {
@@ -310,6 +310,37 @@ const WorkScreen = () => {
         }
     };
 
+    const handleQuickStockOut = async (barcode) => {
+        if (isProcessing) return;
+        setIsProcessing(true);
+
+        const employee = JSON.parse(localStorage.getItem('employee') || '{}');
+
+        const payload = {
+            barcode: barcode,
+            type: 'OUT',
+            employeeId: employee.employeeId, // E001, E002, etc.
+            employeeName: employee.name
+        };
+
+        try {
+            const res = await api.post('/api/mobile/transaction', payload);
+            if (res.data.error) {
+                haptic.error();
+                showAlert(res.data.error, 'error');
+            } else {
+                haptic.success();
+                showAlert(`✅ Stock Out Successful!`, 'success');
+                reset();
+            }
+        } catch (err) {
+            haptic.error();
+            showAlert(err.response?.data?.error || err.message, 'error');
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
     const executeSubmit = async (type) => {
         if (isProcessing) return;
         setIsProcessing(true);
@@ -322,7 +353,7 @@ const WorkScreen = () => {
             metre: parseFloat(form.metre || 0),
             weight: parseFloat(form.weight || 0),
             percentage: parseFloat(form.percentage || 100),
-            employeeId: employee.id || employee._id, // Handle both formats if needed
+            employeeId: employee.employeeId, // E001, E002, etc.
             employeeName: employee.name
         };
 
@@ -353,7 +384,7 @@ const WorkScreen = () => {
 
             const payload = {
                 type: 'OUT',
-                employeeId: employee.id || employee._id,
+                employeeId: employee.employeeId, // E001, E002, etc.
                 employeeName: employee.name,
                 items: sessionList.map(item => ({
                     barcode: item.barcode,
@@ -595,7 +626,7 @@ const WorkScreen = () => {
                     >
                         {torch ? '💡' : '🔦'}
                     </button>
-                    <button onClick={() => setShowMenu(true)} style={iconBtnStyle}>☰</button>
+
                 </div>
             </div>
 
@@ -655,6 +686,44 @@ const WorkScreen = () => {
                                 }}>
                                 <span>⌨️</span> ENTER PIN / BARCODE
                             </button>
+
+                            <button
+                                onClick={async () => {
+                                    try {
+                                        // Remove scanner from session on backend
+                                        const sessionIdToUse = sessionId || localStorage.getItem('active_session_id');
+                                        if (sessionIdToUse) {
+                                            const scannerIdToUse = scannerId || localStorage.getItem('SL_SCANNER_ID');
+                                            await api.post(
+                                                `/api/sessions/${sessionIdToUse}/leave`,
+                                                { scannerId: scannerIdToUse },
+                                                scannerIdToUse ? { headers: { 'x-scanner-id': scannerIdToUse } } : undefined
+                                            );
+                                        }
+                                    } catch (err) {
+                                        console.error('Failed to leave session:', err);
+                                    }
+
+                                    localStorage.removeItem('active_session_id');
+                                    localStorage.removeItem('active_session_type');
+                                    localStorage.removeItem('active_session_size');
+                                    setSessionMode('IN');
+                                    setSessionId(null);
+                                    setSessionSize(null);
+                                    setSessionList([]);
+                                    reset();
+                                    navigate('/sessions');
+                                }}
+                                style={{
+                                    position: 'absolute', bottom: '2%',
+                                    background: 'rgba(239, 68, 68, 0.2)', backdropFilter: 'blur(12px)',
+                                    border: '1px solid rgba(239, 68, 68, 0.4)', color: THEME.error,
+                                    padding: '12px 24px', borderRadius: '100px', fontWeight: '700',
+                                    boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.37)',
+                                    pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '14px'
+                                }}>
+                                <span>🚪</span> EXIT SESSION
+                            </button>
                         </div>
                     </>
                 ) : (
@@ -683,49 +752,28 @@ const WorkScreen = () => {
                                         </div>
                                     )}
 
-                                    {/* Status Banner */}
-                                    <div style={{
-                                        background: THEME.secondary, padding: '16px', borderRadius: '16px', border: `1px solid ${THEME.border}`,
-                                        marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between'
-                                    }}>
-                                        <div style={{ fontSize: '12px', fontWeight: '700', color: THEME.textMuted }}>CURRENT STATUS</div>
-                                        <div style={{
-                                            padding: '6px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: '800', textTransform: 'uppercase',
-                                            background: scanData?.data?.status ? (scanData.data.status === 'IN' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)') : 'rgba(99, 102, 241, 0.2)',
-                                            color: scanData?.data?.status ? (scanData.data.status === 'IN' ? THEME.success : THEME.error) : THEME.accent,
-                                            border: `1px solid ${scanData?.data?.status ? (scanData.data.status === 'IN' ? THEME.success : THEME.error) : THEME.accent}`
-                                        }}>
-                                            {scanData?.data?.status ? (scanData.data.status === 'IN' ? '📥 STOCKED IN' : '📤 DISPATCHED') : '✨ NEW / UNKNOWN'}
-                                        </div>
-                                    </div>
-
-                                    {/* Existing Detail Summary if available */}
-                                    {scanData?.data && (
-                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginBottom: '16px' }}>
-                                            <div style={{ background: 'rgba(255,255,255,0.05)', padding: '10px', borderRadius: '10px', textAlign: 'center' }}>
-                                                <div style={{ fontSize: '10px', color: THEME.textMuted, fontWeight: '700' }}>METRE</div>
-                                                <div style={{ fontSize: '14px', fontWeight: '700', color: 'white' }}>{scanData.data.metre}</div>
-                                            </div>
-                                            <div style={{ background: 'rgba(255,255,255,0.05)', padding: '10px', borderRadius: '10px', textAlign: 'center' }}>
-                                                <div style={{ fontSize: '10px', color: THEME.textMuted, fontWeight: '700' }}>WEIGHT</div>
-                                                <div style={{ fontSize: '14px', fontWeight: '700', color: 'white' }}>{scanData.data.weight}</div>
-                                            </div>
-                                            <div style={{ background: 'rgba(255,255,255,0.05)', padding: '10px', borderRadius: '10px', textAlign: 'center' }}>
-                                                <div style={{ fontSize: '10px', color: THEME.textMuted, fontWeight: '700' }}>QUALITY</div>
-                                                <div style={{ fontSize: '14px', fontWeight: '700', color: 'white' }}>{scanData.data.percentage}%</div>
-                                            </div>
-                                        </div>
-                                    )}
+                                    {/* Barcode Info */}
 
                                     {/* Simplified Actions based on Session Mode */}
                                     {sessionMode === 'IN' && (
                                         <ActionButton
                                             onClick={() => setMode('IN_FORM')}
-                                            disabled={false} // Always allow editing/re-stocking
-                                            label={scanData?.data?.status === 'IN' ? "EDIT STOCK IN" : "STOCK IN"}
-                                            sub={scanData?.data?.status === 'IN' ? "(Update Details)" : null}
+                                            disabled={scanData?.data?.status === 'IN' || scanData?.status === 'NEW'}
+                                            label={scanData?.data?.status === 'IN' ? "ALREADY IN STOCK" : scanData?.status === 'NEW' ? "STOCK IN" : "STOCK IN"}
+                                            sub={scanData?.data?.status === 'IN' ? "(Entry Exists)" : scanData?.status === 'NEW' ? "Enter details first" : null}
                                             icon="📥"
                                             color={THEME.success}
+                                        />
+                                    )}
+
+                                    {sessionMode === 'OUT' && (
+                                        <ActionButton
+                                            onClick={() => handleQuickStockOut(scanData.barcode)}
+                                            disabled={scanData?.data?.status === 'OUT' || !scanData?.data}
+                                            label={scanData?.data?.status === 'OUT' ? "ALREADY OUT OF STOCK" : !scanData?.data ? "NOT IN STOCK" : "STOCK OUT"}
+                                            sub={scanData?.data?.status === 'OUT' ? "(Already Checked Out)" : !scanData?.data ? "(Cannot stock out)" : null}
+                                            icon="📤"
+                                            color={THEME.error}
                                         />
                                     )}
 
@@ -834,50 +882,7 @@ const WorkScreen = () => {
                 )
             }
 
-            {/* ... Menus and Alerts (Keep existing) ... */}
-            {
-                showMenu && (
-                    <div style={modalBackdropStyle} onClick={() => setShowMenu(false)}>
-                        <div style={menuStyle} onClick={e => e.stopPropagation()}>
-                            <div style={{ padding: '24px', borderBottom: `1px solid ${THEME.border}` }}>
-                                <h2 style={{ margin: 0, color: 'white', fontSize: '18px' }}>Menu</h2>
-                            </div>
-                            <MenuItem
-                                icon="⬇️"
-                                label="Install App / APK"
-                                onClick={() => {
-                                    if (deferredPrompt) {
-                                        installApp();
-                                    } else {
-                                        setShowMenu(false);
-                                        setShowInstallHelp(true);
-                                    }
-                                }}
-                                sub={!deferredPrompt ? "(Manual Install)" : ""}
-                            />
-                            <MenuItem
-                                icon="🏁"
-                                label="Finish Session"
-                                sub="End session & view report"
-                                color={THEME.accent}
-                                onClick={handleFinishSession}
-                            />
-                            <MenuItem icon="⚙️" label="Server IP" onClick={() => setShowIpInput(true)} />
-                            <MenuItem icon="📋" label="Missing Scans" onClick={() => { setShowMissing(true); setShowMenu(false); }} />
-                            <MenuItem icon="🔓" label="Switch User" color={THEME.warning} onClick={() => {
-                                if (window.confirm('Switch user?')) {
-                                    localStorage.removeItem('employee');
-                                    window.location.reload();
-                                }
-                            }} />
-                            <MenuItem icon="🚫" label="Unpair Device" color={THEME.error} onClick={() => unpair()} />
-                            <div style={{ padding: '20px' }}>
-                                <button onClick={() => setShowMenu(false)} style={btnPrimaryStyle}>CLOSE</button>
-                            </div>
-                        </div>
-                    </div>
-                )
-            }
+
 
             {
                 showInstallHelp && (
@@ -910,15 +915,6 @@ const WorkScreen = () => {
                             <p style={{ margin: '0 0 24px 0', color: THEME.textMuted, whiteSpace: 'pre-wrap' }}>{alertState.message}</p>
                             <button onClick={closeAlert} style={btnPrimaryStyle}>OK</button>
                         </div>
-                    </div>
-                )
-            }
-
-            {
-                showMissing && (
-                    <div style={{ position: 'fixed', inset: 0, background: THEME.primary, zIndex: 2000, display: 'flex', flexDirection: 'column' }}>
-                        <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}><MissingScans /></div>
-                        <button onClick={() => setShowMissing(false)} style={{ padding: '20px', background: THEME.secondary, border: 'none', color: 'white', fontWeight: 'bold' }}>CLOSE</button>
                     </div>
                 )
             }

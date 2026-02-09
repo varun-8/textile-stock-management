@@ -87,10 +87,13 @@ router.get('/scanners', async (req, res) => {
 
             return {
                 scannerId: s.uuid,
+                fingerprint: s.fingerprint,
                 name: s.name,
                 status: isOnline ? 'ONLINE' : 'OFFLINE',
                 pairedAt: s.pairedAt,
-                lastSeen: s.lastSeen
+                lastSeen: s.lastSeen,
+                repairCount: s.repairCount || 0,
+                currentEmployee: s.currentEmployee || null
             };
         }));
     } catch (err) {

@@ -197,9 +197,8 @@ router.post('/transaction', async (req, res) => {
                 clothRoll.metre = metre;
                 clothRoll.weight = weight;
                 clothRoll.percentage = percentage;
-                clothRoll.employeeId = employeeId;
-                clothRoll.employeeName = employeeName;
                 clothRoll.transactionHistory.push({
+                    status: 'IN',
                     details: details || 'Re-Stock In',
                     date: new Date(),
                     employeeId,
@@ -214,9 +213,8 @@ router.post('/transaction', async (req, res) => {
                     metre,
                     weight,
                     percentage,
-                    employeeId,
-                    employeeName,
                     transactionHistory: [{
+                        status: 'IN',
                         details: details || 'Initial Stock In',
                         date: new Date(),
                         employeeId,
@@ -239,9 +237,8 @@ router.post('/transaction', async (req, res) => {
             }
 
             clothRoll.status = 'OUT';
-            clothRoll.employeeId = employeeId;
-            clothRoll.employeeName = employeeName;
             clothRoll.transactionHistory.push({
+                status: 'OUT',
                 details: details || 'Stock Out',
                 date: new Date(),
                 employeeId,
@@ -259,6 +256,20 @@ router.post('/transaction', async (req, res) => {
         }
 
         await clothRoll.save();
+
+        // --- ADD SCANNER TO SESSION ON FIRST SCAN ---
+        if (sessionId && req.scanner) {
+            try {
+                const session = await Session.findById(sessionId);
+                if (session && !session.activeScanners.includes(req.scanner.uuid)) {
+                    session.activeScanners.push(req.scanner.uuid);
+                    await session.save();
+                }
+            } catch (sessionErr) {
+                console.error('Failed to update session scanners:', sessionErr);
+            }
+        }
+
         // --- UPDATE EMPLOYEE CONTEXT ---
         if (employeeId) {
             try {
@@ -290,7 +301,7 @@ router.post('/transaction', async (req, res) => {
                     updateData.lastScanner = scannerName;
                 }
 
-                await Employee.findByIdAndUpdate(employeeId, updateData);
+                await Employee.findOneAndUpdate({ employeeId }, updateData);
             } catch (empErr) {
                 console.error("Failed to update employee context", empErr);
             }
@@ -314,6 +325,7 @@ router.post('/transaction', async (req, res) => {
                 type: type,
                 barcode: barcode,
                 details: { metre, weight, percentage }, // Emitting details
+                sessionId: sessionId, // Add Session ID for filtering
                 timestamp: new Date(),
                 user: employeeName
             });
