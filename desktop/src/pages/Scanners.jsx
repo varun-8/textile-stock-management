@@ -73,20 +73,13 @@ const Scanners = () => {
 
     const getPairingUrl = () => {
         if (!serverIp) return '';
-        const lanUrl = `https://${serverIp}:5000`; // Ensure HTTPS for PWA features
+        const lanUrl = `https://${serverIp}:5000`;
 
-        let tokenToUse = setupToken;
-        let urlParams = `server=${encodeURIComponent(lanUrl)}`;
+        const tokenToUse = setupToken;
+        const urlParams = `server=${encodeURIComponent(lanUrl)}`;
 
-        if (qrTarget && qrTarget !== 'NEW') {
-            // RE-PAIR: Use the scanner's IMMUTABLE FINGERPRINT as the repair token
-            // Fingerprint never changes, but still validates scanner exists
-            // If scanner is deleted, this link gracefully fails with "expired link" message
-            tokenToUse = qrTarget.fingerprint || qrTarget.scannerId;
-            urlParams += `&scannerId=${qrTarget.scannerId}&fingerprint=${qrTarget.fingerprint}&name=${encodeURIComponent(qrTarget.name)}&repair=true`;
-        }
-
-        return `${lanUrl}/pwa/index.html?token=${tokenToUse}&${urlParams}`;
+        // Master Link that works with System Camera AND In-App Scanner
+        return `${lanUrl}/pwa/index.html?token=${tokenToUse}&${urlParams}&action=PAIR`;
     };
 
     return (
@@ -118,7 +111,7 @@ const Scanners = () => {
                     className="btn btn-primary"
                     style={{ padding: '0.8rem 1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}
                 >
-                    <IconScan /> <span>Pair New Device</span>
+                    <IconScan /> <span>Pair Device</span>
                 </button>
             </header>
 
@@ -186,12 +179,12 @@ const Scanners = () => {
                                         UID: {scanner.scannerId.substring(0, 8)}...
                                     </div>
                                     {scanner.currentEmployee && (
-                                        <div style={{ 
-                                            fontSize: '0.75rem', 
-                                            color: 'var(--accent-color)', 
-                                            background: 'rgba(99, 102, 241, 0.1)', 
-                                            padding: '4px 8px', 
-                                            borderRadius: '4px', 
+                                        <div style={{
+                                            fontSize: '0.75rem',
+                                            color: 'var(--accent-color)',
+                                            background: 'rgba(99, 102, 241, 0.1)',
+                                            padding: '4px 8px',
+                                            borderRadius: '4px',
                                             width: 'fit-content',
                                             display: 'flex',
                                             alignItems: 'center',
@@ -227,17 +220,7 @@ const Scanners = () => {
                                             </div>
                                         ) : (
                                             <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                                <button
-                                                    onClick={() => setQrTarget(scanner)}
-                                                    style={{
-                                                        background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)',
-                                                        color: 'var(--text-secondary)', padding: '6px 12px', borderRadius: '8px',
-                                                        fontSize: '0.7rem', fontWeight: '700', cursor: 'pointer',
-                                                        display: 'flex', alignItems: 'center', gap: '4px'
-                                                    }}
-                                                >
-                                                    <IconScan /> RE-PAIR
-                                                </button>
+
                                                 <button
                                                     onClick={() => setDeleteConfirm(scanner.scannerId)}
                                                     style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '8px', borderRadius: '8px', transition: 'all 0.2s' }}
@@ -293,12 +276,10 @@ const Scanners = () => {
                             </div>
 
                             <h2 style={{ fontSize: '1.5rem', fontWeight: '800', margin: '0 0 0.5rem', color: 'var(--text-primary)' }}>
-                                {qrTarget === 'NEW' ? 'Connect New Scanner' : 'Repair Scanner'}
+                                Pair Device
                             </h2>
                             <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', margin: '0 0 2rem' }}>
-                                {qrTarget === 'NEW'
-                                    ? "Scan to register a NEW device. Do not use for existing scanners."
-                                    : `Scan to repair "${qrTarget.name}". Your device will keep its unique fingerprint and identity.`}
+                                Scan this QR with any mobile device to connect it instantly. Works for new and existing devices.
                             </p>
 
                             {!serverIp ? (
@@ -312,12 +293,7 @@ const Scanners = () => {
                                 </div>
                             )}
 
-                            {qrTarget !== 'NEW' && (
-                                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '1.5rem', padding: '0.75rem', background: 'var(--bg-tertiary)', borderRadius: '8px', textAlign: 'center' }}>
-                                    <div style={{ fontWeight: '700', marginBottom: '4px' }}>DEVICE FINGERPRINT</div>
-                                    <code style={{ fontSize: '0.65rem', fontFamily: 'monospace', wordBreak: 'break-all', color: 'var(--accent-color)' }}>{qrTarget.fingerprint || 'N/A'}</code>
-                                </div>
-                            )}
+
 
 
                         </div>

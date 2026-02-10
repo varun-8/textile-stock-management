@@ -49,7 +49,7 @@ router.post('/pair', async (req, res) => {
                         req.body.scannerId = token;
                     }
                 } else {
-                    return res.status(401).json({ 
+                    return res.status(401).json({
                         error: 'Invalid or Expired Link',
                         message: 'This link is no longer valid. Please use the repair QR code or pair as a new device.'
                     });
@@ -79,36 +79,19 @@ router.post('/pair', async (req, res) => {
                     message: `Re-paired as ${existingScanner.name}. Your device identity is preserved.`
                 });
             } else {
-                // ❌ STRICT MODE: If provided ID is invalid (e.g. scanner deleted), REJECT IT.
-                // Do not fall back to creating a new one. This ensures "expired" links don't work.
-                return res.status(404).json({
-                    error: 'INVALID_LINK',
-                    code: 'SCANNER_DELETED',
-                    message: 'This scanner was deleted from the system. Please pair as a new device.'
-                });
+                // ⚠️ RELAXED MODE: If provided ID is invalid (e.g. scanner deleted), TREAT AS NEW PAIRING.
+                // The client thinks it has an identity, but the server forgot it. 
+                // We just ignore the old ID and provision a new one below.
+                console.warn(`⚠️ Client sent invalid/deleted scannerId: ${existingId}. Proceeding as new pairing.`);
+                // Clean up request body so downstream logic treats it as new
+                existingId = null;
+                req.body.scannerId = null;
             }
         }
 
-        // DUPLICATE CHECK (New Device Flow) - STRICT MODE
-        // Check if device is already paired using IP (for same device on same network)
-        // This prevents duplicate scanners for the same physical device
-        const potentialDuplicate = await Scanner.findOne({ 
-            lastIp: ip, 
-            status: 'ACTIVE'
-        });
-        
-        if (potentialDuplicate) {
-            // Device with same IP already paired - return conflict with repair suggestion
-            return res.status(409).json({
-                error: 'DEVICE_ALREADY_PAIRED',
-                code: 'DUPLICATE_DEVICE',
-                message: `This device is already paired as "${potentialDuplicate.name}". Use the repair link to reconnect.`,
-                existingId: potentialDuplicate.uuid,
-                existingName: potentialDuplicate.name,
-                fingerprint: potentialDuplicate.fingerprint,
-                suggestion: 'Scan the repair QR code for this scanner from the desktop admin panel'
-            });
-        }
+        // DUPLICATE CHECK REMOVED
+        // We allow multiple pairings from the same IP to support "New Device" flow without blocking.
+        // User can manually remove old scanners if needed.
 
         // Generate permanent identity
         const scannerId = crypto.randomUUID();
@@ -119,7 +102,8 @@ router.post('/pair', async (req, res) => {
         if (!name || name === 'AUTO_ASSIGN' || name.startsWith('Mobile -')) {
             const allScanners = await Scanner.find({});
             const numbers = allScanners.map(s => {
-                const match = (s.name || '').match(/^Scanner (\d+)$/);
+                // Match "Scanner 1", "scanner 1", "SCANNER 1"
+                const match = (s.name || '').match(/^Scanner (\d+)$/i);
                 return match ? parseInt(match[1]) : 0;
             });
             const nextNum = numbers.length > 0 ? Math.max(...numbers) + 1 : 1;
@@ -166,7 +150,7 @@ router.get('/check-scanner/:id', async (req, res) => {
 
         // Update Last Seen
         scanner.lastSeen = new Date();
-        
+
         // Update current employee if provided
         const employeeData = req.query.employee ? JSON.parse(req.query.employee) : null;
         if (employeeData && employeeData.employeeId) {
@@ -176,10 +160,10 @@ router.get('/check-scanner/:id', async (req, res) => {
                 loginAt: new Date()
             };
         }
-        
+
         await scanner.save();
 
-        res.json({ 
+        res.json({
             valid: true,
             fingerprint: scanner.fingerprint,
             name: scanner.name
@@ -194,7 +178,7 @@ router.get('/check-scanner/:id', async (req, res) => {
 router.post('/check-device', async (req, res) => {
     try {
         const { ip, fingerprint } = req.body;
-        
+
         // If fingerprint provided, check if this exact device is already paired
         if (fingerprint) {
             const scanner = await Scanner.findOne({ fingerprint, status: 'ACTIVE' });
@@ -208,7 +192,7 @@ router.post('/check-device', async (req, res) => {
                 });
             }
         }
-        
+
         // Check by IP (more lenient - detects if any device on this network is paired)
         const byIp = await Scanner.findOne({ lastIp: ip, status: 'ACTIVE' });
         if (byIp) {
@@ -221,7 +205,7 @@ router.post('/check-device', async (req, res) => {
                 message: `A device from this network is already paired as "${byIp.name}". Use repair link if this is the same device.`
             });
         }
-        
+
         res.json({ alreadyPaired: false });
     } catch (err) {
         res.status(500).json({ error: err.message });

@@ -85,7 +85,10 @@ const PinScreen = () => {
 
             if (res.data.success) {
                 if (haptic.success) haptic.success();
-                localStorage.setItem('employee', JSON.stringify(res.data.employee));
+                localStorage.setItem('employee', JSON.stringify({
+                    ...res.data.employee,
+                    loginTime: Date.now()
+                }));
                 navigate('/', { replace: true });
             } else {
                 setError('Invalid credentials');

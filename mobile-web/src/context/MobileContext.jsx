@@ -53,7 +53,7 @@ export const MobileProvider = ({ children }) => {
 
         window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
         window.addEventListener('appinstalled', handleAppInstalled);
-        
+
         return () => {
             window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
             window.removeEventListener('appinstalled', handleAppInstalled);
@@ -98,6 +98,33 @@ export const MobileProvider = ({ children }) => {
         } else {
             delete api.defaults.headers.common['x-scanner-id'];
         }
+
+        // Add interceptor to catch 403 (Scanner Deleted/Disabled) globally
+        const interceptor = api.interceptors.response.use(
+            response => response,
+            error => {
+                if (error.response && (error.response.status === 403 || error.response.status === 401)) {
+                    const errMsg = error.response.data?.error || '';
+                    // Only auto-logout if it's clearly a scanner auth issue
+                    if (errMsg.includes('Scanner') || errMsg.includes('Unauthorized')) {
+                        console.warn('🚨 Global 403 Interceptor: Scanner invalid. Clearing session.');
+                        localStorage.removeItem('SL_SCANNER_ID');
+                        localStorage.removeItem('SL_USER_TOKEN');
+                        localStorage.removeItem('SL_USER');
+                        localStorage.removeItem('SL_FINGERPRINT');
+                        setScannerId(null);
+                        setUser(null);
+                        setIsLoggedIn(false);
+                        setScannerDeletedError('Device removed by admin. Please pair again.');
+                    }
+                }
+                return Promise.reject(error);
+            }
+        );
+
+        return () => {
+            api.interceptors.response.eject(interceptor);
+        };
     }, [serverIp, scannerId]);
 
     const updateIp = (ip) => {
@@ -121,102 +148,103 @@ export const MobileProvider = ({ children }) => {
     const logout = () => {
         localStorage.removeItem('SL_USER_TOKEN');
         localStorage.removeItem('SL_USER');
+        localStorage.removeItem('employee'); // Clear PIN session
         setUser(null);
         setIsLoggedIn(false);
     };
 
-    const pairScanner = async (token, url, name, existingScannerId = null) => {
-        console.log('🔗 pairScanner called - Token:', token, 'URL:', url, 'Name:', name, 'ID:', existingScannerId);
+    // Session Expiration Check (24 Hours)
+    useEffect(() => {
+        const checkSession = () => {
+            const employeeData = localStorage.getItem('employee');
+            if (employeeData) {
+                try {
+                    const { loginTime } = JSON.parse(employeeData);
+                    if (loginTime) {
+                        const now = Date.now();
+                        const hours24 = 24 * 60 * 60 * 1000;
+                        if (now - loginTime > hours24) {
+                            console.warn('Session expired (24h). Logging out.');
+                            logout();
+                            window.location.reload(); // Force redirect to PIN
+                        }
+                    }
+                } catch (e) {
+                    // Invalid JSON, clear it
+                    logout();
+                }
+            }
+        };
 
-        // Extract IP from URL (handle both http:// and https://)
-        let ip = url.replace(/https?:\/\//, '').split(':')[0]; // Get just the IP
-        console.log('📍 Extracted IP:', ip);
+        checkSession(); // Check on mount
+        const interval = setInterval(checkSession, 60 * 1000); // Check every minute
+        return () => clearInterval(interval);
+    }, []);
+
+    // Auto-fetch missing scans every 10 seconds
+    useEffect(() => {
+        if (isLoggedIn) {
+            fetchMissing();
+            const interval = setInterval(fetchMissing, 10000);
+            return () => clearInterval(interval);
+        }
+    }, [serverIp, isLoggedIn]);
+
+    // Unified Pairing Function (QR / Manual)
+    const setupDevice = async (ip, token, name = null) => {
+        console.log('🔗 setupDevice called - IP:', ip, 'Token:', token);
 
         try {
-            // Temporary client for pairing (since we don't have scannerId header yet)
-            const pairClient = axios.create({
+            // Temporary client for pairing
+            const setupClient = axios.create({
                 baseURL: `https://${ip}:5000`,
                 httpsAgent: { rejectUnauthorized: false }
             });
 
-            // PRE-CHECK: Detect if device is already paired before attempting pairing
-            console.log('🔍 Checking for already-paired device...');
+            // 1. Pre-Check (Optional but good)
             try {
-                const checkRes = await pairClient.post('/api/auth/check-device', {
-                    ip: ip,
-                    fingerprint: localStorage.getItem('SL_FINGERPRINT') || null
-                });
+                // We can skip pre-check for now to speed up, or keep it.
+                // Let's go straight to pair for speed.
+            } catch (e) { }
 
-                if (checkRes.data.alreadyPaired) {
-                    console.warn('⚠️ Device Already Paired:', checkRes.data);
-                    throw new Error(
-                        `ALREADY_PAIRED: ${checkRes.data.message}. ` +
-                        `Use the repair link for "${checkRes.data.name}" if you need to reconnect.`
-                    );
-                }
-            } catch (checkErr) {
-                // If check fails, proceed anyway (backend might be old version)
-                if (checkErr.response?.status === 409) {
-                    throw checkErr; // Re-throw duplicate conflict
-                }
-                console.log('ℹ️ Pre-check skipped (backend may not support it yet)');
-            }
+            console.log('🌐 Authenticating setup...');
 
-            console.log('🌐 Authenticating with Token...');
-            // Exchange Setup Token for Unique Scanner ID
-            const res = await pairClient.post('/api/auth/pair', {
-                token: token,
-                name: name || `Mobile - ${new Date().toLocaleTimeString()}`,
-                scannerId: existingScannerId // Optional Re-pair ID
+            // Get existing ID if any (to support Re-Pairing)
+            const existingId = localStorage.getItem('SL_SCANNER_ID');
+
+            // 2. Perform Pairing Request (Smart Pairing)
+            const res = await setupClient.post('/api/auth/pair', {
+                token: token, // The "Secret" from QR
+                name: name || 'AUTO_ASSIGN',
+                scannerId: existingId // Send existing ID to check if we can reconnect
             });
 
             if (!res.data.success || !res.data.scannerId) {
-                throw new Error('Pairing response invalid');
+                throw new Error(res.data.error || 'Pairing response invalid');
             }
 
             const newScannerId = res.data.scannerId;
             const newFingerprint = res.data.fingerprint;
-            console.log('✅ Pairing Successful! Assigned ID:', newScannerId);
-            console.log('🖐️ Device Fingerprint:', newFingerprint);
 
-            // Save to localStorage
+            console.log('✅ Pairing Successful!', newScannerId);
+
+            // 3. Save Everything
             localStorage.setItem('SL_SCANNER_ID', newScannerId);
             localStorage.setItem('SL_SERVER_IP', ip);
-            if (newFingerprint) {
-                localStorage.setItem('SL_FINGERPRINT', newFingerprint);
-                console.log('💾 Fingerprint saved to localStorage');
-            }
+            if (newFingerprint) localStorage.setItem('SL_FINGERPRINT', newFingerprint);
+            if (res.data.name) localStorage.setItem('SL_SCANNER_NAME', res.data.name);
 
-            if (res.data.name) {
-                localStorage.setItem('SL_SCANNER_NAME', res.data.name);
-                console.log('📝 Scanner Assigned Name:', res.data.name);
-            }
-
-            // Update Context State
+            // 4. Update State
             setScannerId(newScannerId);
             setServerIp(ip);
+            // Clear any previous errors
+            setScannerDeletedError(null);
 
-            // 🧹 Clear URL parameters to prevent auto-re-pairing loops if scanner is deleted later
-            const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
-            window.history.replaceState({ path: cleanUrl }, '', cleanUrl);
-
-            console.log('✅ Pairing complete - State updated & URL cleaned');
+            return true;
         } catch (err) {
-            console.error('❌ Pairing Error:', err);
-            
-            // Handle specific error types
-            if (err.message?.includes('ALREADY_PAIRED')) {
-                throw new Error(err.message);
-            }
-
-            if (err.response?.status === 409) {
-                const data = err.response.data;
-                const errorMsg = `${data.message}\n\nScanner Name: ${data.existingName}\n${data.suggestion || ''}`;
-                throw new Error(errorMsg);
-            }
-
-            // Propagate error to UI
-            throw new Error(err.response?.data?.error || err.message || 'Pairing Failed');
+            console.error('❌ Setup Error:', err);
+            const msg = err.response?.data?.message || err.message || 'Setup Failed';
+            throw new Error(msg);
         }
     };
 
@@ -258,11 +286,11 @@ export const MobileProvider = ({ children }) => {
                             rejectUnauthorized: false // Allow self-signed certificates
                         }
                     });
-                    
+
                     // Include employee data if logged in
                     const employee = localStorage.getItem('employee');
                     const employeeParam = employee ? `?employee=${encodeURIComponent(employee)}` : '';
-                    
+
                     const res = await verifyClient.get(`https://${serverIp}:5000/api/auth/check-scanner/${scannerId}${employeeParam}`);
                     if (!res.data.valid) {
                         // Scanner no longer valid - unpair it
@@ -280,7 +308,7 @@ export const MobileProvider = ({ children }) => {
                 } catch (err) {
                     // Backend unreachable or scanner not found - unpair
                     console.error('Failed to verify scanner:', err);
-                    
+
                     if (err.response?.status === 404) {
                         // Scanner specifically not found (deleted)
                         console.warn('❌ Scanner was deleted from backend');
@@ -357,7 +385,7 @@ export const MobileProvider = ({ children }) => {
             loadingMissing,
             loginUser,
             logout,
-            pairScanner,
+            setupDevice,
             unpair,
             fetchMissing,
             deferredPrompt,

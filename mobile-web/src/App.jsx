@@ -26,8 +26,12 @@ const SessionGuard = ({ children }) => {
 function AppContent() {
   const { scannerId, scannerDeletedError, setScannerDeletedError } = useMobile();
 
-  // If scanner was deleted - show error screen
-  if (scannerDeletedError) {
+  // Detect if this is a "Repair/Setup" link
+  const params = new URLSearchParams(window.location.search);
+  const isSetupLink = params.get('server') && params.get('token');
+
+  // If scanner was deleted - show error screen (UNLESS we are trying to setup)
+  if (scannerDeletedError && !isSetupLink) {
     return (
       <div style={{
         height: '100vh',
@@ -68,8 +72,8 @@ function AppContent() {
     );
   }
 
-  // If no scanner ID, show setup screen (Global check)
-  if (!scannerId) {
+  // If no scanner ID OR we are setting up
+  if (!scannerId || isSetupLink) {
     return (
       <div className="transition-opacity duration-300 opacity-100">
         <SetupScreen />
