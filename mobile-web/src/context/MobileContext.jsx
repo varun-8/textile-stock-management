@@ -1,9 +1,11 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import axios from 'axios';
 
 const MobileContext = createContext();
 
-const DEFAULT_IP = 'stock-system.local'; // Use hostname for HTTPS cert validation
+const DEFAULT_IP = (window.location.hostname && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1')
+    ? window.location.hostname
+    : 'stock-system.local';
 const THEME = {
     primary: '#0f172a',
     secondary: '#1e293b',
@@ -17,7 +19,16 @@ const THEME = {
 };
 
 export const MobileProvider = ({ children }) => {
-    const [serverIp, setServerIp] = useState(localStorage.getItem('SL_SERVER_IP') || DEFAULT_IP);
+    const [serverIp, setServerIp] = useState(() => {
+        const saved = localStorage.getItem('SL_SERVER_IP');
+        const current = window.location.hostname;
+        // Auto-update if accessed via a network IP/hostname
+        if (current && current !== 'localhost' && current !== '127.0.0.1' && current !== saved) {
+            localStorage.setItem('SL_SERVER_IP', current);
+            return current;
+        }
+        return saved || DEFAULT_IP;
+    });
     const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem('SL_USER_TOKEN'));
     const [user, setUser] = useState(() => {
         try {
@@ -84,14 +95,15 @@ export const MobileProvider = ({ children }) => {
     const [missing, setMissing] = useState([]);
     const [loadingMissing, setLoadingMissing] = useState(false);
 
-    const api = axios.create({
+    const api = useMemo(() => axios.create({
         httpsAgent: {
-            rejectUnauthorized: false // Allow self-signed certificates
+            rejectUnauthorized: false
         }
-    });
+    }), []);
 
     useEffect(() => {
-        api.defaults.baseURL = `https://${serverIp}:5000`;
+        const protocol = window.location.protocol === 'https:' ? 'https' : 'http';
+        api.defaults.baseURL = `${protocol}://${serverIp}:5000`;
         // Add scanner ID header to all requests if paired
         if (scannerId) {
             api.defaults.headers.common['x-scanner-id'] = scannerId;
@@ -127,12 +139,12 @@ export const MobileProvider = ({ children }) => {
         };
     }, [serverIp, scannerId]);
 
-    const updateIp = (ip) => {
+    const updateIp = useCallback((ip) => {
         setServerIp(ip);
         localStorage.setItem('SL_SERVER_IP', ip);
-    };
+    }, []);
 
-    const loginUser = async (username, password) => {
+    const loginUser = useCallback(async (username, password) => {
         try {
             const res = await api.post('/api/auth/login', { username, password });
             localStorage.setItem('SL_USER_TOKEN', res.data.token);
@@ -143,15 +155,15 @@ export const MobileProvider = ({ children }) => {
         } catch (err) {
             throw new Error(err.response?.data?.error || 'Login failed');
         }
-    };
+    }, [api]);
 
-    const logout = () => {
+    const logout = useCallback(() => {
         localStorage.removeItem('SL_USER_TOKEN');
         localStorage.removeItem('SL_USER');
         localStorage.removeItem('employee'); // Clear PIN session
         setUser(null);
         setIsLoggedIn(false);
-    };
+    }, []);
 
     // Session Expiration Check (24 Hours)
     useEffect(() => {
@@ -191,32 +203,21 @@ export const MobileProvider = ({ children }) => {
     }, [serverIp, isLoggedIn]);
 
     // Unified Pairing Function (QR / Manual)
-    const setupDevice = async (ip, token, name = null) => {
-        console.log('🔗 setupDevice called - IP:', ip, 'Token:', token);
+    const setupDevice = useCallback(async (ip, token, name = null) => {
+        console.log('🔗 setupDevice started - IP:', ip, 'Token:', token);
 
         try {
-            // Temporary client for pairing
             const setupClient = axios.create({
                 baseURL: `https://${ip}:5000`,
                 httpsAgent: { rejectUnauthorized: false }
             });
 
-            // 1. Pre-Check (Optional but good)
-            try {
-                // We can skip pre-check for now to speed up, or keep it.
-                // Let's go straight to pair for speed.
-            } catch (e) { }
-
-            console.log('🌐 Authenticating setup...');
-
-            // Get existing ID if any (to support Re-Pairing)
             const existingId = localStorage.getItem('SL_SCANNER_ID');
 
-            // 2. Perform Pairing Request (Smart Pairing)
             const res = await setupClient.post('/api/auth/pair', {
-                token: token, // The "Secret" from QR
+                token: token,
                 name: name || 'AUTO_ASSIGN',
-                scannerId: existingId // Send existing ID to check if we can reconnect
+                scannerId: existingId
             });
 
             if (!res.data.success || !res.data.scannerId) {
@@ -228,16 +229,13 @@ export const MobileProvider = ({ children }) => {
 
             console.log('✅ Pairing Successful!', newScannerId);
 
-            // 3. Save Everything
             localStorage.setItem('SL_SCANNER_ID', newScannerId);
             localStorage.setItem('SL_SERVER_IP', ip);
             if (newFingerprint) localStorage.setItem('SL_FINGERPRINT', newFingerprint);
             if (res.data.name) localStorage.setItem('SL_SCANNER_NAME', res.data.name);
 
-            // 4. Update State
             setScannerId(newScannerId);
             setServerIp(ip);
-            // Clear any previous errors
             setScannerDeletedError(null);
 
             return true;
@@ -246,7 +244,7 @@ export const MobileProvider = ({ children }) => {
             const msg = err.response?.data?.message || err.message || 'Setup Failed';
             throw new Error(msg);
         }
-    };
+    }, []);
 
     const unpair = () => {
         localStorage.removeItem('SL_SCANNER_ID');
@@ -371,27 +369,29 @@ export const MobileProvider = ({ children }) => {
         }
     }, [serverIp, isLoggedIn]);
 
+    const contextValue = useMemo(() => ({
+        serverIp,
+        setServerIp: updateIp,
+        api,
+        isLoggedIn,
+        user,
+        scannerId,
+        scannerDeletedError,
+        setScannerDeletedError,
+        missing,
+        loadingMissing,
+        loginUser,
+        logout,
+        setupDevice,
+        unpair,
+        fetchMissing,
+        deferredPrompt,
+        installApp,
+        THEME
+    }), [serverIp, updateIp, api, isLoggedIn, user, scannerId, scannerDeletedError, missing, loadingMissing, loginUser, logout, setupDevice, deferredPrompt, installApp]);
+
     return (
-        <MobileContext.Provider value={{
-            serverIp,
-            setServerIp: updateIp,
-            api,
-            isLoggedIn,
-            user,
-            scannerId,
-            scannerDeletedError,
-            setScannerDeletedError,
-            missing,
-            loadingMissing,
-            loginUser,
-            logout,
-            setupDevice,
-            unpair,
-            fetchMissing,
-            deferredPrompt,
-            installApp,
-            THEME
-        }}>
+        <MobileContext.Provider value={contextValue}>
             {children}
         </MobileContext.Provider>
     );

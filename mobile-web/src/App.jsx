@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { MobileProvider, useMobile } from './context/MobileContext';
 import WorkScreen from './pages/WorkScreen';
@@ -18,7 +18,7 @@ const ProtectedRoute = ({ children }) => {
 const SessionGuard = ({ children }) => {
   const sessionId = localStorage.getItem('active_session_id');
   if (!sessionId) {
-    return <Navigate to="/session" replace />;
+    return <Navigate to="/sessions" replace />;
   }
   return children;
 };
@@ -27,8 +27,21 @@ function AppContent() {
   const { scannerId, scannerDeletedError, setScannerDeletedError } = useMobile();
 
   // Detect if this is a "Repair/Setup" link
-  const params = new URLSearchParams(window.location.search);
-  const isSetupLink = params.get('server') && params.get('token');
+  const queryParams = useMemo(() => new URLSearchParams(window.location.search), [window.location.search]);
+  const isSetupLink = queryParams.get('server') && queryParams.get('token');
+
+  // If we JUST paired, we want to IGNORE the isSetupLink so we can transition to the app
+  const [justPaired, setJustPaired] = React.useState(false);
+
+  React.useEffect(() => {
+    if (scannerId && isSetupLink) {
+      setJustPaired(true);
+    }
+  }, [scannerId, isSetupLink]);
+
+  if (isSetupLink && !justPaired) {
+    console.log("🔗 Setup Link Detected - Active:", Object.fromEntries(queryParams));
+  }
 
   // If scanner was deleted - show error screen (UNLESS we are trying to setup)
   if (scannerDeletedError && !isSetupLink) {
@@ -72,8 +85,8 @@ function AppContent() {
     );
   }
 
-  // If no scanner ID OR we are setting up
-  if (!scannerId || isSetupLink) {
+  // If no scanner ID OR we are setting up (and haven't just finished)
+  if (!scannerId || (isSetupLink && !justPaired)) {
     return (
       <div className="transition-opacity duration-300 opacity-100">
         <SetupScreen />

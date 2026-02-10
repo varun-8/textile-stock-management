@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { IconBroadcast, IconPlus, IconTrash } from '../components/Icons';
 import { io } from "socket.io-client";
+import { useConfig } from '../context/ConfigContext';
 
 const Sessions = () => {
+    const { apiUrl } = useConfig();
     const [sessions, setSessions] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [showCreateModal, setShowCreateModal] = useState(false);
@@ -23,44 +25,98 @@ const Sessions = () => {
     const [showReportModal, setShowReportModal] = useState(false);
     const [reportData, setReportData] = useState(null);
 
+    // Filters
+    const [filterDate, setFilterDate] = useState('');
+
     // Live View State
     const [showLiveView, setShowLiveView] = useState(false);
     const [liveSession, setLiveSession] = useState(null);
     const [liveScans, setLiveScans] = useState([]);
 
+    // Refs for Socket Listeners (To avoid constant reconnections)
+    const liveViewRef = useRef(showLiveView);
+    const liveSessionRef = useRef(liveSession);
+
+    useEffect(() => {
+        liveViewRef.current = showLiveView;
+        liveSessionRef.current = liveSession;
+    }, [showLiveView, liveSession]);
+
     // Socket Connection
     useEffect(() => {
-        const socket = io('https://stock-system.local:5000', {
+        const socket = io(apiUrl, {
             rejectUnauthorized: false,
             transports: ['websocket', 'polling']
         });
 
         socket.on('stock_update', (data) => {
-            if (showLiveView && liveSession && data.sessionId === liveSession._id) {
-                setLiveScans(prev => [data, ...prev].slice(0, 50)); // Keep last 50
+            // Use refs to check condition without needing effect to re-run
+            if (liveViewRef.current && liveSessionRef.current && String(data.sessionId) === String(liveSessionRef.current._id)) {
+                setLiveScans(prev => [data, ...prev].slice(0, 100)); // Keep last 100
             }
             // Also refresh stats if in list view
-            if (!showLiveView) {
+            if (!liveViewRef.current) {
                 fetchSessions();
             }
         });
 
-        socket.on('session_update', () => {
+        socket.on('session_update', async (data) => {
             fetchSessions();
+            fetchHistory();
+
+            // Auto-update live session counts if it's the one being monitored
+            if (liveViewRef.current && liveSessionRef.current && String(data.sessionId) === String(liveSessionRef.current._id)) {
+                // Background fetch will handle liveSession update via sync effect
+            }
+
+            // Auto-show report when session ends
+            if (data && data.action === 'ENDED' && data.sessionId) {
+                try {
+                    const res = await fetch(`${apiUrl}/api/sessions/${data.sessionId}/summary`);
+                    const report = await res.json();
+                    if (report.success) {
+                        setReportData(report);
+                        setShowReportModal(true);
+                    }
+                } catch (err) {
+                    console.error("Failed to auto-load report", err);
+                }
+            }
         });
 
         return () => socket.disconnect();
-    }, [showLiveView, liveSession]);
+    }, [apiUrl]);
 
-    const openLiveView = (session) => {
+    const openLiveView = async (session) => {
         setLiveSession(session);
         setLiveScans([]); // Clear previous
         setShowLiveView(true);
+
+        // Fetch existing items for this session to populate the monitor immediately
+        try {
+            const res = await fetch(`${apiUrl}/api/sessions/${session._id}/preview`);
+            const data = await res.json();
+            if (data.success && data.items) {
+                const historicScans = data.items.map(item => ({
+                    barcode: item.barcode,
+                    timestamp: item.scannedAt,
+                    user: item.scannedBy,
+                    details: {
+                        metre: item.metre,
+                        weight: item.weight
+                    },
+                    sessionId: session._id
+                }));
+                setLiveScans(historicScans);
+            }
+        } catch (err) {
+            console.error("Failed to load session preview", err);
+        }
     };
 
     const fetchSessions = async () => {
         try {
-            const res = await fetch('https://stock-system.local:5000/api/sessions/active');
+            const res = await fetch(`${apiUrl}/api/sessions/active`);
             const data = await res.json();
             setSessions(Array.isArray(data) ? data : []);
             setIsLoading(false);
@@ -73,7 +129,7 @@ const Sessions = () => {
     const fetchSizes = async () => {
         try {
 
-            const resSizes = await fetch('https://stock-system.local:5000/api/sizes');
+            const resSizes = await fetch(`${apiUrl}/api/sizes`);
             const data = await resSizes.json();
             setSizes(data);
             if (data.length > 0 && !targetSize) setTargetSize(data[0].code);
@@ -84,13 +140,25 @@ const Sessions = () => {
 
     const fetchHistory = async () => {
         try {
-            const res = await fetch('https://stock-system.local:5000/api/sessions/history');
+            let url = `${apiUrl}/api/sessions/history`;
+            const params = new URLSearchParams();
+            if (filterDate) params.append('date', filterDate);
+
+            if (params.toString()) {
+                url += `?${params.toString()}`;
+            }
+
+            const res = await fetch(url);
             const data = await res.json();
             setHistory(Array.isArray(data) ? data : []);
         } catch (err) {
             console.error('Failed to fetch history', err);
         }
     };
+
+    useEffect(() => {
+        fetchHistory();
+    }, [filterDate]);
 
     useEffect(() => {
         fetchSessions();
@@ -101,12 +169,19 @@ const Sessions = () => {
             fetchHistory();
         }, 2000); // Poll every 2 seconds for faster updates
         return () => clearInterval(interval);
-    }, []);
+    }, [apiUrl]);
+
+    useEffect(() => {
+        if (showLiveView && liveSession) {
+            const updated = sessions.find(s => String(s._id) === String(liveSession._id));
+            if (updated) setLiveSession(updated);
+        }
+    }, [sessions, showLiveView]);
 
     const handleCreateSession = async (e) => {
         e.preventDefault();
         try {
-            const res = await fetch('https://stock-system.local:5000/api/sessions/create', {
+            const res = await fetch(`${apiUrl}/api/sessions/create`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -127,7 +202,7 @@ const Sessions = () => {
 
     const initiateCloseSession = async (sessionId) => {
         try {
-            const res = await fetch(`https://stock-system.local:5000/api/sessions/${sessionId}/preview`);
+            const res = await fetch(`${apiUrl}/api/sessions/${sessionId}/preview`);
             const data = await res.json();
             if (data.success) {
                 setPreviewStats(data.stats);
@@ -145,7 +220,7 @@ const Sessions = () => {
     const confirmCloseSession = async () => {
         if (!selectedSessionId) return;
         try {
-            const res = await fetch('https://stock-system.local:5000/api/sessions/end', {
+            const res = await fetch(`${apiUrl}/api/sessions/end`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ sessionId: selectedSessionId })
@@ -167,13 +242,13 @@ const Sessions = () => {
     }
 
     const handleExport = (sessionId, type, size, reportType) => {
-        const url = `https://stock-system.local:5000/api/sessions/${sessionId}/export/${reportType}`;
+        const url = `${apiUrl}/api/sessions/${sessionId}/export/${reportType}`;
         window.open(url, '_blank');
     };
 
     const handleViewReport = async (sessionId) => {
         try {
-            const res = await fetch(`https://stock-system.local:5000/api/sessions/${sessionId}/summary`);
+            const res = await fetch(`${apiUrl}/api/sessions/${sessionId}/summary`);
             const data = await res.json();
             if (data.success) {
                 setReportData(data);
@@ -212,11 +287,11 @@ const Sessions = () => {
                 {isLoading ? (
                     <div style={{ textAlign: 'center', padding: '4rem', opacity: 0.5 }}>Loading active sessions...</div>
                 ) : (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1.5rem' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1.5rem' }}>
                         {sessions.length === 0 && (
-                            <div className="panel" style={{ gridColumn: '1/-1', textAlign: 'center', padding: '4rem 2rem', borderStyle: 'dashed', background: 'transparent' }}>
-                                <div style={{ fontSize: '3rem', marginBottom: '1rem', opacity: 0.3, color: 'var(--text-secondary)' }}>📡</div>
-                                <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1.1rem' }}>No active sessions</h3>
+                            <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '4rem 2rem', border: '2px dashed var(--border-color)', borderRadius: '16px', background: 'transparent' }}>
+                                <div style={{ fontSize: '3rem', marginBottom: '1rem', opacity: 0.3 }}>📡</div>
+                                <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1.1rem', color: 'var(--text-secondary)' }}>No Active Sessions</h3>
                                 <p style={{ margin: 0, opacity: 0.6, fontSize: '0.9rem' }}>
                                     Start a new session to begin scanning operations.
                                 </p>
@@ -229,63 +304,116 @@ const Sessions = () => {
                             const statusBg = isIN ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)';
 
                             return (
-                                <div key={session._id} className="panel glass" style={{ padding: '2rem', position: 'relative', overflow: 'hidden', borderLeft: `4px solid ${statusColor}` }}>
-
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
-                                        <div>
-                                            <div style={{
-                                                display: 'inline-block', padding: '4px 10px', borderRadius: '6px',
-                                                background: statusBg, color: statusColor,
-                                                fontSize: '0.7rem', fontWeight: '800', letterSpacing: '0.05em'
-                                            }}>
-                                                STOCK {session.type}
-                                            </div>
-                                            <h3 style={{ fontSize: '2.5rem', fontWeight: '800', margin: '0.5rem 0 0', lineHeight: 1 }}>
-                                                {session.targetSize}
-                                            </h3>
-                                            <div style={{ fontSize: '0.75rem', opacity: 0.5, fontWeight: '700', textTransform: 'uppercase', letterSpacing: '1px' }}>TARGET SIZE</div>
+                                <div key={session._id} style={{
+                                    background: 'var(--bg-secondary)',
+                                    borderRadius: '16px',
+                                    border: '1px solid var(--border-color)',
+                                    padding: '1.5rem',
+                                    position: 'relative',
+                                    overflow: 'hidden',
+                                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+                                    transition: 'transform 0.2s ease, box-shadow 0.2s ease'
+                                }}
+                                    onMouseEnter={e => {
+                                        e.currentTarget.style.transform = 'translateY(-2px)';
+                                        e.currentTarget.style.boxShadow = '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)';
+                                    }}
+                                    onMouseLeave={e => {
+                                        e.currentTarget.style.transform = 'translateY(0)';
+                                        e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)';
+                                    }}
+                                >
+                                    {/* Top Bar */}
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                                        <div style={{
+                                            padding: '4px 12px',
+                                            borderRadius: '20px',
+                                            background: statusBg,
+                                            color: statusColor,
+                                            fontSize: '0.75rem',
+                                            fontWeight: '700',
+                                            letterSpacing: '0.05em',
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '6px'
+                                        }}>
+                                            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: statusColor }}></span>
+                                            {isIN ? 'STOCK IN' : 'DISPATCH'}
                                         </div>
-                                        <div style={{ textAlign: 'right' }}>
-                                            <div style={{ fontSize: '2rem', fontWeight: '300', color: 'var(--accent-color)' }}>
-                                                {session.activeScanners ? session.activeScanners.length : 0}
-                                            </div>
-                                            <div style={{ fontSize: '0.7rem', opacity: 0.6 }}>SCANNERS</div>
+                                        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontFamily: 'monospace' }}>
+                                            {new Date(session.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                         </div>
                                     </div>
 
-                                    <div style={{ marginTop: '2rem', paddingTop: '1rem', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                        <div>
-                                            <div style={{ fontSize: '0.7rem', opacity: 0.5 }}>SCANNED</div>
+                                    {/* Main Content */}
+                                    <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
+                                        <div style={{ fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>TARGET SIZE</div>
+                                        <div style={{ fontSize: '3.5rem', fontWeight: '800', lineHeight: 1, color: 'var(--text-primary)' }}>
+                                            {session.targetSize}
+                                        </div>
+                                    </div>
+
+                                    {/* Stats Grid */}
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.5rem', padding: '1rem 0', borderTop: '1px solid var(--border-color)', borderBottom: '1px solid var(--border-color)' }}>
+                                        <div style={{ textAlign: 'center', borderRight: '1px solid var(--border-color)' }}>
                                             <div style={{ fontSize: '1.5rem', fontWeight: '700', color: 'var(--accent-color)' }}>
                                                 {session.scannedCount || 0}
                                             </div>
+                                            <div style={{ fontSize: '0.7rem', fontWeight: '600', color: 'var(--text-secondary)' }}>SCANNED</div>
                                         </div>
-                                        <div>
-                                            <div style={{ fontSize: '0.7rem', opacity: 0.5 }}>STARTED AT</div>
-                                            <div style={{ fontSize: '0.9rem', fontFamily: 'monospace' }}>
-                                                {new Date(session.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                        <div style={{ textAlign: 'center' }}>
+                                            <div style={{ fontSize: '1.5rem', fontWeight: '700', color: 'var(--text-primary)' }}>
+                                                {session.activeScanners ? session.activeScanners.length : 0}
                                             </div>
+                                            <div style={{ fontSize: '0.7rem', fontWeight: '600', color: 'var(--text-secondary)' }}>A. SCANNERS</div>
                                         </div>
-                                        <button
-                                            onClick={() => initiateCloseSession(session._id)}
-                                            style={{
-                                                background: 'rgba(239, 68, 68, 0.1)', color: 'var(--error-color)', border: 'none',
-                                                padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px',
-                                                fontWeight: '600'
-                                            }}
-                                            title="End Session"
-                                        >
-                                            <IconTrash /> END SESSION
-                                        </button>
+                                    </div>
+
+                                    {/* Actions */}
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                                         <button
                                             onClick={() => openLiveView(session)}
                                             style={{
-                                                background: 'var(--accent-color)', color: 'white', border: 'none',
-                                                padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px',
-                                                fontWeight: '600', marginLeft: '10px'
+                                                background: 'var(--bg-primary)',
+                                                color: 'var(--text-primary)',
+                                                border: '1px solid var(--border-color)',
+                                                padding: '10px',
+                                                borderRadius: '8px',
+                                                cursor: 'pointer',
+                                                fontWeight: '600',
+                                                fontSize: '0.85rem',
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                                                transition: 'all 0.2s'
+                                            }}
+                                            onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--accent-color)'}
+                                            onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border-color)'}
+                                        >
+                                            <IconBroadcast size={16} /> Monitor
+                                        </button>
+                                        <button
+                                            onClick={() => initiateCloseSession(session._id)}
+                                            style={{
+                                                background: 'rgba(239, 68, 68, 0.1)',
+                                                color: 'var(--error-color)',
+                                                border: '1px solid transparent',
+                                                padding: '10px',
+                                                borderRadius: '8px',
+                                                cursor: 'pointer',
+                                                fontWeight: '600',
+                                                fontSize: '0.85rem',
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                                                transition: 'all 0.2s'
+                                            }}
+                                            onMouseEnter={e => {
+                                                e.currentTarget.style.background = 'var(--error-color)';
+                                                e.currentTarget.style.color = 'white';
+                                            }}
+                                            onMouseLeave={e => {
+                                                e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)';
+                                                e.currentTarget.style.color = 'var(--error-color)';
                                             }}
                                         >
-                                            <IconBroadcast /> LIVE VIEW
+                                            End Session
                                         </button>
                                     </div>
                                 </div>
@@ -296,62 +424,95 @@ const Sessions = () => {
 
                 {/* HISTORY SECTION */}
                 <div style={{ marginTop: '4rem' }}>
-                    <h2 style={{ fontSize: '1.25rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>Session History</h2>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '2rem' }}>
+                        <div>
+                            <h2 style={{ fontSize: '1.5rem', fontWeight: '800', margin: '0 0 0.5rem 0', color: 'var(--text-primary)' }}>Session History</h2>
+                            <p style={{ opacity: 0.6, fontSize: '0.9rem', margin: 0 }}>Review and export reports from previous operations.</p>
+                        </div>
 
-                    <div style={{ background: 'var(--bg-secondary)', borderRadius: '16px', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                            <thead>
-                                <tr style={{ background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid var(--border-color)' }}>
-                                    <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.75rem', opacity: 0.6 }}>DATE</th>
-                                    <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.75rem', opacity: 0.6 }}>TYPE</th>
-                                    <th style={{ padding: '16px', textAlign: 'left', fontSize: '0.75rem', opacity: 0.6 }}>SIZE</th>
-                                    <th style={{ padding: '16px', textAlign: 'right', fontSize: '0.75rem', opacity: 0.6 }}>ACTIONS</th>
+                        {/* Date Filter */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--bg-tertiary)', padding: '6px 6px 6px 12px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
+                            <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>DATE:</label>
+                            <input
+                                type="date"
+                                value={filterDate}
+                                onChange={(e) => setFilterDate(e.target.value)}
+                                style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', fontSize: '0.9rem', fontWeight: '600', outline: 'none', padding: '4px' }}
+                            />
+                            {filterDate && (
+                                <button
+                                    onClick={() => setFilterDate('')}
+                                    style={{ background: 'rgba(0,0,0,0.1)', border: 'none', borderRadius: '6px', width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--text-secondary)' }}
+                                    title="Clear Date"
+                                >
+                                    ×
+                                </button>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="panel" style={{ padding: 0, overflow: 'hidden', border: '1px solid var(--border-color)', borderRadius: '16px' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+                            <thead style={{ background: 'var(--bg-tertiary)', borderBottom: '1px solid var(--border-color)' }}>
+                                <tr>
+                                    <th style={{ padding: '1rem 1.5rem', textAlign: 'left', fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', width: '25%' }}>Date & Time</th>
+                                    <th style={{ padding: '1rem 1.5rem', textAlign: 'left', fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', width: '15%' }}>Type</th>
+                                    <th style={{ padding: '1rem 1.5rem', textAlign: 'center', fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', width: '15%' }}>Target Size</th>
+                                    <th style={{ padding: '1rem 1.5rem', textAlign: 'right', fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', width: '15%' }}>Items Scanned</th>
+                                    <th style={{ padding: '1rem 1.5rem', textAlign: 'right', fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', width: '30%' }}>Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {history.length === 0 ? (
                                     <tr>
-                                        <td colSpan="4" style={{ padding: '32px', textAlign: 'center', opacity: 0.5 }}>No history found</td>
+                                        <td colSpan="6" style={{ padding: '4rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                                            <div style={{ fontSize: '2rem', marginBottom: '1rem', opacity: 0.3 }}>📅</div>
+                                            No session history found for selected range.
+                                        </td>
                                     </tr>
                                 ) : (
                                     history.map(s => (
-                                        <tr key={s._id} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                                            <td style={{ padding: '16px', fontSize: '0.9rem' }}>
-                                                {new Date(s.createdAt).toLocaleDateString()} {new Date(s.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                        <tr key={s._id} style={{ borderBottom: '1px solid var(--border-color)', transition: 'background 0.2s' }} className="hover:bg-white/5">
+                                            <td style={{ padding: '1rem 1.5rem' }}>
+                                                <div style={{ fontWeight: '600', color: 'var(--text-primary)' }}>{new Date(s.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</div>
+                                                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                                                    {new Date(s.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                    {s.endedAt ? ` - ${new Date(s.endedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}
+                                                </div>
                                             </td>
-                                            <td style={{ padding: '16px' }}>
+                                            <td style={{ padding: '1rem 1.5rem' }}>
                                                 <span style={{
-                                                    padding: '4px 8px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: '800',
+                                                    padding: '4px 10px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '800', letterSpacing: '0.05em',
                                                     background: s.type === 'IN' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                                                    color: s.type === 'IN' ? 'var(--success-color)' : 'var(--error-color)'
+                                                    color: s.type === 'IN' ? 'var(--success-color)' : 'var(--error-color)',
+                                                    border: `1px solid ${s.type === 'IN' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)'}`
                                                 }}>
-                                                    {s.type}
+                                                    {s.type === 'IN' ? 'STOCK IN' : 'DISPATCH'}
                                                 </span>
                                             </td>
-                                            <td style={{ padding: '16px', fontSize: '1rem', fontWeight: '700' }}>{s.targetSize}</td>
-                                            <td style={{ padding: '16px', textAlign: 'right' }}>
-                                                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-                                                    <button
-                                                        onClick={() => handleViewReport(s._id)}
-                                                        className="btn"
-                                                        style={{ padding: '6px 12px', fontSize: '1.2rem', background: 'transparent', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center' }}
-                                                        title="Preview Report"
-                                                    >
-                                                        👁️
-                                                    </button>
+                                            <td style={{ padding: '1rem 1.5rem', textAlign: 'center', fontWeight: '700', fontSize: '1rem' }}>
+                                                {s.targetSize}
+                                            </td>
+                                            <td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontFamily: 'monospace', fontSize: '1rem', fontWeight: '700' }}>
+                                                {s.totalItems !== undefined ? s.totalItems : (s.scannedCount || 0)}
+                                            </td>
+
+                                            <td style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>
+                                                <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                                                     <button
                                                         onClick={() => handleExport(s._id, s.type, s.targetSize, 'summary')}
                                                         className="btn"
-                                                        style={{ padding: '6px 12px', fontSize: '0.8rem', background: 'transparent', border: '1px solid var(--border-color)' }}
+                                                        style={{ padding: '6px 12px', fontSize: '0.8rem', background: 'var(--bg-primary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                                                        title="Download Excel Summary"
                                                     >
-                                                        💾 Summary Export
+                                                        📊 Export
                                                     </button>
                                                     <button
-                                                        onClick={() => handleExport(s._id, s.type, s.targetSize, 'details')}
+                                                        onClick={() => handleViewReport(s._id)}
                                                         className="btn"
-                                                        style={{ padding: '6px 12px', fontSize: '0.8rem', background: 'var(--accent-color)', color: 'white', border: 'none' }}
+                                                        style={{ padding: '6px 12px', fontSize: '0.8rem', background: 'rgba(99, 102, 241, 0.1)', border: 'none', color: 'var(--accent-color)' }}
                                                     >
-                                                        📄 Detailed Export
+                                                        👁️ View
                                                     </button>
                                                 </div>
                                             </td>
@@ -401,7 +562,7 @@ const Sessions = () => {
                                 <div>
                                     <div style={{ fontSize: '0.7rem', fontWeight: '800', opacity: 0.5, marginBottom: '0.5rem' }}>SESSION TOTAL</div>
                                     <div style={{ fontSize: '2.5rem', fontWeight: '800' }}>
-                                        {liveScans.length + (liveSession.scannedCount || 0)}
+                                        {liveSession.scannedCount || 0}
                                     </div>
                                     <div style={{ fontSize: '0.8rem', opacity: 0.7 }}>Items Scanned</div>
                                 </div>

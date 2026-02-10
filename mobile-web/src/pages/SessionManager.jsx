@@ -224,17 +224,43 @@ const SessionManager = () => {
 
     const modalOverlayStyle = {
         position: 'fixed', inset: 0,
-        background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(5px)',
-        zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center'
+        background: 'rgba(2, 6, 23, 0.85)', backdropFilter: 'blur(12px)',
+        zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: '20px'
     };
 
     const modalContentStyle = {
-        background: THEME.secondary,
-        width: '90%', maxWidth: '400px',
-        borderRadius: '24px',
-        padding: '24px',
-        border: `1px solid ${THEME.border}`,
-        boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5)'
+        background: 'rgba(30, 41, 59, 0.7)',
+        width: '100%', maxWidth: '420px',
+        borderRadius: '32px',
+        padding: '32px',
+        border: '1px solid rgba(255, 255, 255, 0.1)',
+        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+        position: 'relative',
+        overflow: 'hidden'
+    };
+
+    const modalBackdropStyle = {
+        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(8px)', zIndex: 1000
+    };
+
+    const menuStyle = {
+        position: 'fixed', bottom: 0, left: 0, right: 0,
+        background: 'rgba(15, 23, 42, 0.95)',
+        backdropFilter: 'blur(20px)',
+        borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+        borderTopLeftRadius: '32px', borderTopRightRadius: '32px',
+        padding: '32px 24px 48px', zIndex: 1001,
+        boxShadow: '0 -10px 40px rgba(0,0,0,0.5)',
+        display: 'flex', flexDirection: 'column', gap: '8px'
+    };
+
+    const menuBtnStyle = {
+        width: '100%', padding: '16px 20px', borderRadius: '16px',
+        background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)',
+        color: 'white', fontSize: '15px', fontWeight: '700',
+        display: 'flex', alignItems: 'center', gap: '14px', cursor: 'pointer',
+        textAlign: 'left'
     };
 
     return (
@@ -242,70 +268,71 @@ const SessionManager = () => {
             <div style={{ flex: 1, overflowY: 'auto', padding: '16px', paddingBottom: '100px' }}>
                 <div style={{ maxWidth: '520px', margin: '0 auto' }}>
                     {/* Header */}
+                    {/* Modern App Header */}
                     <div style={{
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
-                        gap: '12px',
-                        marginBottom: '20px'
+                        padding: '12px 0',
+                        marginBottom: '24px'
                     }}>
+                        {/* Company Logo & Service Name */}
                         <div style={{
                             display: 'flex',
                             alignItems: 'center',
-                            gap: '12px',
-                            flex: 1,
-                            height: '44px',
-                            background: 'rgba(30, 41, 59, 0.55)',
-                            border: `1px solid ${THEME.border}`,
-                            borderRadius: '12px',
-                            padding: '0 14px',
-                            boxShadow: '0 10px 24px rgba(0,0,0,0.25)'
+                            gap: '14px',
+                            background: 'rgba(255, 255, 255, 0.03)',
+                            padding: '6px 16px 6px 8px',
+                            borderRadius: '16px',
+                            border: '1px solid rgba(255, 255, 255, 0.08)',
+                            backdropFilter: 'blur(10px)'
                         }}>
-                            <img src={`${import.meta.env.BASE_URL}logo.svg`} alt="Prodexa" style={{ width: '28px', height: '28px', flexShrink: 0 }} />
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1px', justifyContent: 'center', minWidth: 0 }}>
-                                <span style={{ fontSize: '15px', fontWeight: '800', color: THEME.text, letterSpacing: '-0.02em', lineHeight: '1.2' }}>Prodexa</span>
-                                <span style={{ fontSize: '9px', fontWeight: '700', color: THEME.accent, letterSpacing: '0.06em', lineHeight: '1.2', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>SRI LAKSHMI TEXTILES</span>
+                            <div style={{
+                                width: '36px', height: '36px', background: THEME.accent,
+                                borderRadius: '12px', display: 'flex', alignItems: 'center',
+                                justifyContent: 'center', boxShadow: '0 4px 12px rgba(99, 102, 241, 0.2)'
+                            }}>
+                                <img src={`${import.meta.env.BASE_URL}logo.svg`} alt="Prodexa" style={{ width: '22px', height: '22px' }} />
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                <span style={{ fontSize: '16px', fontWeight: '900', color: 'white', letterSpacing: '-0.02em', lineHeight: 1 }}>Prodexa</span>
+                                <span style={{ fontSize: '9px', fontWeight: '700', color: THEME.textMuted, letterSpacing: '0.05em', marginTop: '2px' }}>TEXTILE MANAGEMENT</span>
                             </div>
                         </div>
-                        <div style={{ display: 'flex', gap: '8px' }}>
-                            {/* ... Buttons preserved but simplified if needed ... */}
+
+                        {/* Right: Profile & Actions */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <button
                                 onClick={() => setShowScanVerify(true)}
                                 style={{
-                                    width: '44px', height: '44px', background: THEME.secondary, borderRadius: '12px',
-                                    border: `1px solid ${THEME.border}`, color: THEME.accent, cursor: 'pointer',
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0
+                                    width: '42px', height: '42px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px',
+                                    border: '1px solid rgba(255,255,255,0.08)', color: 'white', cursor: 'pointer',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center'
                                 }}
-                                title="Scan to Verify"
                             >
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                    <rect x="3" y="3" width="18" height="18" rx="2" />
-                                    <path d="M9 3v18" />
-                                    <path d="M15 3v18" />
-                                </svg>
+                                🔍
                             </button>
-                            <button
-                                onClick={fetchSessions}
-                                style={{
-                                    width: '44px', height: '44px', background: THEME.secondary, borderRadius: '12px',
-                                    border: `1px solid ${THEME.border}`, color: THEME.accent, cursor: 'pointer',
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0
-                                }}
-                                title="Refresh Sessions"
-                            >
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" /><path d="M16 21h5v-5" /></svg>
-                            </button>
-                            <button
+
+                            <div
                                 onClick={() => setShowMenu(true)}
                                 style={{
-                                    width: '44px', height: '44px', background: THEME.secondary, borderRadius: '12px',
-                                    border: `1px solid ${THEME.border}`, color: THEME.accent, cursor: 'pointer', fontSize: '18px',
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0
+                                    height: '42px', padding: '0 6px 0 12px', background: 'rgba(255, 255, 255, 0.05)',
+                                    borderRadius: '14px', border: '1px solid rgba(255, 255, 255, 0.08)',
+                                    display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer'
                                 }}
-                                title="Menu"
                             >
-                                ☰
-                            </button>
+                                <span style={{ fontSize: '12px', fontWeight: '800', color: 'white' }}>
+                                    {employee ? employee.name.split(' ')[0] : 'Profile'}
+                                </span>
+                                <div style={{
+                                    width: '30px', height: '30px', borderRadius: '10px',
+                                    background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    fontSize: '12px', fontWeight: '900', color: 'white'
+                                }}>
+                                    {employee ? employee.name.charAt(0).toUpperCase() : '?'}
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -330,109 +357,120 @@ const SessionManager = () => {
                             )}
 
                             {sessions.map(session => (
-                                <div key={session._id} style={{ ...cardStyle }}>
+                                <div key={session._id} style={{
+                                    ...cardStyle,
+                                    background: 'rgba(30, 41, 59, 0.4)',
+                                    backdropFilter: 'blur(10px)',
+                                    border: '1px solid rgba(255, 255, 255, 0.05)',
+                                    borderRadius: '24px',
+                                    padding: '24px',
+                                    position: 'relative',
+                                    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.2)'
+                                }}>
+                                    {/* Status Glow Bar */}
                                     <div style={{
-                                        position: 'absolute', top: 0, bottom: 0, left: 0, width: '6px',
-                                        background: session.type === 'IN' ? THEME.success : THEME.error
+                                        position: 'absolute', top: 0, left: '20px', right: '20px', height: '2px',
+                                        background: session.type === 'IN'
+                                            ? 'linear-gradient(90deg, transparent, #10b981, transparent)'
+                                            : 'linear-gradient(90deg, transparent, #ef4444, transparent)',
+                                        opacity: 0.6
                                     }}></div>
 
                                     {/* Session Header */}
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px', paddingLeft: '12px' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
                                         <div>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                                                <div style={{
+                                                    width: '8px', height: '8px', borderRadius: '50%',
+                                                    background: session.type === 'IN' ? THEME.success : THEME.error,
+                                                    boxShadow: `0 0 10px ${session.type === 'IN' ? THEME.success : THEME.error}`
+                                                }}></div>
                                                 <span style={{
-                                                    padding: '4px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.5px',
-                                                    background: session.type === 'IN' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                                                    color: session.type === 'IN' ? THEME.success : THEME.error,
-                                                    border: `1px solid ${session.type === 'IN' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)'}`
+                                                    fontSize: '10px', fontWeight: '900', color: session.type === 'IN' ? THEME.success : THEME.error,
+                                                    textTransform: 'uppercase', letterSpacing: '0.1em'
                                                 }}>
-                                                    {session.type === 'IN' ? '📥 STOCK IN' : '📤 DISPATCH'}
+                                                    {session.type === 'IN' ? 'Stock Entry' : 'Dispatch'}
                                                 </span>
-                                                <span style={{ fontSize: '11px', color: THEME.textMuted, fontFamily: 'monospace' }}>
+                                                <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.2)', margin: '0 4px' }}>|</span>
+                                                <span style={{ fontSize: '11px', color: THEME.textMuted, fontWeight: '600' }}>
                                                     {new Date(session.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                                 </span>
                                             </div>
-                                            <h2 style={{ fontSize: '28px', fontWeight: '800', color: 'white', margin: 0, lineHeight: 1 }}>
+                                            <h2 style={{ fontSize: '32px', fontWeight: '900', color: 'white', margin: 0, letterSpacing: '-0.03em' }}>
                                                 Size <span style={{ color: THEME.accent }}>{session.targetSize}</span>
                                             </h2>
-                                            <div style={{ fontSize: '12px', color: THEME.textMuted, fontWeight: '500', marginTop: '4px' }}>
-                                                By {session.createdBy}
-                                            </div>
-                                        </div>
-                                        <div style={{ textAlign: 'right' }}>
-                                            <div style={{
-                                                background: 'rgba(15, 23, 42, 0.5)', padding: '8px 12px', borderRadius: '8px',
-                                                border: `1px solid ${THEME.border}`, backdropFilter: 'blur(4px)'
-                                            }}>
-                                                <div style={{ fontSize: '20px', fontWeight: '700', color: 'white', textAlign: 'center', lineHeight: 1, marginBottom: '2px' }}>
-                                                    {session.activeScanners ? session.activeScanners.length : 0}
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px' }}>
+                                                <div style={{ width: '16px', height: '16px', borderRadius: '4px', background: 'rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px' }}>👤</div>
+                                                <div style={{ fontSize: '12px', color: THEME.textMuted, fontWeight: '600' }}>
+                                                    {session.createdBy}
                                                 </div>
-                                                <div style={{ fontSize: '9px', fontWeight: '700', color: THEME.textMuted, textTransform: 'uppercase' }}>DEVICES</div>
                                             </div>
+                                        </div>
+
+                                        <div style={{
+                                            background: 'rgba(255, 255, 255, 0.05)', padding: '10px 14px', borderRadius: '14px',
+                                            border: '1px solid rgba(255, 255, 255, 0.08)', textAlign: 'center'
+                                        }}>
+                                            <div style={{ fontSize: '20px', fontWeight: '900', color: 'white', lineHeight: 1 }}>
+                                                {session.activeScanners ? session.activeScanners.length : 0}
+                                            </div>
+                                            <div style={{ fontSize: '8px', fontWeight: '800', color: THEME.textMuted, textTransform: 'uppercase', marginTop: '4px', letterSpacing: '0.05em' }}>DEVICES</div>
                                         </div>
                                     </div>
 
-                                    {/* Session Summary */}
+                                    {/* Summary Stats Grid */}
                                     <div style={{
-                                        paddingLeft: '12px', marginBottom: '16px', paddingBottom: '16px', borderBottom: `1px solid rgba(255,255,255,0.05)`,
-                                        display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px'
+                                        display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '24px'
                                     }}>
-                                        <div style={{ background: 'rgba(99, 102, 241, 0.1)', padding: '12px', borderRadius: '8px', border: `1px solid ${THEME.accent}` }}>
-                                            <div style={{ fontSize: '11px', color: THEME.textMuted, fontWeight: '700', marginBottom: '4px' }}>TOTAL SCANNED</div>
-                                            <div style={{ fontSize: '18px', color: THEME.accent, fontWeight: '800' }}>
-                                                {session.scannedCount || 0}
-                                            </div>
+                                        <div style={{
+                                            background: 'rgba(99, 102, 241, 0.08)', padding: '16px', borderRadius: '16px',
+                                            border: '1px solid rgba(99, 102, 241, 0.15)', display: 'flex', flexDirection: 'column', gap: '4px'
+                                        }}>
+                                            <span style={{ fontSize: '10px', fontWeight: '800', color: THEME.textMuted, textTransform: 'uppercase', letterSpacing: '0.02em' }}>TOTAL SCANNED</span>
+                                            <span style={{ fontSize: '22px', fontWeight: '900', color: THEME.accent }}>{session.scannedCount || 0}</span>
                                         </div>
-                                        <div style={{ background: 'rgba(16, 185, 129, 0.1)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
-                                            <div style={{ fontSize: '11px', color: THEME.textMuted, fontWeight: '700', marginBottom: '4px' }}>DURATION</div>
-                                            <div style={{ fontSize: '18px', color: THEME.success, fontWeight: '800' }}>Active</div>
+                                        <div style={{
+                                            background: 'rgba(16, 185, 129, 0.08)', padding: '16px', borderRadius: '16px',
+                                            border: '1px solid rgba(16, 185, 129, 0.15)', display: 'flex', flexDirection: 'column', gap: '4px'
+                                        }}>
+                                            <span style={{ fontSize: '10px', fontWeight: '800', color: THEME.textMuted, textTransform: 'uppercase', letterSpacing: '0.02em' }}>STATUS</span>
+                                            <span style={{ fontSize: '20px', fontWeight: '900', color: THEME.success }}>ACTIVE</span>
                                         </div>
                                     </div>
 
-                                    {/* Action Buttons */}
-                                    <div style={{
-                                        paddingLeft: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px'
-                                    }}>
-                                        <div style={{ display: 'flex', marginLeft: '8px' }}>
-                                            {[...Array(Math.min(3, session.activeScanners?.length || 0))].map((_, i) => (
-                                                <div key={i} style={{
-                                                    width: '24px', height: '24px', borderRadius: '50%', background: '#334155', border: '2px solid #1e293b',
-                                                    marginLeft: '-8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', color: 'white'
-                                                }}>📱</div>
-                                            ))}
-                                        </div>
-                                        <div style={{ display: 'flex', gap: '8px', flex: 1 }}>
-                                            <button
-                                                onClick={() => handleJoin(session)}
-                                                style={{
-                                                    flex: 1, padding: '10px 16px', background: THEME.accent, color: 'white', border: 'none', borderRadius: '10px',
-                                                    fontWeight: '700', fontSize: '13px', cursor: 'pointer',
-                                                    boxShadow: '0 4px 10px rgba(99, 102, 241, 0.3)'
-                                                }}
-                                            >
-                                                JOIN
-                                            </button>
-                                            <button
-                                                onClick={async () => {
-                                                    if (window.confirm(`End this session? All items will be finalized.`)) {
-                                                        try {
-                                                            await api.post('/api/sessions/end', { sessionId: session._id });
-                                                            // Refresh list
-                                                            fetchSessions();
-                                                        } catch (err) {
-                                                            console.error(err);
-                                                            alert('Failed to end session');
-                                                        }
+                                    {/* Action Bar */}
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                        <button
+                                            onClick={() => handleJoin(session)}
+                                            style={{
+                                                flex: 1, height: '52px', background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
+                                                color: 'white', border: 'none', borderRadius: '16px', fontWeight: '800', fontSize: '13px',
+                                                boxShadow: '0 8px 20px rgba(99, 102, 241, 0.3)', cursor: 'pointer'
+                                            }}
+                                        >
+                                            JOIN SESSION
+                                        </button>
+                                        <button
+                                            onClick={async () => {
+                                                if (window.confirm(`End this session? All items will be finalized.`)) {
+                                                    try {
+                                                        await api.post('/api/sessions/end', { sessionId: session._id });
+                                                        fetchSessions();
+                                                    } catch (err) {
+                                                        console.error(err);
+                                                        alert('Failed to end session');
                                                     }
-                                                }}
-                                                style={{
-                                                    padding: '10px 16px', background: 'rgba(239, 68, 68, 0.1)', color: THEME.error, border: `1px solid rgba(239, 68, 68, 0.3)`,
-                                                    borderRadius: '10px', fontWeight: '700', fontSize: '13px', cursor: 'pointer'
-                                                }}
-                                            >
-                                                END
-                                            </button>
-                                        </div>
+                                                }
+                                            }}
+                                            style={{
+                                                flex: 1, height: '52px', background: 'rgba(239, 68, 68, 0.1)',
+                                                color: THEME.error, border: '1px solid rgba(239, 68, 68, 0.2)',
+                                                borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                fontSize: '13px', fontWeight: '800', cursor: 'pointer'
+                                            }}
+                                        >
+                                            END SESSION
+                                        </button>
                                     </div>
                                 </div>
                             ))}
@@ -443,170 +481,207 @@ const SessionManager = () => {
 
             {/* Bottom Action Bar */}
             <div style={{
-                padding: '20px',
-                background: 'linear-gradient(to top, #0f172a 80%, rgba(15, 23, 42, 0))',
-                position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 10
+                padding: '24px',
+                background: 'linear-gradient(to top, #0f172a 70%, transparent)',
+                position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 10,
+                display: 'flex', justifyContent: 'center'
             }}>
-                <div style={{ maxWidth: '520px', margin: '0 auto' }}>
-                    <button
-                        onClick={() => setShowCreate(true)}
-                        style={{ ...btnStyle(), boxShadow: '0 8px 24px rgba(99, 102, 241, 0.4)' }}
-                    >
-                        <span style={{ fontSize: '20px' }}>+</span>
-                        START NEW SESSION
-                    </button>
-                </div>
+                <button
+                    onClick={() => setShowCreate(true)}
+                    style={{
+                        width: '100%', maxWidth: '400px', height: '58px',
+                        background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
+                        color: 'white', border: 'none', borderRadius: '18px',
+                        fontWeight: '900', fontSize: '16px', letterSpacing: '0.02em',
+                        boxShadow: '0 12px 30px rgba(99, 102, 241, 0.4)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px'
+                    }}
+                >
+                    <span style={{ fontSize: '24px', fontWeight: '300' }}>+</span>
+                    START NEW SESSION
+                </button>
             </div>
 
             {/* Create Modal */}
             {showCreate && (
                 <div style={modalOverlayStyle}>
-                    <div style={{ ...modalContentStyle, position: 'relative' }}>
+                    <div style={modalContentStyle}>
+                        {/* Decorative Background Glow */}
+                        <div style={{
+                            position: 'absolute', top: '-100px', right: '-100px', width: '200px', height: '200px',
+                            background: 'radial-gradient(circle, rgba(99, 102, 241, 0.15) 0%, transparent 70%)',
+                            pointerEvents: 'none'
+                        }}></div>
+
                         <button
                             onClick={() => setShowCreate(false)}
-                            style={{ position: 'absolute', top: '16px', right: '16px', background: 'transparent', border: 'none', color: THEME.textMuted, fontSize: '20px' }}
+                            style={{
+                                position: 'absolute', top: '24px', right: '24px',
+                                width: '32px', height: '32px', borderRadius: '50%',
+                                background: 'rgba(255,255,255,0.05)', border: 'none',
+                                color: 'white', fontSize: '18px', cursor: 'pointer',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center'
+                            }}
                         >✕</button>
 
-                        <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+                        <div style={{ textAlign: 'center', marginBottom: '32px' }}>
                             <div style={{
-                                width: '48px', height: '48px', margin: '0 auto 16px', borderRadius: '50%',
-                                background: 'rgba(99, 102, 241, 0.2)', color: THEME.accent, display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                width: '56px', height: '56px', margin: '0 auto 16px', borderRadius: '18px',
+                                background: 'rgba(99, 102, 241, 0.1)', color: THEME.accent,
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                border: '1px solid rgba(99, 102, 241, 0.2)'
                             }}>
-                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
                             </div>
-                            <h2 style={{ fontSize: '20px', fontWeight: '800', color: 'white', margin: 0 }}>Start New Session</h2>
-                            <p style={{ color: THEME.textMuted, fontSize: '13px', marginTop: '4px' }}>Configure operation details</p>
+                            <h2 style={{ fontSize: '24px', fontWeight: '900', color: 'white', margin: 0, letterSpacing: '-0.02em' }}>New Session</h2>
+                            <p style={{ color: THEME.textMuted, fontSize: '14px', marginTop: '6px', fontWeight: '500' }}>Define your operation parameters</p>
                         </div>
 
                         <form onSubmit={handleCreate}>
-                            <div style={{ marginBottom: '20px' }}>
-                                <label style={{ display: 'block', color: THEME.textMuted, fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '1px' }}>
-                                    Operation Type
+                            <div style={{ marginBottom: '28px' }}>
+                                <label style={{ display: 'block', color: THEME.textMuted, fontSize: '11px', fontWeight: '800', textTransform: 'uppercase', marginBottom: '12px', letterSpacing: '0.1em' }}>
+                                    TYPE OF OPERATION
                                 </label>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                                     <button
                                         type="button"
                                         onClick={() => setNewType('IN')}
                                         style={{
-                                            padding: '16px', borderRadius: '12px', border: `2px solid ${newType === 'IN' ? THEME.success : 'transparent'}`,
-                                            background: newType === 'IN' ? 'rgba(16, 185, 129, 0.1)' : THEME.primary,
-                                            color: newType === 'IN' ? THEME.success : THEME.textMuted,
+                                            padding: '16px', borderRadius: '16px',
+                                            border: `2px solid ${newType === 'IN' ? THEME.success : 'rgba(255,255,255,0.05)'}`,
+                                            background: newType === 'IN' ? 'rgba(16, 185, 129, 0.08)' : 'rgba(255,255,255,0.02)',
+                                            color: newType === 'IN' ? THEME.success : 'rgba(255,255,255,0.4)',
                                             display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', cursor: 'pointer',
-                                            fontWeight: '700'
+                                            fontWeight: '800', transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
                                         }}
                                     >
-                                        <span style={{ fontSize: '20px' }}>📥</span>
-                                        <span>STOCK IN</span>
+                                        <span style={{ fontSize: '24px' }}>📥</span>
+                                        <span style={{ fontSize: '12px' }}>STOCK IN</span>
                                     </button>
                                     <button
                                         type="button"
                                         onClick={() => setNewType('OUT')}
                                         style={{
-                                            padding: '16px', borderRadius: '12px', border: `2px solid ${newType === 'OUT' ? THEME.error : 'transparent'}`,
-                                            background: newType === 'OUT' ? 'rgba(239, 68, 68, 0.1)' : THEME.primary,
-                                            color: newType === 'OUT' ? THEME.error : THEME.textMuted,
+                                            padding: '16px', borderRadius: '16px',
+                                            border: `2px solid ${newType === 'OUT' ? THEME.error : 'rgba(255,255,255,0.05)'}`,
+                                            background: newType === 'OUT' ? 'rgba(239, 68, 68, 0.08)' : 'rgba(255,255,255,0.02)',
+                                            color: newType === 'OUT' ? THEME.error : 'rgba(255,255,255,0.4)',
                                             display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', cursor: 'pointer',
-                                            fontWeight: '700'
+                                            fontWeight: '800', transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
                                         }}
                                     >
-                                        <span style={{ fontSize: '20px' }}>📤</span>
-                                        <span>DISPATCH</span>
+                                        <span style={{ fontSize: '24px' }}>📤</span>
+                                        <span style={{ fontSize: '12px' }}>DISPATCH</span>
                                     </button>
                                 </div>
                             </div>
 
-                            <div style={{ marginBottom: '24px' }}>
-                                <label style={{ display: 'block', color: THEME.textMuted, fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '1px' }}>
-                                    Target Size
+                            <div style={{ marginBottom: '32px' }}>
+                                <label style={{ display: 'block', color: THEME.textMuted, fontSize: '11px', fontWeight: '800', textTransform: 'uppercase', marginBottom: '12px', letterSpacing: '0.1em' }}>
+                                    SELECT TARGET SIZE
                                 </label>
-                                <select
-                                    value={newSize}
-                                    onChange={(e) => setNewSize(e.target.value)}
-                                    style={{
-                                        width: '100%', padding: '16px', background: THEME.primary,
-                                        border: `1px solid ${THEME.border}`, borderRadius: '12px',
-                                        color: 'white', fontSize: '16px', fontWeight: '700', outline: 'none'
-                                    }}
-                                >
-                                    {sizes.map(s => (
-                                        <option key={s._id} value={s.code}>{s.code}</option>
-                                    ))}
-                                    {sizes.length === 0 && <option value="40">40</option>}
-                                </select>
+                                <div style={{ position: 'relative' }}>
+                                    <select
+                                        value={newSize}
+                                        onChange={(e) => setNewSize(e.target.value)}
+                                        style={{
+                                            width: '100%', padding: '18px 20px', background: 'rgba(255,255,255,0.03)',
+                                            border: '1px solid rgba(255,255,255,0.08)', borderRadius: '16px',
+                                            color: 'white', fontSize: '17px', fontWeight: '700', outline: 'none',
+                                            appearance: 'none', cursor: 'pointer'
+                                        }}
+                                    >
+                                        {sizes.map(s => (
+                                            <option key={s._id} value={s.code} style={{ background: '#1e293b' }}>Size {s.code}</option>
+                                        ))}
+                                        {sizes.length === 0 && <option value="40" style={{ background: '#1e293b' }}>Size 40</option>}
+                                    </select>
+                                    <div style={{ position: 'absolute', right: '20px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: THEME.textMuted }}>
+                                        ▼
+                                    </div>
+                                </div>
                             </div>
 
                             <button
                                 type="submit"
-                                style={btnStyle(THEME.accent)}
+                                style={{
+                                    ...btnStyle(THEME.accent),
+                                    height: '60px', borderRadius: '18px', fontSize: '16px', letterSpacing: '0.02em',
+                                    background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
+                                    boxShadow: '0 10px 25px rgba(99, 102, 241, 0.3)'
+                                }}
                             >
-                                START SESSION
+                                START OPERATION
                             </button>
                         </form>
                     </div>
                 </div>
             )}
 
-            {/* Menu Modal */}
+            {/* Menu Drawer */}
             {showMenu && (
-                <div style={modalBackdropStyle} onClick={() => setShowMenu(false)}>
-                    <div style={menuStyle} onClick={e => e.stopPropagation()}>
-                        <div style={{ padding: '24px 24px 20px', borderBottom: `1px solid ${THEME.border}`, display: 'flex', alignItems: 'center', gap: '14px', background: 'rgba(99, 102, 241, 0.05)' }}>
-                            <img src={`${import.meta.env.BASE_URL}logo.svg`} alt="Prodexa" style={{ width: '42px', height: '42px', flexShrink: 0 }} />
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', justifyContent: 'center' }}>
-                                <span style={{ fontWeight: '800', fontSize: '18px', color: THEME.text, letterSpacing: '-0.02em', lineHeight: '1.1' }}>Prodexa</span>
-                                <span style={{ fontSize: '11px', fontWeight: '700', color: THEME.accent, letterSpacing: '0.06em', lineHeight: '1.2' }}>SRI LAKSHMI TEXTILES</span>
-                            </div>
-                        </div>
-                        {employee && (
-                            <div style={{ padding: '16px 24px', borderBottom: `1px solid ${THEME.border}`, background: 'rgba(30, 41, 59, 0.3)' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                    <div style={{
-                                        width: '44px', height: '44px', borderRadius: '50%',
-                                        background: `linear-gradient(135deg, ${THEME.accent}, #8b5cf6)`,
-                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                        fontSize: '20px', fontWeight: '800', color: 'white',
-                                        boxShadow: '0 4px 12px rgba(99, 102, 241, 0.3)', flexShrink: 0
-                                    }}>
-                                        {employee.name ? employee.name.charAt(0).toUpperCase() : '👤'}
+                <>
+                    <div style={modalBackdropStyle} onClick={() => setShowMenu(false)} />
+                    <div style={menuStyle}>
+                        {/* Drag Handle */}
+                        <div style={{ width: '40px', height: '4px', background: 'rgba(255,255,255,0.1)', borderRadius: '2px', margin: '-16px auto 20px' }}></div>
+
+                        {/* Profile Section */}
+                        <div style={{
+                            padding: '24px', borderRadius: '24px', background: 'rgba(255, 255, 255, 0.03)',
+                            border: '1px solid rgba(255, 255, 255, 0.05)', marginBottom: '20px'
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                                <div style={{
+                                    width: '56px', height: '56px', borderRadius: '18px',
+                                    background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    fontSize: '24px', fontWeight: '900', color: 'white',
+                                    boxShadow: '0 8px 20px rgba(99, 102, 241, 0.3)'
+                                }}>
+                                    {employee?.name ? employee.name.charAt(0).toUpperCase() : '👤'}
+                                </div>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ fontSize: '18px', fontWeight: '900', color: 'white', letterSpacing: '-0.01em' }}>
+                                        {employee?.name || 'Authorized User'}
                                     </div>
-                                    <div style={{ flex: 1, minWidth: 0 }}>
-                                        <div style={{ fontSize: '15px', fontWeight: '700', color: THEME.text, marginBottom: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                            {employee.name || 'Worker'}
-                                        </div>
-                                        <div style={{
-                                            padding: '2px 8px', background: 'rgba(99, 102, 241, 0.15)',
-                                            borderRadius: '4px', fontSize: '11px', fontWeight: '700',
-                                            color: THEME.accent, fontFamily: 'monospace', display: 'inline-block'
-                                        }}>
-                                            {employee.employeeId || 'N/A'}
-                                        </div>
+                                    <div style={{ fontSize: '12px', color: THEME.textMuted, fontWeight: '700', marginTop: '2px', display: 'flex', gap: '8px' }}>
+                                        <span>ID: {employee?.employeeId || 'N/A'}</span>
+                                        <span style={{ color: 'rgba(255,255,255,0.1)' }}>•</span>
+                                        <span style={{ color: THEME.accent }}>{scannerName}</span>
                                     </div>
                                 </div>
                             </div>
-                        )}
-                        <MenuItem
-                            icon="⬇️"
-                            label="Install App"
-                            onClick={handleInstall}
-                        />
-                        <MenuItem icon="🔄" label="Switch User" onClick={() => {
-                            if (window.confirm('Switch user?')) {
-                                localStorage.removeItem('employee');
-                                window.location.reload();
-                            }
-                        }} />
-                        <MenuItem icon="🔌" label="Unpair Device" onClick={() => handleUnpair()} />
-                        <MenuItem icon="🚪" label="Logout" onClick={() => {
-                            if (window.confirm('Logout?')) {
-                                logout();
-                                navigate('/pin');
-                            }
-                        }} />
-                        <div style={{ padding: '20px' }}>
-                            <button onClick={() => setShowMenu(false)} style={btnStyle(THEME.accent)}>CLOSE</button>
+                        </div>
+
+                        {/* Menu Actions */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                            <button
+                                onClick={() => { setShowProfile(true); setShowMenu(false); }}
+                                style={menuBtnStyle}
+                            >
+                                <span style={{ fontSize: '20px' }}>👤</span>
+                                <span>My Profile</span>
+                            </button>
+
+                            <button
+                                onClick={() => { handleLogout(); setShowMenu(false); }}
+                                style={{ ...menuBtnStyle, color: THEME.error }}
+                            >
+                                <span style={{ fontSize: '20px' }}>🚪</span>
+                                <span>Logout System</span>
+                            </button>
+
+                            <button
+                                onClick={() => { handleUnpair(); setShowMenu(false); }}
+                                style={{ ...menuBtnStyle, marginTop: '12px', background: 'rgba(239, 68, 68, 0.05)', border: '1px solid rgba(239, 68, 68, 0.1)' }}
+                            >
+                                <span style={{ fontSize: '20px' }}>🔌</span>
+                                <span style={{ color: THEME.error }}>Unpair Device</span>
+                            </button>
                         </div>
                     </div>
-                </div>
+                </>
             )}
 
             {/* Auto Install Banner */}
@@ -698,181 +773,194 @@ const SessionManager = () => {
 
             {/* Scan Verification Modal */}
             {showScanVerify && (
-                <div style={modalBackdropStyle} onClick={() => { setShowScanVerify(false); setVerifyResult(null); setVerifyBarcode(''); }}>
-                    <div style={{ ...modalContentStyle, maxWidth: '440px' }} onClick={e => e.stopPropagation()}>
-                        <div style={{ marginBottom: '20px', textAlign: 'center' }}>
-                            <h2 style={{ fontSize: '20px', fontWeight: '800', color: THEME.text, margin: '0 0 8px' }}>
-                                Verify Barcode
-                            </h2>
-                            <p style={{ fontSize: '13px', color: THEME.textMuted, margin: 0 }}>
-                                Scan or enter barcode to check status
-                            </p>
+                <div style={modalOverlayStyle}>
+                    <div style={modalContentStyle}>
+                        <button
+                            onClick={() => { setShowScanVerify(false); setVerifyResult(null); setVerifyBarcode(''); }}
+                            style={{
+                                position: 'absolute', top: '24px', right: '24px',
+                                width: '32px', height: '32px', borderRadius: '50%',
+                                background: 'rgba(255,255,255,0.05)', border: 'none',
+                                color: 'white', fontSize: '18px', cursor: 'pointer',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center'
+                            }}
+                        >✕</button>
+
+                        <div style={{ textAlign: 'center', marginBottom: '32px' }}>
+                            <div style={{
+                                width: '52px', height: '52px', margin: '0 auto 16px', borderRadius: '16px',
+                                background: 'rgba(99, 102, 241, 0.1)', color: THEME.accent,
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                border: '1px solid rgba(99, 102, 241, 0.15)'
+                            }}>
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                            </div>
+                            <h2 style={{ fontSize: '22px', fontWeight: '900', color: 'white', margin: 0 }}>Verify Item</h2>
+                            <p style={{ color: THEME.textMuted, fontSize: '13px', marginTop: '4px' }}>Check status of any barcode</p>
                         </div>
 
                         {!verifyResult ? (
-                            <>
-                                {/* Manual Input */}
-                                <div style={{ marginBottom: '16px' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                                <div style={{ position: 'relative' }}>
                                     <input
                                         type="text"
                                         value={verifyBarcode}
                                         onChange={(e) => setVerifyBarcode(e.target.value)}
-                                        placeholder="Enter barcode number..."
+                                        placeholder="Scan or Type Barcode..."
                                         style={{
-                                            width: '100%',
-                                            padding: '14px',
-                                            background: THEME.primary,
-                                            border: `1px solid ${THEME.border}`,
-                                            borderRadius: '12px',
-                                            color: THEME.text,
-                                            fontSize: '16px',
-                                            fontWeight: '600',
-                                            outline: 'none',
-                                            textAlign: 'center',
-                                            fontFamily: 'monospace'
+                                            width: '100%', padding: '18px 20px', background: 'rgba(255,255,255,0.03)',
+                                            border: '1px solid rgba(255,255,255,0.08)', borderRadius: '16px',
+                                            color: 'white', fontSize: '18px', fontWeight: '700', outline: 'none',
+                                            textAlign: 'center', fontFamily: 'monospace', letterSpacing: '0.05em'
                                         }}
                                         autoFocus
                                     />
                                 </div>
 
                                 <button
-                                    onClick={() => {
-                                        if (verifyBarcode.trim()) {
-                                            handleVerifyBarcode(verifyBarcode.trim());
-                                        }
-                                    }}
+                                    onClick={() => verifyBarcode.trim() && handleVerifyBarcode(verifyBarcode.trim())}
                                     disabled={!verifyBarcode.trim()}
                                     style={{
                                         ...btnStyle(THEME.accent),
-                                        opacity: !verifyBarcode.trim() ? 0.5 : 1,
-                                        cursor: !verifyBarcode.trim() ? 'not-allowed' : 'pointer'
+                                        height: '56px', borderRadius: '16px',
+                                        background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
+                                        opacity: !verifyBarcode.trim() ? 0.5 : 1
                                     }}
                                 >
-                                    VERIFY
+                                    VERIFY NOW
                                 </button>
-                            </>
+                            </div>
                         ) : (
-                            <>
-                                {/* Result Display */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
                                 <div style={{
-                                    background: verifyResult.error ? 'rgba(239, 68, 68, 0.1)' : 'rgba(16, 185, 129, 0.1)',
-                                    border: `1px solid ${verifyResult.error ? THEME.error : THEME.success}`,
-                                    borderRadius: '12px',
-                                    padding: '20px',
-                                    marginBottom: '16px',
-                                    textAlign: 'center'
+                                    background: verifyResult.error ? 'rgba(239, 68, 68, 0.05)' : 'rgba(16, 185, 129, 0.05)',
+                                    borderRadius: '24px', padding: '24px', textAlign: 'center',
+                                    border: `1px solid ${verifyResult.error ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)'}`
                                 }}>
-                                    <div style={{ fontSize: '40px', marginBottom: '12px' }}>
-                                        {verifyResult.error ? '❌' : '✅'}
+                                    <div style={{ fontSize: '48px', marginBottom: '16px' }}>
+                                        {verifyResult.error ? '⚠️' : '✅'}
                                     </div>
                                     <h3 style={{
-                                        fontSize: '16px',
-                                        fontWeight: '700',
+                                        fontSize: '18px', fontWeight: '900',
                                         color: verifyResult.error ? THEME.error : THEME.success,
-                                        margin: '0 0 8px'
+                                        margin: '0 0 12px'
                                     }}>
-                                        {verifyResult.error ? 'Not Found' : verifyResult.status || 'Found'}
+                                        {verifyResult.error ? 'Record Not Found' : (verifyResult.status || 'Active Item')}
                                     </h3>
+
                                     {verifyResult.item && (
-                                        <div style={{ fontSize: '13px', color: THEME.textMuted, marginTop: '12px' }}>
-                                            <div>Size: <strong>{verifyResult.item.size}</strong></div>
-                                            <div>Metre: <strong>{verifyResult.item.metre}m</strong></div>
-                                            {verifyResult.item.weight && <div>Weight: <strong>{verifyResult.item.weight}kg</strong></div>}
+                                        <div style={{
+                                            display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px',
+                                            textAlign: 'left', marginTop: '20px', padding: '16px',
+                                            background: 'rgba(255,255,255,0.03)', borderRadius: '16px'
+                                        }}>
+                                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                                <span style={{ fontSize: '10px', color: THEME.textMuted, fontWeight: '800' }}>SIZE</span>
+                                                <span style={{ color: 'white', fontWeight: '700' }}>{verifyResult.item.size}</span>
+                                            </div>
+                                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                                <span style={{ fontSize: '10px', color: THEME.textMuted, fontWeight: '800' }}>LENGTH</span>
+                                                <span style={{ color: 'white', fontWeight: '700' }}>{verifyResult.item.metre}m</span>
+                                            </div>
                                         </div>
                                     )}
                                 </div>
 
                                 <button
-                                    onClick={() => {
-                                        setVerifyResult(null);
-                                        setVerifyBarcode('');
-                                    }}
-                                    style={btnStyle(THEME.accent)}
+                                    onClick={() => { setVerifyResult(null); setVerifyBarcode(''); }}
+                                    style={{ ...btnStyle('rgba(255,255,255,0.05)'), height: '52px', border: '1px solid rgba(255,255,255,0.1)' }}
                                 >
                                     VERIFY ANOTHER
                                 </button>
-                            </>
+                            </div>
                         )}
+                    </div>
+                </div>
+            )}
+
+            {/* Profile Modal */}
+            {showProfile && (
+                <div style={modalOverlayStyle}>
+                    <div style={modalContentStyle}>
+                        <button
+                            onClick={() => setShowProfile(false)}
+                            style={{
+                                position: 'absolute', top: '24px', right: '24px',
+                                width: '32px', height: '32px', borderRadius: '50%',
+                                background: 'rgba(255,255,255,0.05)', border: 'none',
+                                color: 'white', fontSize: '18px', cursor: 'pointer',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center'
+                            }}
+                        >✕</button>
+
+                        <div style={{ textAlign: 'center', marginBottom: '32px' }}>
+                            <div style={{
+                                width: '80px', height: '80px', margin: '0 auto 20px', borderRadius: '24px',
+                                background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                fontSize: '36px', fontWeight: '900', color: 'white',
+                                boxShadow: '0 12px 30px rgba(99, 102, 241, 0.4)'
+                            }}>
+                                {employee?.name ? employee.name.charAt(0).toUpperCase() : '👤'}
+                            </div>
+                            <h2 style={{ fontSize: '24px', fontWeight: '900', color: 'white', margin: 0 }}>Terminal User</h2>
+                            <p style={{ color: THEME.textMuted, fontSize: '14px', marginTop: '4px' }}>Hardware Authorization Active</p>
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                            <div style={{ background: 'rgba(255,255,255,0.03)', padding: '20px', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                                <div style={{ fontSize: '11px', color: THEME.textMuted, fontWeight: '800', marginBottom: '12px', letterSpacing: '0.1em' }}>EMPLOYEE DETAILS</div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                        <span style={{ color: THEME.textMuted }}>Name</span>
+                                        <span style={{ color: 'white', fontWeight: '700' }}>{employee?.name}</span>
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                        <span style={{ color: THEME.textMuted }}>Worker ID</span>
+                                        <span style={{ color: THEME.accent, fontWeight: '800', fontFamily: 'monospace' }}>{employee?.employeeId}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div style={{ background: 'rgba(255,255,255,0.03)', padding: '20px', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                                <div style={{ fontSize: '11px', color: THEME.textMuted, fontWeight: '800', marginBottom: '12px', letterSpacing: '0.1em' }}>PAIRING STATUS</div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                                        <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: THEME.success, boxShadow: `0 0 10px ${THEME.success}` }}></div>
+                                        <span style={{ color: 'white', fontWeight: '700' }}>{scannerName}</span>
+                                    </div>
+                                    <span style={{ fontSize: '11px', background: 'rgba(16, 185, 129, 0.1)', color: THEME.success, padding: '4px 8px', borderRadius: '6px', fontWeight: '700' }}>VERIFIED</span>
+                                </div>
+                            </div>
+                        </div>
 
                         <button
-                            onClick={() => {
-                                setShowScanVerify(false);
-                                setVerifyResult(null);
-                                setVerifyBarcode('');
-                            }}
-                            style={{
-                                ...btnStyle(THEME.border),
-                                background: 'transparent',
-                                border: `1px solid ${THEME.border}`,
-                                marginTop: '12px'
-                            }}
+                            onClick={() => setShowProfile(false)}
+                            style={{ ...btnStyle(THEME.accent), height: '56px', borderRadius: '16px', marginTop: '24px' }}
                         >
-                            CLOSE
+                            CLOSE PROFILE
                         </button>
                     </div>
                 </div>
             )}
         </div>
-
     );
 };
 
 export default SessionManager;
 
-// MenuItem Component
-const MenuItem = ({ icon, label, onClick, sub, color }) => {
-    const THEME = {
-        primary: '#0f172a',
-        secondary: '#1e293b',
-        accent: '#6366f1',
-        text: '#f8fafc',
-        textMuted: '#94a3b8',
-        success: '#10b981',
-        error: '#ef4444',
-        warning: '#f59e0b',
-        border: '#334155',
-        surface: 'rgba(30, 41, 59, 0.7)'
-    };
-    return (
-        <button onClick={onClick} style={{ width: '100%', padding: '16px 24px', background: 'transparent', border: 'none', color: THEME.text, display: 'flex', alignItems: 'center', gap: '14px', fontSize: '15px', fontWeight: '600', textAlign: 'left', borderBottom: `1px solid ${THEME.border}`, cursor: 'pointer', transition: 'background 0.2s' }}>
-            <span style={{ fontSize: '18px', opacity: 0.9 }}>{icon}</span>
-            <div style={{ flex: 1 }}>
-                <div>{label}</div>
-                {sub && <div style={{ fontSize: '11px', color: THEME.textMuted, marginTop: '3px', fontWeight: '500' }}>{sub}</div>}
-            </div>
-        </button>
-    );
-};
-
-// Modal Styles
-const modalBackdropStyle = { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(3px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' };
-const menuStyle = { background: '#0f172a', width: '100%', maxWidth: '360px', borderRadius: '24px', overflow: 'hidden', border: '1px solid #334155' };
-
-// Add animations
 const styles = document.createElement('style');
 styles.textContent = `
-    @keyframes slideDown {
-        from {
-            transform: translateY(-100%);
-            opacity: 0;
-        }
-        to {
-            transform: translateY(0);
-            opacity: 1;
-        }
+                    @keyframes slideDown {
+                        from {transform: translateY(-100%); opacity: 0; }
+                    to {transform: translateY(0); opacity: 1; }
     }
-    @keyframes slideUp {
-        from {
-            transform: translateX(-50%) translateY(100%);
-            opacity: 0;
-        }
-        to {
-            transform: translateX(-50%) translateY(0);
-            opacity: 1;
-        }
+                    @keyframes slideUp {
+                        from {transform: translateX(-50%) translateY(100%); opacity: 0; }
+                    to {transform: translateX(-50%) translateY(0); opacity: 1; }
     }
-`;
-if (!document.querySelector('style[data-install-banner]')) {
-    styles.setAttribute('data-install-banner', 'true');
+                    `;
+if (!document.querySelector('style[data-prodexa-animations]')) {
+    styles.setAttribute('data-prodexa-animations', 'true');
     document.head.appendChild(styles);
 }

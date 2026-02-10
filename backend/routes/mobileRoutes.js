@@ -197,6 +197,10 @@ router.post('/transaction', async (req, res) => {
                 clothRoll.metre = metre;
                 clothRoll.weight = weight;
                 clothRoll.percentage = percentage;
+                // Update latest employee context
+                clothRoll.employeeId = employeeId;
+                clothRoll.employeeName = employeeName;
+
                 clothRoll.transactionHistory.push({
                     status: 'IN',
                     details: details || 'Re-Stock In',
@@ -213,6 +217,8 @@ router.post('/transaction', async (req, res) => {
                     metre,
                     weight,
                     percentage,
+                    employeeId,   // Save latest employee
+                    employeeName, // Save latest employee
                     transactionHistory: [{
                         status: 'IN',
                         details: details || 'Initial Stock In',
@@ -237,6 +243,8 @@ router.post('/transaction', async (req, res) => {
             }
 
             clothRoll.status = 'OUT';
+            clothRoll.employeeId = employeeId;
+            clothRoll.employeeName = employeeName;
             clothRoll.transactionHistory.push({
                 status: 'OUT',
                 details: details || 'Stock Out',
@@ -351,7 +359,7 @@ router.get('/missing-scans', async (req, res) => {
 // Batch Transaction (Bulk Stock Out)
 router.post('/batch-transaction', async (req, res) => {
     try {
-        const { type, items, employeeId, employeeName } = req.body; // items = [{ barcode, details, ... }]
+        const { type, items, employeeId, employeeName, sessionId } = req.body; // items = [{ barcode, details, ... }]
 
         if (!items || !Array.isArray(items) || items.length === 0) {
             return res.status(400).json({ error: 'No items provided for batch processing' });
@@ -392,7 +400,8 @@ router.post('/batch-transaction', async (req, res) => {
                     details: details || 'Bulk Stock Out',
                     date: new Date(),
                     employeeId,
-                    employeeName
+                    employeeName,
+                    sessionId: sessionId // Add Session ID
                 });
 
                 await clothRoll.save();
@@ -403,7 +412,7 @@ router.post('/batch-transaction', async (req, res) => {
                     user: employeeName || 'MobileBatch',
                     employeeId,
                     employeeName,
-                    details: { barcode, method: 'BATCH' },
+                    details: { barcode, method: 'BATCH', sessionId },
                     ipAddress: req.ip
                 });
 
@@ -422,6 +431,11 @@ router.post('/batch-transaction', async (req, res) => {
                 count: results.success.length,
                 timestamp: new Date()
             });
+
+            // If Session ID exists, emit session update too
+            if (sessionId) {
+                req.io.emit('session_update', { action: 'UPDATE', sessionId });
+            }
         }
 
         res.json({

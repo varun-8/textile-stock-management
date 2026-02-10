@@ -17,7 +17,7 @@ const AppLayout = ({ children }) => {
 
     const handleNavigation = (path) => {
         navigate(path);
-        setIsCollapsed(true);
+        // setIsCollapsed(true); // Disable auto-collapse on navigation
     };
 
     return (

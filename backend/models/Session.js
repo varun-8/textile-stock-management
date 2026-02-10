@@ -28,7 +28,11 @@ const sessionSchema = new mongoose.Schema({
     },
     endedAt: {
         type: Date
-    }
+    },
+    // Summary Stats (Stored on Completion)
+    totalItems: { type: Number, default: 0 },
+    totalMetre: { type: Number, default: 0 },
+    totalWeight: { type: Number, default: 0 }
 });
 
 module.exports = mongoose.model('Session', sessionSchema);

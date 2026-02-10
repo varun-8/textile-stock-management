@@ -75,7 +75,8 @@ const Scanners = () => {
         if (!serverIp) return '';
         const lanUrl = `https://${serverIp}:5000`;
 
-        const tokenToUse = setupToken;
+        // Use scanner's fingerprint for repair, otherwise use setupToken for new devices
+        const tokenToUse = (qrTarget && typeof qrTarget === 'object') ? qrTarget.fingerprint : setupToken;
         const urlParams = `server=${encodeURIComponent(lanUrl)}`;
 
         // Master Link that works with System Camera AND In-App Scanner
@@ -137,99 +138,120 @@ const Scanners = () => {
                     </div>
                 ) : (
                     /* Grid */
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1.5rem' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '1.5rem' }}>
                         {scanners.map((scanner) => {
-                            const isOnline = scanner.status === 'ONLINE'; // Assuming backend handles this dynamically or we fallback to Last Seen check
-                            // Simple heuristic for "Online" if backend doesn't provide strict status: < 2 mins ago
                             const lastSeenTime = new Date(scanner.lastSeen).getTime();
                             const isActiveRecently = (Date.now() - lastSeenTime) < 2 * 60 * 1000;
                             const statusDisplay = isActiveRecently ? 'Online' : 'Offline';
                             const statusColor = isActiveRecently ? 'var(--success-color)' : 'var(--text-secondary)';
-                            const statusBg = isActiveRecently ? 'var(--success-bg)' : 'var(--bg-tertiary)';
+                            const statusBg = isActiveRecently ? 'rgba(16, 185, 129, 0.1)' : 'var(--bg-tertiary)';
 
                             return (
                                 <div key={scanner.scannerId} className="panel" style={{
-                                    padding: '1.5rem', position: 'relative', overflow: 'hidden',
+                                    padding: '0', position: 'relative', overflow: 'hidden',
                                     border: '1px solid var(--border-color)', borderRadius: '16px',
-                                    transition: 'transform 0.2s, box-shadow 0.2s',
-                                    background: 'var(--bg-secondary)'
+                                    background: 'var(--bg-secondary)',
+                                    display: 'flex', flexDirection: 'column'
                                 }}>
-
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
-                                        <div style={{
-                                            width: '50px', height: '50px', borderRadius: '12px',
-                                            background: statusBg, color: statusColor,
-                                            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem'
-                                        }}>
-                                            {isActiveRecently ? '📶' : '💤'}
+                                    {/* Card Header with Status */}
+                                    <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                                            <div style={{
+                                                width: '48px', height: '48px', borderRadius: '12px',
+                                                background: 'var(--bg-tertiary)', color: 'var(--text-primary)',
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem'
+                                            }}>
+                                                📱
+                                            </div>
+                                            <div>
+                                                <h3 style={{ margin: '0', fontSize: '1.1rem', fontWeight: '700', color: 'var(--text-primary)' }}>
+                                                    {scanner.name || 'Unnamed Scanner'}
+                                                </h3>
+                                                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontFamily: 'monospace', marginTop: '2px', opacity: 0.8 }}>
+                                                    UID: {scanner.scannerId.substring(0, 8)}...
+                                                </div>
+                                            </div>
                                         </div>
                                         <div style={{
                                             padding: '4px 10px', borderRadius: '20px',
                                             background: statusBg, color: statusColor,
-                                            fontSize: '0.7rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.05em'
+                                            fontSize: '0.7rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.05em',
+                                            display: 'flex', alignItems: 'center', gap: '6px'
                                         }}>
+                                            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: statusColor }}></span>
                                             {statusDisplay}
                                         </div>
                                     </div>
 
-                                    <h3 style={{ margin: '0 0 0.3rem 0', fontSize: '1.1rem', fontWeight: '700', color: 'var(--text-primary)' }}>
-                                        {scanner.name || 'Unnamed Scanner'}
-                                    </h3>
-                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontFamily: 'monospace', background: 'var(--bg-tertiary)', padding: '4px 8px', borderRadius: '4px', width: 'fit-content', marginBottom: '0.5rem' }}>
-                                        UID: {scanner.scannerId.substring(0, 8)}...
-                                    </div>
-                                    {scanner.currentEmployee && (
-                                        <div style={{
-                                            fontSize: '0.75rem',
-                                            color: 'var(--accent-color)',
-                                            background: 'rgba(99, 102, 241, 0.1)',
-                                            padding: '4px 8px',
-                                            borderRadius: '4px',
-                                            width: 'fit-content',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '4px',
-                                            fontWeight: '600'
-                                        }}>
-                                            👤 {scanner.currentEmployee.name} ({scanner.currentEmployee.employeeId})
+                                    {/* Card Body */}
+                                    <div style={{ padding: '1.5rem', flex: 1 }}>
+                                        <div style={{ marginBottom: '1.5rem' }}>
+                                            <div style={{ fontSize: '0.7rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '8px' }}>CURRENT USER</div>
+                                            {scanner.currentEmployee ? (
+                                                <div style={{
+                                                    display: 'flex', alignItems: 'center', gap: '10px',
+                                                    background: 'rgba(99, 102, 241, 0.05)', padding: '10px 14px', borderRadius: '8px',
+                                                    border: '1px solid rgba(99, 102, 241, 0.1)'
+                                                }}>
+                                                    <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'var(--accent-color)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '700', fontSize: '0.85rem' }}>
+                                                        {scanner.currentEmployee.name.charAt(0)}
+                                                    </div>
+                                                    <div>
+                                                        <div style={{ fontWeight: '600', color: 'var(--text-primary)', fontSize: '0.9rem' }}>{scanner.currentEmployee.name}</div>
+                                                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>ID: {scanner.currentEmployee.employeeId}</div>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontStyle: 'italic', padding: '10px 0' }}>No active user</div>
+                                            )}
                                         </div>
-                                    )}
 
-                                    <div style={{ marginTop: '1.5rem', paddingTop: '1rem', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                         <div>
-                                            <div style={{ fontSize: '0.7rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '2px' }}>LAST SEEN</div>
-                                            <div style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-primary)' }}>
-                                                {scanner.lastSeen ? new Date(scanner.lastSeen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Never'}
+                                            <div style={{ fontSize: '0.7rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '4px' }}>LAST SEEN</div>
+                                            <div style={{ fontSize: '0.9rem', fontWeight: '500', color: 'var(--text-primary)' }}>
+                                                {scanner.lastSeen ? new Date(scanner.lastSeen).toLocaleString() : 'Never'}
                                             </div>
                                         </div>
+                                    </div>
 
+                                    {/* Card Footer Actions */}
+                                    <div style={{ padding: '1rem 1.5rem', background: 'var(--bg-tertiary)', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                         {deleteConfirm === scanner.scannerId ? (
-                                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                            <div style={{ display: 'flex', gap: '0.5rem', width: '100%' }}>
                                                 <button
                                                     onClick={() => removeScannerDevice(scanner.scannerId)}
-                                                    style={{ background: 'var(--error-bg)', color: 'var(--error-color)', border: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '700', cursor: 'pointer' }}
+                                                    style={{ background: 'var(--error-bg)', color: 'var(--error-color)', border: 'none', padding: '8px 16px', borderRadius: '6px', fontSize: '0.8rem', fontWeight: '700', cursor: 'pointer', flex: 1 }}
                                                 >
                                                     Confirm
                                                 </button>
                                                 <button
                                                     onClick={() => setDeleteConfirm(null)}
-                                                    style={{ background: 'var(--bg-tertiary)', color: 'var(--text-primary)', border: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '0.75rem', cursor: 'pointer' }}
+                                                    style={{ background: 'transparent', color: 'var(--text-secondary)', border: '1px solid var(--border-color)', padding: '8px', borderRadius: '6px', fontSize: '0.8rem', cursor: 'pointer' }}
                                                 >
                                                     Cancel
                                                 </button>
                                             </div>
                                         ) : (
-                                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                            <>
+                                                <button
+                                                    onClick={() => setQrTarget(scanner)}
+                                                    className="btn"
+                                                    style={{ background: 'transparent', border: 'none', color: 'var(--accent-color)', padding: '0', fontSize: '0.85rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '6px' }}
+                                                >
+                                                    <IconScan size={16} /> Re-Pair Device
+                                                </button>
 
                                                 <button
                                                     onClick={() => setDeleteConfirm(scanner.scannerId)}
-                                                    style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '8px', borderRadius: '8px', transition: 'all 0.2s' }}
                                                     className="btn-icon-danger"
+                                                    style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', padding: '8px', cursor: 'pointer', opacity: 0.6, transition: 'opacity 0.2s' }}
                                                     title="Remove Device"
+                                                    onMouseEnter={e => e.target.style.opacity = 1}
+                                                    onMouseLeave={e => e.target.style.opacity = 0.6}
                                                 >
-                                                    <IconTrash />
+                                                    <IconTrash size={16} />
                                                 </button>
-                                            </div>
+                                            </>
                                         )}
                                     </div>
                                 </div>
@@ -276,10 +298,12 @@ const Scanners = () => {
                             </div>
 
                             <h2 style={{ fontSize: '1.5rem', fontWeight: '800', margin: '0 0 0.5rem', color: 'var(--text-primary)' }}>
-                                Pair Device
+                                {qrTarget === 'NEW' ? 'Pair New Device' : `Repair ${qrTarget.name}`}
                             </h2>
                             <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', margin: '0 0 2rem' }}>
-                                Scan this QR with any mobile device to connect it instantly. Works for new and existing devices.
+                                {qrTarget === 'NEW'
+                                    ? 'Scan this QR with any mobile device to connect it instantly.'
+                                    : `Use this QR to reconnect "${qrTarget.name}" if it lost connection or was logged out.`}
                             </p>
 
                             {!serverIp ? (

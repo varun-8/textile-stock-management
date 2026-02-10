@@ -41,7 +41,7 @@ router.get('/active', async (req, res) => {
         // Populate scanned count for each session
         const sessionsWithCount = await Promise.all(sessions.map(async (session) => {
             const scannedCount = await ClothRoll.countDocuments({
-                sessionId: session._id
+                "transactionHistory.sessionId": session._id
             });
             return {
                 ...session.toObject(),
@@ -55,10 +55,27 @@ router.get('/active', async (req, res) => {
     }
 });
 
-// Get Session History
+// Get Session History with Date Filter
 router.get('/history', async (req, res) => {
     try {
-        const sessions = await Session.find({ status: 'COMPLETED' }).sort({ endedAt: -1 }).limit(50);
+        const { date } = req.query;
+        let query = { status: 'COMPLETED' };
+
+        if (date) {
+            const start = new Date(date);
+            start.setHours(0, 0, 0, 0);
+
+            const end = new Date(date);
+            end.setHours(23, 59, 59, 999);
+
+            query.createdAt = {
+                $gte: start,
+                $lte: end
+            };
+        }
+
+        // If no date, limit to last 50. If date, show all for that day.
+        const sessions = await Session.find(query).sort({ endedAt: -1 }).limit(date ? 0 : 50);
         res.json(sessions);
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -257,15 +274,35 @@ router.post('/end', async (req, res) => {
             return res.status(404).json({ error: 'Session not found' });
         }
 
+        // Calculate Final Stats
+        const stats = await ClothRoll.aggregate([
+            { $unwind: "$transactionHistory" },
+            { $match: { "transactionHistory.sessionId": session._id } },
+            {
+                $group: {
+                    _id: null,
+                    count: { $sum: 1 },
+                    totalMetre: { $sum: "$metre" },
+                    totalWeight: { $sum: "$weight" }
+                }
+            }
+        ]);
+
+        const result = stats.length > 0 ? stats[0] : { count: 0, totalMetre: 0, totalWeight: 0 };
+
         session.status = 'COMPLETED';
         session.endedAt = new Date();
+        session.totalItems = result.count;
+        session.totalMetre = result.totalMetre;
+        session.totalWeight = result.totalWeight;
+
         await session.save();
 
         if (req.io) {
             req.io.emit('session_update', { action: 'ENDED', sessionId });
         }
 
-        res.json({ success: true, message: 'Session Ended' });
+        res.json({ success: true, message: 'Session Ended', stats: result });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

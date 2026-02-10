@@ -144,4 +144,26 @@
   .text-xs {
     font-size: 0.75rem;
   }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes slideUpDrawer {
+    from {
+      transform: translateY(100%) scale(0.95);
+      opacity: 0;
+    }
+
+    to {
+      transform: translateY(0) scale(1);
+      opacity: 1;
+    }
+  }
 }

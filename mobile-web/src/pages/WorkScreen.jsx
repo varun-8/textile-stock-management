@@ -4,11 +4,31 @@ import { useMobile } from '../context/MobileContext';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
 import { haptic } from '../utils/haptic';
 
+const IconFlash = ({ size = 20, active = false, disabled = false }) => (
+    <svg
+        width={size}
+        height={size}
+        viewBox="0 0 24 24"
+        fill={active ? "#f59e0b" : "none"}
+        stroke={active ? "#f59e0b" : "currentColor"}
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        style={{
+            filter: active ? 'drop-shadow(0 0 5px rgba(245, 158, 11, 0.8))' : 'none',
+            transition: 'all 0.3s ease',
+            opacity: disabled ? 0.3 : 1
+        }}
+    >
+        <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+    </svg>
+);
+
 const WorkScreen = () => {
     const navigate = useNavigate();
     const { api, serverIp, setServerIp, unpair, deferredPrompt, installApp, scannerId } = useMobile();
     const [scanned, setScanned] = useState(false);
-    const [showIpInput, setShowIpInput] = useState(false);
+
 
     const [showInstallHelp, setShowInstallHelp] = useState(false);
     const [showManualInput, setShowManualInput] = useState(false);
@@ -18,8 +38,7 @@ const WorkScreen = () => {
     const [cameraError, setCameraError] = useState(null);
 
     const [sessionMode, setSessionMode] = useState('IN');
-    const [sessionList, setSessionList] = useState([]);
-    const [showReview, setShowReview] = useState(false);
+    const [showMenu, setShowMenu] = useState(false);
 
     // Session Info State
     const [sessionSize, setSessionSize] = useState(null);
@@ -62,7 +81,28 @@ const WorkScreen = () => {
     const [showFinishPreview, setShowFinishPreview] = useState(false);
     const [finishStats, setFinishStats] = useState(null);
 
+    // Live Session Stats
+    const [sessionStats, setSessionStats] = useState({ totalCount: 0, totalMetre: 0, totalWeight: 0 });
 
+    const fetchSessionStats = async () => {
+        if (!sessionId) return;
+        try {
+            const res = await api.get(`/api/sessions/${sessionId}/preview`);
+            if (res.data.success) {
+                setSessionStats(res.data.stats);
+            }
+        } catch (err) {
+            console.error("Failed to fetch stats", err);
+        }
+    };
+
+    useEffect(() => {
+        if (sessionId) {
+            fetchSessionStats();
+            const interval = setInterval(fetchSessionStats, 5000);
+            return () => clearInterval(interval);
+        }
+    }, [sessionId]);
 
     const THEME = {
         primary: '#0f172a',
@@ -89,7 +129,7 @@ const WorkScreen = () => {
     };
 
     useEffect(() => {
-        if (mode === 'SCAN' && !scanned && !showIpInput && !showReview) {
+        if (mode === 'SCAN' && !scanned) {
             startCamera();
         } else {
             stopCamera();
@@ -98,7 +138,7 @@ const WorkScreen = () => {
         const handleVisibilityChange = () => {
             if (document.visibilityState === 'hidden') {
                 stopCamera();
-            } else if (document.visibilityState === 'visible' && mode === 'SCAN' && !scanned && !showReview) {
+            } else if (document.visibilityState === 'visible' && mode === 'SCAN' && !scanned) {
                 setTimeout(() => startCamera(), 500);
             }
         };
@@ -108,7 +148,7 @@ const WorkScreen = () => {
             stopCamera();
             document.removeEventListener('visibilitychange', handleVisibilityChange);
         };
-    }, [mode, scanned, showIpInput, showReview]);
+    }, [mode, scanned]);
 
     const startCamera = async () => {
         try {
@@ -146,14 +186,26 @@ const WorkScreen = () => {
                 (errorMessage) => { }
             );
 
-            // Check Torch Capability
+            // Check Torch Capability with multiple fallback methods
             try {
-                const caps = html5QrCode.getRunningTrackCameraCapabilities();
-                if (caps && caps.torchFeature().isSupported()) {
-                    setHasTorch(true);
-                } else {
-                    setHasTorch(false);
+                let supported = false;
+
+                // Method 1: Library provided capability check
+                if (typeof html5QrCode.getRunningTrackCameraCapabilities === 'function') {
+                    const caps = html5QrCode.getRunningTrackCameraCapabilities();
+                    supported = caps && caps.torchFeature().isSupported();
                 }
+
+                // Method 2: Direct track check (more reliable on some devices)
+                if (!supported) {
+                    const track = html5QrCode.getRunningTrack();
+                    if (track && typeof track.getCapabilities === 'function') {
+                        const caps = track.getCapabilities();
+                        supported = !!caps.torch;
+                    }
+                }
+
+                setHasTorch(supported);
             } catch (err) {
                 console.warn('Torch check failed:', err);
                 setHasTorch(false);
@@ -192,65 +244,8 @@ const WorkScreen = () => {
 
         // --- BULK OUT MODE LOGIC ---
         if (sessionMode === 'OUT') {
-            // Check if already in session list
-            if (sessionList.some(item => item.barcode === formattedBarcode)) {
-                haptic.error();
-                showAlert(`Barcode ID: ${formattedBarcode}\n\nAlready in current list!`, 'error', 'Duplicate Scan');
-                setScanned(false);
-                scanningRef.current = false;
-                return;
-            }
-
-            // Verify with Server if it exists and is IN Stock
-            try {
-                const url = `/api/mobile/scan/${formattedBarcode}`;
-                const res = await api.get(url, { headers: { 'x-session-id': sessionId } });
-                const json = res.data;
-
-                // Session Logic: Wrong Size?
-                if (json.status === 'WRONG_SIZE') {
-                    haptic.error();
-                    showAlert(`🛑 WRONG SIZE!\n\nExpected: ${json.expected}\nScanned: ${json.actual}`, 'error');
-                    setScanned(false);
-                    scanningRef.current = false;
-                    return;
-                }
-
-                if (json.status === 'SESSION_ENDED') {
-                    haptic.error();
-                    showAlert('Session has ended. Redirecting...', 'error');
-                    setTimeout(() => {
-                        localStorage.removeItem('active_session_id');
-                        window.location.reload();
-                    }, 2000);
-                    return;
-                }
-
-                if (json.status === 'INVALID' || !json.data) {
-                    haptic.error();
-                    showAlert(`Unknown Barcode: ${formattedBarcode}`, 'error');
-                } else if (json.data.status === 'OUT') {
-                    haptic.error();
-                    showAlert(`Item already Dispatched: ${formattedBarcode}`, 'error');
-                } else {
-                    // SHOW PREVIEW INSTEAD OF AUTO ADDING
-                    haptic.success();
-                    setPreviewItem({
-                        barcode: formattedBarcode,
-                        details: json.data
-                    });
-                    // Pause scanning while in preview
-                    scanningRef.current = true;
-                }
-            } catch (err) {
-                haptic.error();
-                showAlert(err.message, 'error');
-                // Resume scanning on error
-                setTimeout(() => {
-                    setScanned(false);
-                    scanningRef.current = false;
-                }, 1000);
-            }
+            // Instant Stock Out
+            handleQuickStockOut(formattedBarcode);
             return;
         }
 
@@ -300,7 +295,11 @@ const WorkScreen = () => {
                 setForm({ metre: '', weight: '', percentage: '100' });
             }
 
-            setTimeout(() => setMode('ACTION'), 300);
+            if (sessionMode === 'IN' && json.data?.status !== 'IN') {
+                setTimeout(() => setMode('IN_FORM'), 300);
+            } else {
+                setTimeout(() => setMode('ACTION'), 300);
+            }
 
         } catch (err) {
             haptic.error();
@@ -311,8 +310,11 @@ const WorkScreen = () => {
     };
 
     const handleQuickStockOut = async (barcode) => {
+        // Prevent concurrent processing for the SAME barcode, but allow fast subsequent scans
         if (isProcessing) return;
+
         setIsProcessing(true);
+        // Note: scanningRef is already true from the caller, we keep it true until we finish
 
         const employee = JSON.parse(localStorage.getItem('employee') || '{}');
 
@@ -320,24 +322,38 @@ const WorkScreen = () => {
             barcode: barcode,
             type: 'OUT',
             employeeId: employee.employeeId, // E001, E002, etc.
-            employeeName: employee.name
+            employeeName: employee.name,
+            sessionId: sessionId // Include Session ID
         };
 
         try {
             const res = await api.post('/api/mobile/transaction', payload);
+
             if (res.data.error) {
                 haptic.error();
+                // Check if it's already out, might want a softer warning or just error
                 showAlert(res.data.error, 'error');
             } else {
                 haptic.success();
-                showAlert(`✅ Stock Out Successful!`, 'success');
-                reset();
+                // Optional: Show a "Toast" instead of a full blocking alert for speed?
+                // For now, using the existing alert but maybe auto-dismiss it?
+                // Actually, let's just show a quick successful toast if possible, otherwise alert.
+                // The current showAlert blocks? No, it sets state.
+                showAlert(`✅ OUT: ${barcode}`, 'success');
+
+                // Trigger stats refresh in background
+                fetchSessionStats();
             }
         } catch (err) {
             haptic.error();
             showAlert(err.response?.data?.error || err.message, 'error');
         } finally {
             setIsProcessing(false);
+            // Re-enable scanning after a short delay to prevent accidental double-scans of same barcode
+            setTimeout(() => {
+                setScanned(false);
+                scanningRef.current = false;
+            }, 1500); // 1.5s delay before next scan is allowed - good for pace
         }
     };
 
@@ -354,7 +370,8 @@ const WorkScreen = () => {
             weight: parseFloat(form.weight || 0),
             percentage: parseFloat(form.percentage || 100),
             employeeId: employee.employeeId, // E001, E002, etc.
-            employeeName: employee.name
+            employeeName: employee.name,
+            sessionId: sessionId // Include Session ID
         };
 
         try {
@@ -365,6 +382,7 @@ const WorkScreen = () => {
             } else {
                 haptic.success();
                 showAlert(`✅ ${type} Successful!`, 'success');
+                fetchSessionStats(); // Refresh Stats
                 reset();
             }
         } catch (err) {
@@ -375,73 +393,9 @@ const WorkScreen = () => {
         }
     };
 
-    const submitBatchOut = async () => {
-        if (sessionList.length === 0) return;
-        setIsProcessing(true);
 
-        try {
-            const employee = JSON.parse(localStorage.getItem('employee') || '{}');
 
-            const payload = {
-                type: 'OUT',
-                employeeId: employee.employeeId, // E001, E002, etc.
-                employeeName: employee.name,
-                items: sessionList.map(item => ({
-                    barcode: item.barcode,
-                    details: 'Bulk Stock Out via Session'
-                }))
-            };
 
-            const res = await api.post('/api/mobile/batch-transaction', payload);
-
-            if (res.data.results && res.data.results.failed.length > 0) {
-                const failedCount = res.data.results.failed.length;
-                const successCount = res.data.results.success.length;
-                showAlert(`⚠️ Partial Success\n\nProcessed: ${successCount}\nFailed: ${failedCount}\n\nCheck logs for failed items.`, 'error');
-                // Keep failed items in list? For simplicity, we clear and user re-scans if needed, or we filter?
-                // Let's clear for now to avoid complexity in this step
-                setSessionList([]);
-                setShowReview(false);
-            } else {
-                haptic.success();
-                showAlert(`✅ Batch Dispatch Complete!\n\n${sessionList.length} items processed.`, 'success');
-                setSessionList([]);
-                setShowReview(false);
-            }
-
-        } catch (err) {
-            haptic.error();
-            showAlert(err.message, 'error');
-        } finally {
-            setIsProcessing(false);
-        }
-    };
-
-    const removeItemFromSession = (idx) => {
-        const newList = [...sessionList];
-        newList.splice(idx, 1);
-        setSessionList(newList);
-    };
-
-    const confirmAddItem = () => {
-        if (!previewItem) return;
-        setSessionList(prev => [{
-            barcode: previewItem.barcode,
-            details: previewItem.details,
-            scannedAt: new Date()
-        }, ...prev]);
-
-        setPreviewItem(null);
-        setScanned(false);
-        scanningRef.current = false;
-        haptic.success();
-    };
-
-    const cancelAddItem = () => {
-        setPreviewItem(null);
-        setScanned(false);
-        scanningRef.current = false;
-    };
 
     const reset = () => {
         scanningRef.current = false;
@@ -453,30 +407,36 @@ const WorkScreen = () => {
     };
 
     const switchSessionMode = (newMode) => {
-        if (sessionList.length > 0) {
-            if (!window.confirm("Switching modes will clear your current scanned list. Continue?")) return;
-        }
         setSessionMode(newMode);
-        setSessionList([]);
         reset();
     };
 
     useEffect(() => {
         const applyTorch = async () => {
-            // Only attempt if camera is running and we are in SCAN mode
-            if (html5QrCodeRef.current && html5QrCodeRef.current.isScanning && mode === 'SCAN' && !scanned && !showReview) {
+            if (html5QrCodeRef.current && html5QrCodeRef.current.isScanning && mode === 'SCAN' && !scanned) {
                 try {
+                    // Start by updating the internal state if the library supports it
                     await html5QrCodeRef.current.applyVideoConstraints({
                         advanced: [{ torch: torch }]
                     });
                 } catch (err) {
-                    console.error("Torch Error:", err);
-                    if (torch) {
-                        // Only show alert if trying to turn ON
-                        haptic.error();
-                        showAlert("Flashlight unavailble on this device/browser", "warning");
-                        // Timeout to avoid state loop
-                        setTimeout(() => setTorch(false), 500);
+                    console.warn("Standard Torch API failed, trying direct track constraint...", err);
+                    try {
+                        const track = html5QrCodeRef.current.getRunningTrack();
+                        if (track && typeof track.applyConstraints === 'function') {
+                            await track.applyConstraints({
+                                advanced: [{ torch: torch }]
+                            });
+                        } else {
+                            throw new Error("No track available");
+                        }
+                    } catch (err2) {
+                        console.error("Direct Torch API failed:", err2);
+                        if (torch) {
+                            haptic.error();
+                            // Don't alert repeatedly, just reset UI
+                            setTorch(false);
+                        }
                     }
                 }
             }
@@ -485,7 +445,7 @@ const WorkScreen = () => {
         // Small delay to ensure camera is ready
         const timer = setTimeout(applyTorch, 500);
         return () => clearTimeout(timer);
-    }, [torch, mode, scanned, showReview]);
+    }, [torch, mode, scanned]);
 
     const handleTorchClick = () => {
         setTorch(!torch);
@@ -530,6 +490,37 @@ const WorkScreen = () => {
             setIsProcessing(false);
             setShowFinishPreview(false);
         }
+    };
+
+    const handleExitSession = async () => {
+        if (!window.confirm("Exit camera? Session will remain active.")) return;
+
+        try {
+            const sessionIdToUse = sessionId || localStorage.getItem('active_session_id');
+            const scannerIdToUse = scannerId || localStorage.getItem('SL_SCANNER_ID');
+
+            if (sessionIdToUse) {
+                await api.post(`/api/sessions/${sessionIdToUse}/leave`, {
+                    scannerId: scannerIdToUse
+                });
+            }
+        } catch (err) {
+            console.error('Failed to leave session:', err);
+        }
+
+        // Clear local storage
+        localStorage.removeItem('active_session_id');
+        localStorage.removeItem('active_session_type');
+        localStorage.removeItem('active_session_size');
+
+        // Reset local state
+        setSessionMode('IN');
+        setSessionId(null);
+        setSessionSize(null);
+        reset();
+
+        // Navigate back to sessions list
+        navigate('/sessions');
     };
 
     // Render Logic
@@ -580,56 +571,99 @@ const WorkScreen = () => {
     return (
         <div style={{ height: '100dvh', width: '100vw', backgroundColor: 'black', display: 'flex', flexDirection: 'column', position: 'fixed', overflow: 'hidden' }}>
 
-            {/* Header */}
+            {/* Premium Minimalistic Header */}
             <div style={{
-                position: 'fixed', top: 0, left: 0, right: 0, height: '64px',
+                position: 'fixed', top: 0, left: 0, right: 0, height: '76px',
                 padding: '0 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                background: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(16px)',
-                borderBottom: '1px solid rgba(255,255,255,0.05)', zIndex: 100,
-                boxShadow: '0 4px 30px rgba(0, 0, 0, 0.1)'
+                background: 'rgba(15, 23, 42, 0.5)', backdropFilter: 'blur(25px) saturate(200%)',
+                borderBottom: '1px solid rgba(255, 255, 255, 0.05)', zIndex: 100
             }}>
-                <div style={{ display: 'flex', gap: '10px', background: 'rgba(255,255,255,0.1)', padding: '4px', borderRadius: '12px' }}>
+                {/* Left: Refined User Profile */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }}>
                     <div style={{
-                        padding: '6px 12px', borderRadius: '8px',
-                        background: sessionMode === 'IN' ? THEME.success : THEME.error,
-                        color: 'white', fontWeight: '800', fontSize: '11px', lineHeight: '1'
+                        width: '36px', height: '36px', borderRadius: '100px',
+                        background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        color: 'white', fontWeight: '800', fontSize: '12px',
+                        boxShadow: '0 4px 15px rgba(99, 102, 241, 0.2)'
                     }}>
-                        {sessionMode}
-                    </div>
-                    {sessionSize && (
-                        <div style={{
-                            padding: '6px 12px', borderRadius: '8px',
-                            background: 'rgba(255,255,255,0.2)',
-                            color: 'white', fontWeight: '800', fontSize: '11px', lineHeight: '1'
-                        }}>
-                            S-{sessionSize}
-                        </div>
-                    )}
-                </div>
-
-                <div style={{ textAlign: 'center' }}>
-                    <h1 style={{ color: 'white', fontWeight: '800', fontSize: '14px', letterSpacing: '0.5px', margin: 0 }}>
-                        {sessionMode === 'IN' ? 'STOCK ENTRY' : 'DISPATCH'}
-                    </h1>
-                    <div style={{ fontSize: '10px', color: '#94a3b8', marginTop: '2px' }}>
                         {(() => {
                             const e = JSON.parse(localStorage.getItem('employee') || '{}');
-                            return e.name ? `${e.name} (${e.employeeId})` : 'Unknown';
+                            return e.name ? e.name.charAt(0).toUpperCase() : '?';
                         })()}
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <span style={{ color: 'white', fontWeight: '700', fontSize: '13px', letterSpacing: '-0.01em' }}>
+                            {(() => {
+                                const e = JSON.parse(localStorage.getItem('employee') || '{}');
+                                return e.name || 'User';
+                            })()}
+                        </span>
+                        <span style={{ color: THEME.textMuted, fontSize: '9px', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                            {sessionMode === 'IN' ? 'Receiving' : 'Dispatch'}
+                        </span>
                     </div>
                 </div>
 
-                <div style={{ display: 'flex', gap: '8px' }}>
-                    <button
-                        onClick={handleTorchClick}
-                        style={iconBtnStyle}
-                    >
-                        {torch ? '💡' : '🔦'}
-                    </button>
+                {/* Center: Sleek Mode Tag */}
+                <div style={{
+                    display: 'flex', alignItems: 'center', gap: '6px',
+                    background: 'rgba(255, 255, 255, 0.03)', padding: '6px 14px',
+                    borderRadius: '100px', border: '1px solid rgba(255, 255, 255, 0.05)'
+                }}>
+                    <div style={{
+                        width: '6px', height: '6px', borderRadius: '50%',
+                        background: sessionMode === 'IN' ? THEME.success : THEME.error,
+                        boxShadow: `0 0 8px ${sessionMode === 'IN' ? THEME.success : THEME.error}`
+                    }} />
+                    <span style={{ color: 'white', fontWeight: '800', fontSize: '11px', letterSpacing: '0.02em', opacity: 0.9 }}>
+                        SIZE {sessionSize || '--'}
+                    </span>
+                </div>
 
+                {/* Right: Actions & Stats */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, justifyContent: 'flex-end' }}>
+                    <div style={{
+                        display: 'flex', alignItems: 'center', gap: '5px',
+                        background: 'rgba(99, 102, 241, 0.1)', padding: '6px 12px',
+                        borderRadius: '10px', marginRight: '4px'
+                    }}>
+                        <span style={{ color: THEME.accent, fontWeight: '900', fontSize: '14px' }}>
+                            {sessionStats.totalCount}
+                        </span>
+                        <span style={{ color: THEME.accent, fontWeight: '700', fontSize: '9px', opacity: 0.7 }}>UNITS</span>
+                    </div>
+
+                    {hasTorch && (
+                        <button
+                            onClick={handleTorchClick}
+                            style={{
+                                ...iconBtnStyle,
+                                width: '38px', height: '38px', borderRadius: '10px',
+                                background: torch ? 'rgba(245, 158, 11, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+                                border: torch ? '1px solid rgba(245, 158, 11, 0.3)' : '1px solid rgba(255, 255, 255, 0.05)',
+                                color: torch ? '#f59e0b' : 'white',
+                                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+                            }}
+                        >
+                            <IconFlash active={torch} size={18} />
+                        </button>
+                    )}
+
+                    <button
+                        onClick={() => setShowMenu(true)}
+                        style={{
+                            ...iconBtnStyle,
+                            width: '38px', height: '38px', borderRadius: '10px',
+                            background: 'rgba(255, 255, 255, 0.03)',
+                            border: '1px solid rgba(255, 255, 255, 0.05)',
+                            fontSize: '18px'
+                        }}
+                    >
+                        ☰
+                    </button>
                 </div>
             </div>
-
             <div style={{ flex: 1, position: 'relative', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
 
                 {mode === 'SCAN' ? (
@@ -658,21 +692,7 @@ const WorkScreen = () => {
                                 <style>{`@keyframes scan { 0% { top: 10%; opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } 100% { top: 90%; opacity: 0; } }`}</style>
                             </div>
 
-                            {/* Session Counter / Review Button */}
-                            {sessionMode === 'OUT' && (
-                                <button
-                                    onClick={() => setShowReview(true)}
-                                    style={{
-                                        position: 'absolute', bottom: '25%', pointerEvents: 'auto',
-                                        background: 'rgba(255,255,255,0.2)', backdropFilter: 'blur(10px)',
-                                        border: '1px solid rgba(255,255,255,0.2)', padding: '10px 24px', borderRadius: '30px',
-                                        color: 'white', fontWeight: '800', display: 'flex', gap: '8px', alignItems: 'center'
-                                    }}
-                                >
-                                    <span>🛒 LIST ({sessionList.length})</span>
-                                    <span style={{ fontSize: '10px', background: 'white', color: 'black', padding: '2px 6px', borderRadius: '4px' }}>REVIEW</span>
-                                </button>
-                            )}
+
 
                             <button
                                 onClick={() => setShowManualInput(true)}
@@ -688,32 +708,7 @@ const WorkScreen = () => {
                             </button>
 
                             <button
-                                onClick={async () => {
-                                    try {
-                                        // Remove scanner from session on backend
-                                        const sessionIdToUse = sessionId || localStorage.getItem('active_session_id');
-                                        if (sessionIdToUse) {
-                                            const scannerIdToUse = scannerId || localStorage.getItem('SL_SCANNER_ID');
-                                            await api.post(
-                                                `/api/sessions/${sessionIdToUse}/leave`,
-                                                { scannerId: scannerIdToUse },
-                                                scannerIdToUse ? { headers: { 'x-scanner-id': scannerIdToUse } } : undefined
-                                            );
-                                        }
-                                    } catch (err) {
-                                        console.error('Failed to leave session:', err);
-                                    }
-
-                                    localStorage.removeItem('active_session_id');
-                                    localStorage.removeItem('active_session_type');
-                                    localStorage.removeItem('active_session_size');
-                                    setSessionMode('IN');
-                                    setSessionId(null);
-                                    setSessionSize(null);
-                                    setSessionList([]);
-                                    reset();
-                                    navigate('/sessions');
-                                }}
+                                onClick={handleExitSession}
                                 style={{
                                     position: 'absolute', bottom: '2%',
                                     background: 'rgba(239, 68, 68, 0.2)', backdropFilter: 'blur(12px)',
@@ -758,7 +753,7 @@ const WorkScreen = () => {
                                     {sessionMode === 'IN' && (
                                         <ActionButton
                                             onClick={() => setMode('IN_FORM')}
-                                            disabled={scanData?.data?.status === 'IN' || scanData?.status === 'NEW'}
+                                            disabled={scanData?.data?.status === 'IN'}
                                             label={scanData?.data?.status === 'IN' ? "ALREADY IN STOCK" : scanData?.status === 'NEW' ? "STOCK IN" : "STOCK IN"}
                                             sub={scanData?.data?.status === 'IN' ? "(Entry Exists)" : scanData?.status === 'NEW' ? "Enter details first" : null}
                                             icon="📥"
@@ -816,71 +811,9 @@ const WorkScreen = () => {
                 )}
             </div>
 
-            {/* PREVIEW MODAL (CONFIRM ADD TO LIST) */}
-            {
-                previewItem && (
-                    <div style={modalBackdropStyle}>
-                        <div style={{ ...alertBoxStyle, maxWidth: '400px', textAlign: 'left' }}>
-                            <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
-                                <div style={{ fontSize: '3rem', marginBottom: '0.5rem' }}>📦</div>
-                                <h3 style={{ margin: 0, color: 'white' }}>Confirm Item</h3>
-                                <p style={{ color: THEME.textMuted, fontSize: '0.9rem' }}>Check details before adding to list</p>
-                            </div>
 
-                            <div style={{ background: THEME.secondary, padding: '1.5rem', borderRadius: '16px', marginBottom: '1.5rem', border: `1px solid ${THEME.border}` }}>
-                                <div style={{ fontSize: '0.8rem', color: THEME.textMuted, fontWeight: '700', letterSpacing: '1px', marginBottom: '4px' }}>BARCODE</div>
-                                <div style={{ fontSize: '1.5rem', fontFamily: 'monospace', fontWeight: '800', color: 'white', marginBottom: '1.5rem' }}>{previewItem.barcode}</div>
 
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                                    <div>
-                                        <div style={{ fontSize: '0.7rem', color: THEME.textMuted, fontWeight: '700' }}>METRE</div>
-                                        <div style={{ fontSize: '1.2rem', fontWeight: '700', color: THEME.success }}>{previewItem.details.metre} m</div>
-                                    </div>
-                                    <div>
-                                        <div style={{ fontSize: '0.7rem', color: THEME.textMuted, fontWeight: '700' }}>WEIGHT</div>
-                                        <div style={{ fontSize: '1.2rem', fontWeight: '700', color: THEME.accent }}>{previewItem.details.weight} kg</div>
-                                    </div>
-                                </div>
-                            </div>
 
-                            <div style={{ display: 'flex', gap: '1rem' }}>
-                                <button onClick={confirmAddItem} style={{ ...btnPrimaryStyle, background: THEME.success, flex: 1 }}>PROCEED</button>
-                                <button onClick={cancelAddItem} style={{ ...btnGhostStyle, flex: 1 }}>CANCEL</button>
-                            </div>
-                        </div>
-                    </div>
-                )
-            }
-
-            {/* REVIEW MODAL (Bulk Out) */}
-            {
-                showReview && (
-                    <div style={{ position: 'fixed', inset: 0, background: THEME.primary, zIndex: 2000, display: 'flex', flexDirection: 'column' }}>
-                        <div style={{ padding: '20px', borderBottom: `1px solid ${THEME.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <h2 style={{ margin: 0, color: 'white', fontSize: '1.2rem' }}>Review List ({sessionList.length})</h2>
-                            <button onClick={() => setShowReview(false)} style={{ background: 'transparent', border: 'none', color: THEME.textMuted, fontSize: '1.5rem' }}>✕</button>
-                        </div>
-
-                        <div style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
-                            {sessionList.length === 0 ? (
-                                <div style={{ textAlign: 'center', color: THEME.textMuted, marginTop: '50px' }}>List is empty</div>
-                            ) : (
-                                displayList(sessionList, removeItemFromSession, THEME)
-                            )}
-                        </div>
-
-                        <div style={{ padding: '20px', borderTop: `1px solid ${THEME.border}` }}>
-                            <ActionButton
-                                onClick={submitBatchOut}
-                                label={`SUBMIT ALL (${sessionList.length})`}
-                                icon="🚀"
-                                color={THEME.error}
-                                disabled={sessionList.length === 0 || isProcessing}
-                            />
-                        </div>
-                    </div>
-                )
-            }
 
 
 
@@ -934,50 +867,60 @@ const WorkScreen = () => {
                 )
             }
 
-            {
-                showIpInput && (
-                    <div style={modalBackdropStyle}>
-                        <div style={alertBoxStyle}>
-                            <h3 style={{ color: 'white', margin: '0 0 16px 0' }}>Server IP</h3>
-                            <input value={serverIp} onChange={e => setServerIp(e.target.value)} style={inputStyle} />
-                            <div style={{ display: 'flex', gap: '10px', marginTop: '16px' }}>
-                                <button onClick={() => setShowIpInput(false)} style={{ ...btnPrimaryStyle, flex: 1 }}>SAVE</button>
-                            </div>
+
+
+            {/* Menu Drawer */}
+            {showMenu && (
+                <>
+                    <div
+                        style={{ ...modalBackdropStyle, background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(8px)', animation: 'fadeIn 0.3s ease forwards' }}
+                        onClick={() => setShowMenu(false)}
+                    />
+                    <div style={{
+                        position: 'fixed', bottom: '20px', left: '20px', right: '20px',
+                        background: 'rgba(30, 41, 59, 0.95)', backdropFilter: 'blur(25px)',
+                        borderRadius: '24px', padding: '12px', zIndex: 1001,
+                        border: '1px solid rgba(255, 255, 255, 0.08)',
+                        animation: 'slideUpDrawer 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards'
+                    }}>
+                        <div style={{ width: '40px', height: '4px', background: 'rgba(255,255,255,0.1)', borderRadius: '2px', margin: '8px auto 20px' }} />
+
+                        <div style={{ display: 'grid', gap: '8px' }}>
+                            <MenuItem
+                                icon="🏁"
+                                label="Finish Session"
+                                sub="Generate report & close"
+                                onClick={handleFinishSession}
+                            />
+
+                            <MenuItem
+                                icon="🚪"
+                                label="Exit Session"
+                                sub="Leave without closing"
+                                color={THEME.error}
+                                onClick={handleExitSession}
+                            />
                         </div>
+
+                        <button
+                            onClick={() => setShowMenu(false)}
+                            style={{
+                                width: '100%', padding: '16px', background: 'rgba(255,255,255,0.05)',
+                                border: 'none', borderRadius: '16px', color: 'white',
+                                fontWeight: '700', fontSize: '14px', marginTop: '12px'
+                            }}
+                        >
+                            CLOSE
+                        </button>
                     </div>
-                )
-            }
+                </>
+            )}
 
         </div >
     );
 };
 
-// Helper for Review List
-const displayList = (list, onRemove, THEME) => list.map((item, i) => (
-    <div key={i} style={{
-        background: 'rgba(30, 41, 59, 0.6)', backdropFilter: 'blur(10px)',
-        marginBottom: '12px', padding: '16px', borderRadius: '16px',
-        border: '1px solid rgba(255,255,255,0.05)',
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center'
-    }}>
-        <div>
-            <div style={{ fontWeight: '800', fontSize: '1.2rem', fontFamily: 'monospace', color: 'white', letterSpacing: '-0.5px' }}>{item.barcode}</div>
-            <div style={{ fontSize: '0.85rem', color: THEME.textMuted, marginTop: '2px' }}>
-                <span style={{ color: THEME.success, fontWeight: '700' }}>{item.details.metre}m</span>
-                <span style={{ margin: '0 6px', opacity: 0.3 }}>|</span>
-                <span style={{ color: THEME.accent, fontWeight: '700' }}>{item.details.weight}kg</span>
-            </div>
-        </div>
-        <button
-            onClick={() => onRemove(i)}
-            style={{
-                background: 'rgba(239, 68, 68, 0.1)', color: THEME.error, border: '1px solid rgba(239, 68, 68, 0.2)',
-                width: '40px', height: '40px', borderRadius: '12px', fontSize: '1.2rem',
-                display: 'flex', alignItems: 'center', justifyContent: 'center'
-            }}
-        >×</button>
-    </div>
-));
+
 
 const ActionButton = ({ onClick, disabled, label, sub, icon, color, variant = 'solid' }) => (
     <button
@@ -1053,5 +996,13 @@ const iconBtnStyle = { background: 'rgba(255,255,255,0.1)', border: 'none', colo
 const inputStyle = { width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid #334155', color: 'white', padding: '12px', borderRadius: '8px', fontSize: '16px', outline: 'none', boxSizing: 'border-box', textAlign: 'center' };
 const btnPrimaryStyle = { width: '100%', padding: '12px', background: '#6366f1', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '600', fontSize: '15px' };
 const btnGhostStyle = { width: '100%', padding: '12px', background: 'transparent', color: '#94a3b8', border: '1px solid #334155', borderRadius: '8px', fontWeight: '600', fontSize: '15px' };
+
+const styles = document.createElement('style');
+styles.textContent = `
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+    @keyframes slideDown { from { transform: translateY(0); } to { transform: translateY(100%); } }
+`;
+document.head.appendChild(styles);
 
 export default WorkScreen;

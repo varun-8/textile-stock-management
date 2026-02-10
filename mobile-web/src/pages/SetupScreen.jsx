@@ -17,16 +17,12 @@ const THEME = {
 
 const SetupScreen = () => {
     const { setupDevice } = useMobile();
-
-    // Steps: 'LANDING' -> 'CONNECTING'
     const [step, setStep] = useState('LANDING');
-
     const [manualIp, setManualIp] = useState('');
     const [showManual, setShowManual] = useState(false);
     const [error, setError] = useState(null);
-    const [isConnecting, setIsConnecting] = useState(false);
 
-    // 1. Check for Auto-Pairing URL on Mount (Deep Link Support)
+    // 1. Auto-Pairing from URL (QR Scan)
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
         const serverParam = params.get('server');
@@ -34,31 +30,33 @@ const SetupScreen = () => {
 
         if (serverParam && tokenParam) {
             console.log('🔗 Deep Link Detected - Auto-triggering pairing');
-            // Extract IP from legacy URL
             let ip = serverParam.replace(/https?:\/\//, '').split(':')[0];
-
-            // Auto-trigger pairing
             executePairing(ip, tokenParam, 'AUTO_ASSIGN');
+        } else if (window.location.hostname && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+            // 2. Auto-Pairing from Current Host (if remote)
+            console.log('🌐 Remote Host Detected - Attempting auto-pairing with:', window.location.hostname);
+            executePairing(window.location.hostname, 'FACTORY_SETUP_2026', 'AUTO_ASSIGN');
         }
-    }, []);
+    }, [setupDevice]); // Add dependency for linting, though stable
 
     const handleManualConnect = () => {
         if (!manualIp.trim()) {
             setError("Enter Server IP");
             return;
         }
+        // Extract IP if user pastes full URL
+        let ip = manualIp.replace(/https?:\/\//, '').split(':')[0];
+
         setShowManual(false);
         // Manual mode implies "Factory Setup"
-        executePairing(manualIp, "FACTORY_SETUP_2026", 'AUTO_ASSIGN');
+        executePairing(ip, "FACTORY_SETUP_2026", 'AUTO_ASSIGN');
     };
 
     const executePairing = async (ip, token, nameOverride = null) => {
-        setIsConnecting(true);
         setStep('CONNECTING');
         setError(null);
 
         try {
-            // Use override or 'AUTO_ASSIGN' if not provided
             const finalName = nameOverride || 'AUTO_ASSIGN';
             await setupDevice(ip, token, finalName);
 
@@ -66,78 +64,22 @@ const SetupScreen = () => {
             const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
             window.history.replaceState({ path: cleanUrl }, '', cleanUrl);
 
-            // App component handles redirect based on context (scannerId set)
+            // Context update will trigger App redirect
         } catch (err) {
             handlePairError(err.message || 'Connection Failed');
         }
     };
 
     const handlePairError = (msg) => {
-        setIsConnecting(false);
+        setStep('LANDING'); // Go back to landing to show error
         setError(msg);
         haptic.error();
-        setStep('LANDING');
     };
+
 
     // --- RENDERERS ---
 
-    // 2. LANDING SCREEN (No Scanner)
-    if (step === 'LANDING') {
-        return (
-            <div style={containerStyle}>
-                {/* Header Logo */}
-                <div style={{ marginBottom: '40px', textAlign: 'center' }}>
-                    <div style={iconBadgeStyle}>⚡</div>
-                    <h1 style={headingStyle}>Connect Scanner</h1>
-                    <p style={subTextStyle}>
-                        To pair this device, scan the <b>Master QR Code</b> using your <b>Camera App</b> or <b>Google Lens</b>.
-                    </p>
-                </div>
-
-                {/* Manual Connect Option */}
-                <div style={{ width: '100%', maxWidth: '320px' }}>
-                    <button
-                        onClick={() => setShowManual(true)}
-                        style={{ ...btnSecondaryStyle, width: '100%', marginBottom: '20px' }}
-                    >
-                        ENTER IP MANUALLY
-                    </button>
-
-                    {error && (
-                        <div style={errorMessageStyle}>
-                            ⚠️ {error}
-                        </div>
-                    )}
-                </div>
-
-                {/* Manual Input Modal */}
-                {showManual && (
-                    <div style={modalBackdropStyle}>
-                        <div style={modalCardStyle}>
-                            <h3 style={{ color: 'white', margin: '0 0 16px', fontSize: '18px' }}>Manual Server IP</h3>
-                            <input
-                                value={manualIp}
-                                onChange={e => setManualIp(e.target.value)}
-                                placeholder="192.168.x.x"
-                                style={inputStyle}
-                                autoFocus
-                            />
-                            <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
-                                <button onClick={handleManualConnect} style={{ ...btnPrimaryStyle }}>CONNECT</button>
-                                <button onClick={() => setShowManual(false)} style={{ ...btnSecondaryStyle, background: 'transparent', border: `1px solid ${THEME.border}` }}>CANCEL</button>
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                <div style={{ position: 'absolute', bottom: '30px', opacity: 0.3, fontSize: '12px' }}>
-                    v2.5 • No In-App Scan
-                </div>
-            </div>
-        );
-    }
-
-    // 3. CONNECTING SCREEN
+    // 2. CONNECTING SCREEN
     if (step === 'CONNECTING') {
         return (
             <div style={containerStyle}>
@@ -151,7 +93,72 @@ const SetupScreen = () => {
         );
     }
 
-    return null;
+    // 3. LANDING SCREEN (Fallback / Manual)
+    return (
+        <div style={containerStyle}>
+            {/* Header Logo */}
+            <div style={{ marginBottom: '40px', textAlign: 'center' }}>
+                <div style={iconBadgeStyle}>⚡</div>
+                <h1 style={headingStyle}>Connect Scanner</h1>
+                <p style={subTextStyle}>
+                    To pair this device, scan the <b>Master QR Code</b> using your <b>Camera App</b> or <b>Google Lens</b>.
+                </p>
+            </div>
+
+            {/* Error Display */}
+            {error && (
+                <div style={errorMessageStyle}>
+                    ⚠️ {error}
+                </div>
+            )}
+
+            {/* Manual Connect Option */}
+            <div style={{ width: '100%', maxWidth: '320px', marginTop: '20px' }}>
+                <button
+                    onClick={() => setShowManual(true)}
+                    style={{ ...btnSecondaryStyle, width: '100%' }}
+                >
+                    ENTER IP MANUALLY
+                </button>
+            </div>
+
+            {/* Manual Input Modal */}
+            {showManual && (
+                <div style={{
+                    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(5px)',
+                    zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center'
+                }}>
+                    <div style={{
+                        background: 'rgba(30, 41, 59, 0.9)', backdropFilter: 'blur(20px)',
+                        border: `1px solid ${THEME.border}`, padding: '30px 24px', borderRadius: '24px',
+                        width: '100%', maxWidth: '320px', textAlign: 'center',
+                        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
+                    }}>
+                        <h3 style={{ color: 'white', margin: '0 0 16px', fontSize: '18px' }}>Manual Server IP</h3>
+                        <input
+                            value={manualIp}
+                            onChange={e => setManualIp(e.target.value)}
+                            placeholder="192.168.x.x"
+                            style={{
+                                width: '100%', padding: '16px', borderRadius: '14px', border: `1px solid ${THEME.border}`,
+                                background: '#0f172a', color: 'white', fontSize: '16px', outline: 'none',
+                                transition: 'border-color 0.2s', boxSizing: 'border-box', fontFamily: 'monospace', textAlign: 'center'
+                            }}
+                            autoFocus
+                        />
+                        <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
+                            <button onClick={handleManualConnect} style={{ ...btnPrimaryStyle, flex: 1 }}>CONNECT</button>
+                            <button onClick={() => setShowManual(false)} style={{ ...btnSecondaryStyle, flex: 1, background: 'transparent' }}>CANCEL</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            <div style={{ position: 'absolute', bottom: '30px', opacity: 0.3, fontSize: '12px' }}>
+                v2.6 • Auto-Config Enabled
+            </div>
+        </div>
+    );
 };
 
 // --- STYLES ---
