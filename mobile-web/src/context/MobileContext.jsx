@@ -95,11 +95,7 @@ export const MobileProvider = ({ children }) => {
     const [missing, setMissing] = useState([]);
     const [loadingMissing, setLoadingMissing] = useState(false);
 
-    const api = useMemo(() => axios.create({
-        httpsAgent: {
-            rejectUnauthorized: false
-        }
-    }), []);
+    const api = useMemo(() => axios.create(), []);
 
     useEffect(() => {
         const protocol = window.location.protocol === 'https:' ? 'https' : 'http';
@@ -146,8 +142,12 @@ export const MobileProvider = ({ children }) => {
 
     const loginUser = useCallback(async (username, password) => {
         try {
-            const res = await api.post('/api/auth/login', { username, password });
-            localStorage.setItem('SL_USER_TOKEN', res.data.token);
+            const res = await api.post('/api/auth/login', {
+                username,
+                password,
+                scannerId
+            });
+            localStorage.setItem('SL_USER_TOKEN', 'mobile-session');
             localStorage.setItem('SL_USER', JSON.stringify(res.data.user));
             setUser(res.data.user);
             setIsLoggedIn(true);
@@ -155,7 +155,7 @@ export const MobileProvider = ({ children }) => {
         } catch (err) {
             throw new Error(err.response?.data?.error || 'Login failed');
         }
-    }, [api]);
+    }, [api, scannerId]);
 
     const logout = useCallback(() => {
         localStorage.removeItem('SL_USER_TOKEN');
@@ -193,23 +193,13 @@ export const MobileProvider = ({ children }) => {
         return () => clearInterval(interval);
     }, []);
 
-    // Auto-fetch missing scans every 10 seconds
-    useEffect(() => {
-        if (isLoggedIn) {
-            fetchMissing();
-            const interval = setInterval(fetchMissing, 10000);
-            return () => clearInterval(interval);
-        }
-    }, [serverIp, isLoggedIn]);
-
     // Unified Pairing Function (QR / Manual)
     const setupDevice = useCallback(async (ip, token, name = null) => {
         console.log('🔗 setupDevice started - IP:', ip, 'Token:', token);
 
         try {
             const setupClient = axios.create({
-                baseURL: `https://${ip}:5000`,
-                httpsAgent: { rejectUnauthorized: false }
+                baseURL: `https://${ip}:5000`
             });
 
             const existingId = localStorage.getItem('SL_SCANNER_ID');
@@ -249,8 +239,14 @@ export const MobileProvider = ({ children }) => {
     const unpair = () => {
         localStorage.removeItem('SL_SCANNER_ID');
         localStorage.removeItem('SL_SERVER_IP');
+        localStorage.removeItem('SL_SCANNER_NAME');
+        localStorage.removeItem('SL_FINGERPRINT');
+        localStorage.removeItem('active_session_id');
+        localStorage.removeItem('active_session_type');
+        localStorage.removeItem('active_session_size');
         setScannerId(null);
         setServerIp(DEFAULT_IP);
+        setScannerDeletedError(null);
         logout();
     };
 
@@ -279,11 +275,7 @@ export const MobileProvider = ({ children }) => {
         const verifyScannerPairing = async () => {
             if (scannerId) {
                 try {
-                    const verifyClient = axios.create({
-                        httpsAgent: {
-                            rejectUnauthorized: false // Allow self-signed certificates
-                        }
-                    });
+                    const verifyClient = axios.create();
 
                     // Include employee data if logged in
                     const employee = localStorage.getItem('employee');

@@ -13,8 +13,8 @@ import Employees from './pages/Employees';
 import Sessions from './pages/Sessions';
 
 const ProtectedRoute = ({ children }) => {
-  const isAuthenticated = localStorage.getItem('isAuthenticated') === 'true';
-  return isAuthenticated ? children : <Navigate to="/" />;
+  const hasToken = !!localStorage.getItem('ADMIN_TOKEN');
+  return hasToken ? children : <Navigate to="/" />;
 };
 
 import { ConfigProvider } from './context/ConfigContext';

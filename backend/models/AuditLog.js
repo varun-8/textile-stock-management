@@ -4,7 +4,19 @@ const auditLogSchema = new mongoose.Schema({
     action: {
         type: String,
         required: true,
-        enum: ['LOGIN', 'LOGOUT', 'BARCODE_GENERATE', 'STOCK_IN', 'STOCK_OUT', 'BACKUP', 'RESTORE', 'ERROR']
+        enum: [
+            'LOGIN',
+            'LOGOUT',
+            'BARCODE_GENERATE',
+            'STOCK_IN',
+            'STOCK_OUT',
+            'BACKUP',
+            'RESTORE',
+            'DELETE',
+            'MARK_DAMAGED',
+            'INVENTORY_EDIT',
+            'ERROR'
+        ]
     },
     user: {
         type: String, // Username or User ID

@@ -267,7 +267,10 @@ router.get('/:id/preview', async (req, res) => {
 // End Session
 router.post('/end', async (req, res) => {
     try {
-        const { sessionId } = req.body;
+        const { sessionId, source } = req.body;
+        const initiator = source || 'desktop'; // Default to desktop if not specified
+        
+        console.log('📊 END SESSION REQUEST:', { sessionId, source, initiator });
 
         const session = await Session.findById(sessionId);
         if (!session) {
@@ -299,10 +302,11 @@ router.post('/end', async (req, res) => {
         await session.save();
 
         if (req.io) {
-            req.io.emit('session_update', { action: 'ENDED', sessionId });
+            console.log('🔔 EMITTING SOCKET EVENT:', { action: 'ENDED', sessionId, initiator });
+            req.io.emit('session_update', { action: 'ENDED', sessionId, initiator });
         }
 
-        res.json({ success: true, message: 'Session Ended', stats: result });
+        res.json({ success: true, message: 'Session Ended', stats: result, initiator });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

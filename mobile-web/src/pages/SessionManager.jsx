@@ -4,7 +4,7 @@ import { useMobile } from '../context/MobileContext';
 
 const SessionManager = () => {
     const navigate = useNavigate();
-    const { api, scannerId, logout, deferredPrompt, installApp } = useMobile();
+    const { api, scannerId, logout, unpair, deferredPrompt, installApp } = useMobile();
     const [sessions, setSessions] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showCreate, setShowCreate] = useState(false);
@@ -16,6 +16,11 @@ const SessionManager = () => {
     const [showManualInput, setShowManualInput] = useState(false);
     const [showInstallBanner, setShowInstallBanner] = useState(false);
     const [installStatus, setInstallStatus] = useState(null);
+    const [showEndSummary, setShowEndSummary] = useState(false);
+    const [endSummarySession, setEndSummarySession] = useState(null);
+    const [endSummaryStats, setEndSummaryStats] = useState(null);
+    const [endSummaryItems, setEndSummaryItems] = useState([]);
+    const [closingSession, setClosingSession] = useState(false);
 
     // Get employee from localStorage
     const employee = localStorage.getItem('employee') ? JSON.parse(localStorage.getItem('employee')) : null;
@@ -52,9 +57,18 @@ const SessionManager = () => {
     // Handle install prompt - now using context
     const handleUnpair = () => {
         if (window.confirm('Unpair this device? You will need to pair again to scan.')) {
-            localStorage.removeItem('SL_SCANNER_ID');
-            localStorage.removeItem('SL_SCANNER_NAME');
-            window.location.reload();
+            (async () => {
+                try {
+                    if (scannerId) {
+                        await api.post('/api/auth/logout', { scannerId });
+                    }
+                } catch (err) {
+                    console.error('Failed to clear employee before unpair:', err);
+                } finally {
+                    unpair();
+                    window.location.reload();
+                }
+            })();
         }
     };
 
@@ -162,6 +176,54 @@ const SessionManager = () => {
             }
         } catch (err) {
             alert('Failed to create session');
+        }
+    };
+
+    const openEndSummary = async (session) => {
+        try {
+            const res = await api.get(`/api/sessions/${session._id}/preview`);
+            if (!res.data?.success) {
+                alert(res.data?.error || 'Failed to load session summary');
+                return;
+            }
+
+            const s = res.data.stats || {};
+            setEndSummarySession(session);
+            setEndSummaryStats({
+                totalCount: Number(s.totalCount ?? s.count ?? 0),
+                totalMetre: Number(s.totalMetre ?? 0),
+                totalWeight: Number(s.totalWeight ?? 0)
+            });
+            setEndSummaryItems(Array.isArray(res.data.items) ? res.data.items : []);
+            setShowEndSummary(true);
+        } catch (err) {
+            console.error(err);
+            alert('Failed to load session summary');
+        }
+    };
+
+    const confirmEndSessionFromSummary = async () => {
+        if (!endSummarySession?._id) return;
+        try {
+            setClosingSession(true);
+            const res = await api.post('/api/sessions/end', {
+                sessionId: endSummarySession._id,
+                source: 'mobile'
+            });
+            if (!res.data?.success) {
+                alert(res.data?.error || 'Failed to end session');
+                return;
+            }
+            setShowEndSummary(false);
+            setEndSummarySession(null);
+            setEndSummaryStats(null);
+            setEndSummaryItems([]);
+            fetchSessions();
+        } catch (err) {
+            console.error(err);
+            alert('Failed to end session');
+        } finally {
+            setClosingSession(false);
         }
     };
 
@@ -451,17 +513,7 @@ const SessionManager = () => {
                                             JOIN SESSION
                                         </button>
                                         <button
-                                            onClick={async () => {
-                                                if (window.confirm(`End this session? All items will be finalized.`)) {
-                                                    try {
-                                                        await api.post('/api/sessions/end', { sessionId: session._id });
-                                                        fetchSessions();
-                                                    } catch (err) {
-                                                        console.error(err);
-                                                        alert('Failed to end session');
-                                                    }
-                                                }
-                                            }}
+                                            onClick={() => openEndSummary(session)}
                                             style={{
                                                 flex: 1, height: '52px', background: 'rgba(239, 68, 68, 0.1)',
                                                 color: THEME.error, border: '1px solid rgba(239, 68, 68, 0.2)',
@@ -669,7 +721,7 @@ const SessionManager = () => {
                                 style={{ ...menuBtnStyle, color: THEME.error }}
                             >
                                 <span style={{ fontSize: '20px' }}>🚪</span>
-                                <span>Logout System</span>
+                                <span>Logout</span>
                             </button>
 
                             <button
@@ -682,6 +734,148 @@ const SessionManager = () => {
                         </div>
                     </div>
                 </>
+            )}
+
+            {/* End Session Summary Modal */}
+            {showEndSummary && endSummarySession && endSummaryStats && (
+                <div style={modalOverlayStyle}>
+                    <div style={{
+                        background: 'rgba(30, 41, 59, 0.92)',
+                        width: '100%',
+                        maxWidth: '760px',
+                        maxHeight: '90vh',
+                        borderRadius: '24px',
+                        border: '1px solid rgba(255, 255, 255, 0.12)',
+                        boxShadow: '0 25px 50px rgba(0,0,0,0.5)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        overflow: 'hidden'
+                    }}>
+                        <div style={{
+                            padding: '18px 20px',
+                            borderBottom: '1px solid rgba(255,255,255,0.1)',
+                            background: 'rgba(15, 23, 42, 0.85)',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center'
+                        }}>
+                            <div>
+                                <div style={{ fontSize: '18px', fontWeight: '900', color: 'white' }}>Session Summary</div>
+                                <div style={{ fontSize: '12px', color: THEME.textMuted, marginTop: '2px' }}>
+                                    {endSummarySession.type} | Size {endSummarySession.targetSize}
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setShowEndSummary(false)}
+                                disabled={closingSession}
+                                style={{
+                                    width: '32px', height: '32px',
+                                    borderRadius: '50%',
+                                    border: 'none',
+                                    background: 'rgba(255,255,255,0.08)',
+                                    color: 'white',
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                x
+                            </button>
+                        </div>
+
+                        <div style={{ padding: '16px 20px', overflowY: 'auto' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginBottom: '16px' }}>
+                                <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', padding: '12px', textAlign: 'center' }}>
+                                    <div style={{ fontSize: '24px', fontWeight: '900', color: 'white' }}>{endSummaryStats.totalCount}</div>
+                                    <div style={{ fontSize: '10px', color: THEME.textMuted, fontWeight: '700' }}>ITEMS</div>
+                                </div>
+                                <div style={{ background: 'rgba(99, 102, 241, 0.08)', border: '1px solid rgba(99, 102, 241, 0.2)', borderRadius: '12px', padding: '12px', textAlign: 'center' }}>
+                                    <div style={{ fontSize: '24px', fontWeight: '900', color: THEME.accent }}>{endSummaryStats.totalMetre.toFixed(2)}</div>
+                                    <div style={{ fontSize: '10px', color: THEME.textMuted, fontWeight: '700' }}>METRE</div>
+                                </div>
+                                <div style={{ background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.2)', borderRadius: '12px', padding: '12px', textAlign: 'center' }}>
+                                    <div style={{ fontSize: '24px', fontWeight: '900', color: THEME.success }}>{endSummaryStats.totalWeight.toFixed(2)}</div>
+                                    <div style={{ fontSize: '10px', color: THEME.textMuted, fontWeight: '700' }}>WEIGHT</div>
+                                </div>
+                            </div>
+
+                            <div style={{ border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', overflow: 'hidden' }}>
+                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                                    <thead style={{ background: 'rgba(255,255,255,0.05)' }}>
+                                        <tr>
+                                            <th style={{ padding: '10px', textAlign: 'left', color: THEME.textMuted, fontWeight: '800' }}>Barcode</th>
+                                            <th style={{ padding: '10px', textAlign: 'right', color: THEME.textMuted, fontWeight: '800' }}>Metre</th>
+                                            <th style={{ padding: '10px', textAlign: 'right', color: THEME.textMuted, fontWeight: '800' }}>Weight</th>
+                                            <th style={{ padding: '10px', textAlign: 'right', color: THEME.textMuted, fontWeight: '800' }}>Scanned By</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {endSummaryItems.length === 0 ? (
+                                            <tr>
+                                                <td colSpan="4" style={{ padding: '18px', textAlign: 'center', color: THEME.textMuted }}>
+                                                    No scanned items in this session
+                                                </td>
+                                            </tr>
+                                        ) : (
+                                            endSummaryItems.map((item, idx) => (
+                                                <tr key={`${item.barcode}-${idx}`} style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                                                    <td style={{ padding: '10px', color: 'white', fontFamily: 'monospace', fontWeight: '700' }}>{item.barcode}</td>
+                                                    <td style={{ padding: '10px', color: 'white', textAlign: 'right' }}>{Number(item.metre || 0).toFixed(2)}</td>
+                                                    <td style={{ padding: '10px', color: 'white', textAlign: 'right' }}>{Number(item.weight || 0).toFixed(2)}</td>
+                                                    <td style={{ padding: '10px', color: THEME.textMuted, textAlign: 'right' }}>{item.scannedBy || 'Unknown'}</td>
+                                                </tr>
+                                            ))
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div style={{
+                            display: 'flex',
+                            gap: '10px',
+                            padding: '14px 20px',
+                            borderTop: '1px solid rgba(255,255,255,0.1)',
+                            background: 'rgba(15, 23, 42, 0.85)'
+                        }}>
+                            <button
+                                onClick={() => {
+                                    setShowEndSummary(false);
+                                    setEndSummarySession(null);
+                                    setEndSummaryStats(null);
+                                    setEndSummaryItems([]);
+                                }}
+                                disabled={closingSession}
+                                style={{
+                                    flex: 1,
+                                    height: '46px',
+                                    borderRadius: '12px',
+                                    border: '1px solid rgba(255,255,255,0.15)',
+                                    background: 'transparent',
+                                    color: 'white',
+                                    fontWeight: '700',
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={confirmEndSessionFromSummary}
+                                disabled={closingSession}
+                                style={{
+                                    flex: 2,
+                                    height: '46px',
+                                    borderRadius: '12px',
+                                    border: 'none',
+                                    background: closingSession ? 'rgba(239,68,68,0.5)' : THEME.error,
+                                    color: 'white',
+                                    fontWeight: '800',
+                                    cursor: closingSession ? 'not-allowed' : 'pointer'
+                                }}
+                            >
+                                {closingSession ? 'Closing...' : 'Confirm & End Session'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
 
             {/* Auto Install Banner */}

@@ -250,9 +250,6 @@ const Settings = () => {
 
                             <button
                                 onClick={async () => {
-                                    try {
-                                        await fetch(`${apiUrl}/api/auth/logout`, { method: 'POST' });
-                                    } catch (e) { console.error(e); }
                                     localStorage.clear();
                                     window.location.href = '/';
                                 }}

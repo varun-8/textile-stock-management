@@ -4,6 +4,7 @@ const backupService = require('../services/backupService');
 const AuditLog = require('../models/AuditLog');
 const Scanner = require('../models/Scanner');
 const os = require('os');
+const { issuePairingToken } = require('../middleware/authMiddleware');
 
 // Get Audit Logs
 router.get('/audit-logs', async (req, res) => {
@@ -100,6 +101,12 @@ router.get('/scanners', async (req, res) => {
         console.error('❌ Error fetching scanners:', err);
         res.status(500).json({ error: err.message });
     }
+});
+
+// Issue short-lived pairing token for QR setup links
+router.get('/pairing-token', (req, res) => {
+    const token = issuePairingToken();
+    res.json({ token, expiresIn: process.env.PAIRING_TOKEN_TTL || '10m' });
 });
 
 // Register a New Scanner (called when mobile app pairs)

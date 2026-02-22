@@ -1,8 +1,11 @@
-const CACHE_NAME = 'sl-scanner-v1';
+const CACHE_NAME = 'sl-scanner-v2';
 const ASSETS_TO_CACHE = [
-    '/',
-    '/index.html',
-    '/manifest.json'
+    '/pwa/',
+    '/pwa/index.html',
+    '/pwa/manifest.json',
+    '/pwa/logo.svg',
+    '/pwa/pwa-192x192.svg',
+    '/pwa/pwa-512x512.svg'
 ];
 
 // Install event - cache assets
@@ -40,6 +43,15 @@ self.addEventListener('fetch', event => {
     // Skip API calls - always use network
     if (event.request.url.includes('/api/')) {
         event.respondWith(fetch(event.request));
+        return;
+    }
+
+    // App-shell fallback for SPA routes under /pwa/*
+    const reqUrl = new URL(event.request.url);
+    if (event.request.mode === 'navigate' && reqUrl.pathname.startsWith('/pwa')) {
+        event.respondWith(
+            caches.match('/pwa/index.html').then(cached => cached || fetch('/pwa/index.html'))
+        );
         return;
     }
 

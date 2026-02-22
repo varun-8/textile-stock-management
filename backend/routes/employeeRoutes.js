@@ -1,9 +1,27 @@
 const express = require('express');
 const router = express.Router();
 const Employee = require('../models/Employee');
+const { requireAdminAuth, requireScannerAuth } = require('../middleware/authMiddleware');
+
+let bcrypt = null;
+try {
+    bcrypt = require('bcryptjs');
+} catch (err) {
+    console.warn('[Security] Optional dependency "bcryptjs" not installed. Using legacy plaintext PIN mode.');
+}
+
+const hashPin = async (pin) => {
+    if (!bcrypt) return pin;
+    return bcrypt.hash(pin, 10);
+};
+const comparePin = async (plain, stored) => {
+    if (!stored) return false;
+    if (stored.startsWith('$2') && bcrypt) return bcrypt.compare(plain, stored);
+    return plain === stored;
+};
 
 // GET all (Active & Terminated)
-router.get('/', async (req, res) => {
+router.get('/', requireAdminAuth, async (req, res) => {
     try {
         const employees = await Employee.find().sort({ lastActive: -1, createdAt: -1 });  // Sort by recent activity first
         res.json(employees);
@@ -13,7 +31,7 @@ router.get('/', async (req, res) => {
 });
 
 // POST Add Employee with Auto-ID
-router.post('/add', async (req, res) => {
+router.post('/add', requireAdminAuth, async (req, res) => {
     try {
         const { name, pin } = req.body;
         if (!name || !pin) return res.status(400).json({ error: 'Name and PIN required' });
@@ -29,7 +47,8 @@ router.post('/add', async (req, res) => {
             }
         }
 
-        const newEmployee = new Employee({ employeeId: nextId, name, pin });
+        const hashedPin = await hashPin(pin);
+        const newEmployee = new Employee({ employeeId: nextId, name, pin: hashedPin });
         await newEmployee.save();
         res.status(201).json(newEmployee);
     } catch (err) {
@@ -42,7 +61,7 @@ router.post('/add', async (req, res) => {
 });
 
 // UPDATE PIN
-router.put('/update-pin/:id', async (req, res) => {
+router.put('/update-pin/:id', requireAdminAuth, async (req, res) => {
     try {
         const { id } = req.params;
         const { pin } = req.body;
@@ -51,7 +70,7 @@ router.put('/update-pin/:id', async (req, res) => {
 
         const updated = await Employee.findByIdAndUpdate(
             id,
-            { pin },
+            { pin: await hashPin(pin) },
             { new: true }
         );
 
@@ -64,7 +83,7 @@ router.put('/update-pin/:id', async (req, res) => {
 });
 
 // DELETE (Soft Delete / Terminate)
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requireAdminAuth, async (req, res) => {
     try {
         const { id } = req.params;
         // Check if used? 
@@ -82,7 +101,7 @@ router.delete('/:id', async (req, res) => {
 });
 
 // POST Verify ID and PIN
-router.post('/verify', async (req, res) => {
+router.post('/verify', requireScannerAuth, async (req, res) => {
     try {
         const { employeeId, pin } = req.body;
         if (!employeeId || !pin) return res.status(400).json({ error: 'Employee ID and PIN required' });
@@ -93,11 +112,10 @@ router.post('/verify', async (req, res) => {
 
         const employee = await Employee.findOne({
             employeeId: employeeId,
-            pin: pin,
             status: 'ACTIVE'
         });
 
-        if (!employee) {
+        if (!employee || !(await comparePin(pin, employee.pin))) {
             return res.status(401).json({ error: 'Invalid ID or PIN' });
         }
 

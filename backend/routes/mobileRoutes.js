@@ -322,7 +322,6 @@ router.post('/transaction', async (req, res) => {
             user: employeeName || 'MobileUser', // Ideally req.user if auth existed
             employeeId,
             employeeName,
-            employeeName,
             details: { barcode, metre, weight, percentage, sessionId },
             ipAddress: req.ip
         });
@@ -478,6 +477,14 @@ router.put('/inventory/update', async (req, res) => {
         });
 
         await clothRoll.save();
+
+        await AuditLog.create({
+            action: 'INVENTORY_EDIT',
+            user: 'Admin',
+            details: { barcode, metre, weight, percentage, status: clothRoll.status },
+            ipAddress: req.ip
+        });
+
         res.json({ success: true, data: clothRoll });
     } catch (err) {
         res.status(500).json({ error: err.message });

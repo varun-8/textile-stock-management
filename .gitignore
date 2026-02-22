@@ -1,0 +1,31 @@
+# Node / package managers
+node_modules/
+**/node_modules/
+
+# Build outputs
+backend/public/pwa/assets/
+backend/public/pwa/index.html
+mobile-web/dist/
+desktop/dist/
+desktop/release/
+
+# Runtime artifacts
+*.log
+*.tmp
+.DS_Store
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+
+# Backup and local data
+backend/backups/*.json
+!backend/backups/.gitkeep
+
+# IDE
+.vscode/
+.idea/

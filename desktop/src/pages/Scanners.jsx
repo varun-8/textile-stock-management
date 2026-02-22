@@ -7,7 +7,7 @@ import { IconBroadcast, IconTrash, IconScan, IconX } from '../components/Icons';
 const Scanners = () => {
     const { apiUrl } = useConfig();
     const [scanners, setScanners] = useState([]);
-    const [setupToken] = useState('FACTORY_SETUP_2026');
+    const [setupToken, setSetupToken] = useState('');
     const [qrTarget, setQrTarget] = useState(null); // null, 'NEW', or scanner object
     const [serverIp, setServerIp] = useState('');
     const [error, setError] = useState('');
@@ -26,9 +26,23 @@ const Scanners = () => {
         if (qrTarget && !serverIp) fetchServerIp();
     }, [qrTarget, serverIp]); // Optimized dependency
 
+    useEffect(() => {
+        if (qrTarget === 'NEW') {
+            fetchPairingToken();
+        }
+        if (!qrTarget) {
+            setSetupToken('');
+        }
+    }, [qrTarget]);
+
+    const authHeaders = () => {
+        const token = localStorage.getItem('ADMIN_TOKEN');
+        return token ? { Authorization: `Bearer ${token}` } : {};
+    };
+
     const fetchServerIp = async () => {
         try {
-            const res = await axios.get(`${apiUrl}/api/admin/server-ip`);
+            const res = await axios.get(`${apiUrl}/api/admin/server-ip`, { headers: authHeaders() });
             if (res.data.ip) setServerIp(res.data.ip);
         } catch (err) {
             console.error("Failed to fetch Server IP", err);
@@ -36,10 +50,20 @@ const Scanners = () => {
         }
     };
 
+    const fetchPairingToken = async () => {
+        try {
+            const res = await axios.get(`${apiUrl}/api/admin/pairing-token`, { headers: authHeaders() });
+            if (res.data.token) setSetupToken(res.data.token);
+        } catch (err) {
+            console.error("Failed to fetch pairing token", err);
+            setError("Could not generate pairing token");
+        }
+    };
+
     const fetchScanners = async () => {
         try {
             if (scanners.length === 0) setLoading(true);
-            const res = await axios.get(`${apiUrl}/api/admin/scanners`);
+            const res = await axios.get(`${apiUrl}/api/admin/scanners`, { headers: authHeaders() });
 
             // Prevent flickering: Only update state if data actually changed
             setScanners(prev => {
@@ -59,7 +83,7 @@ const Scanners = () => {
     const removeScannerDevice = async (scannerId) => {
         try {
             setDeleting(true);
-            const res = await axios.delete(`${apiUrl}/api/admin/scanners/${scannerId}`);
+            const res = await axios.delete(`${apiUrl}/api/admin/scanners/${scannerId}`, { headers: authHeaders() });
             if (res.status === 200) {
                 setScanners(prev => prev.filter(s => s.scannerId !== scannerId));
                 setDeleteConfirm(null);
@@ -73,6 +97,7 @@ const Scanners = () => {
 
     const getPairingUrl = () => {
         if (!serverIp) return '';
+        if (qrTarget === 'NEW' && !setupToken) return '';
         const lanUrl = `https://${serverIp}:5000`;
 
         // Use scanner's fingerprint for repair, otherwise use setupToken for new devices
@@ -306,7 +331,7 @@ const Scanners = () => {
                                     : `Use this QR to reconnect "${qrTarget.name}" if it lost connection or was logged out.`}
                             </p>
 
-                            {!serverIp ? (
+                            {!serverIp || (qrTarget === 'NEW' && !setupToken) ? (
                                 <div style={{ padding: '3rem', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                                     <div className="spinner" style={{ width: '32px', height: '32px', border: '3px solid var(--border-color)', borderTopColor: 'var(--accent-color)', borderRadius: '50%' }}></div>
                                     <p style={{ marginTop: '1rem', fontSize: '0.8rem', opacity: 0.7 }}>Generating Secure Link...</p>

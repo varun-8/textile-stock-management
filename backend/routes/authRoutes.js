@@ -3,6 +3,19 @@ const router = express.Router();
 const Scanner = require('../models/Scanner');
 const User = require('../models/User');
 const crypto = require('crypto'); // Built-in Node module
+const { verifyToken } = require('../middleware/authMiddleware');
+let bcrypt = null;
+try {
+    bcrypt = require('bcryptjs');
+} catch (err) {
+    console.warn('[Security] Optional dependency "bcryptjs" not installed. Using legacy plaintext PIN comparison.');
+}
+
+const comparePin = async (plain, stored) => {
+    if (!stored) return false;
+    if (stored.startsWith('$2') && bcrypt) return bcrypt.compare(plain, stored);
+    return plain === stored;
+};
 
 // --- 1. SCANNER PAIRING (Machine Layer) ---
 
@@ -24,28 +37,30 @@ router.post('/pair', async (req, res) => {
         // The QR code contains `?token=SETUP_SECRET`. 
         // We configure this secret in .env or hardcode for this refactor phase.
 
-        const SETUP_SECRET = process.env.SETUP_SECRET || 'FACTORY_SETUP_2026';
-        let isRepairToken = false;
         let tokenScanner = null;
 
-        if (token === SETUP_SECRET) {
-            // Standard Factory Token (Valid for New & Re-pair if ID provided)
-        } else {
+        let validPairingToken = false;
+        try {
+            const decoded = verifyToken(token);
+            validPairingToken = decoded && decoded.type === 'PAIRING';
+        } catch (e) {
+            validPairingToken = false;
+        }
+
+        if (!validPairingToken) {
             // Check if token is a FINGERPRINT (immutable repair token)
             tokenScanner = await Scanner.findOne({ fingerprint: token });
             if (tokenScanner) {
-                isRepairToken = true;
-                // Force the identity to this scanner
-                req.body.scannerId = tokenScanner.uuid;
-                existingId = tokenScanner.uuid;
-            } else {
-                // Last check: is it an old UUID token format?
-                tokenScanner = await Scanner.findOne({ uuid: token });
-                if (tokenScanner) {
-                    isRepairToken = true;
-                    req.body.scannerId = token;
-                    existingId = token;
+                    // Force the identity to this scanner
+                    req.body.scannerId = tokenScanner.uuid;
+                    existingId = tokenScanner.uuid;
                 } else {
+                    // Last check: is it an old UUID token format?
+                    tokenScanner = await Scanner.findOne({ uuid: token });
+                    if (tokenScanner) {
+                        req.body.scannerId = token;
+                        existingId = token;
+                    } else {
                     return res.status(401).json({
                         error: 'Invalid or Expired Link',
                         message: 'This link is no longer valid. Please use the repair QR code or pair as a new device.'
@@ -235,10 +250,12 @@ router.post('/check-device', async (req, res) => {
 
 router.post('/login', async (req, res) => {
     try {
-        const { username, pin, scannerId } = req.body;
+        const { username, pin, password, scannerId } = req.body;
+        const effectiveScannerId = scannerId || req.headers['x-scanner-id'];
+        const credentialPin = pin || password;
 
         // 1. Validate Scanner First (Must be a trusted machine)
-        const scanner = await Scanner.findOne({ uuid: scannerId });
+        const scanner = await Scanner.findOne({ uuid: effectiveScannerId });
         if (!scanner || scanner.status !== 'ACTIVE') {
             return res.status(403).json({ error: 'Unauthorized Scanner Device' });
         }
@@ -253,7 +270,7 @@ router.post('/login', async (req, res) => {
             return res.status(401).json({ error: 'User not found' });
         }
 
-        if (user.pin !== pin) {
+        if (!(await comparePin(credentialPin, user.pin))) {
             return res.status(401).json({ error: 'Invalid PIN' });
         }
 

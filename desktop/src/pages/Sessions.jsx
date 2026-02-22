@@ -61,6 +61,7 @@ const Sessions = () => {
         });
 
         socket.on('session_update', async (data) => {
+            console.log('📡 DESKTOP RECEIVED SESSION_UPDATE:', JSON.stringify(data));
             fetchSessions();
             fetchHistory();
 
@@ -69,8 +70,19 @@ const Sessions = () => {
                 // Background fetch will handle liveSession update via sync effect
             }
 
-            // Auto-show report when session ends
-            if (data && data.action === 'ENDED' && data.sessionId) {
+            // Auto-show report when session ends (ONLY if initiated from desktop)
+            const isSessionEnd = data && data.action === 'ENDED' && data.sessionId;
+            const isDesktopInitiator = data.initiator === 'desktop';
+            
+            console.log('🔍 CHECKING REPORT MODAL:', { 
+                isSessionEnd, 
+                initiator: data?.initiator, 
+                isDesktopInitiator,
+                shouldShow: isSessionEnd && isDesktopInitiator
+            });
+            
+            if (isSessionEnd && isDesktopInitiator) {
+                console.log('✅ SHOWING REPORT - Session ended by desktop');
                 try {
                     const res = await fetch(`${apiUrl}/api/sessions/${data.sessionId}/summary`);
                     const report = await res.json();
@@ -81,6 +93,8 @@ const Sessions = () => {
                 } catch (err) {
                     console.error("Failed to auto-load report", err);
                 }
+            } else if (isSessionEnd) {
+                console.log('❌ NOT SHOWING REPORT - Session ended by:', data?.initiator || 'unknown (mobile/other)');
             }
         });
 
@@ -223,7 +237,7 @@ const Sessions = () => {
             const res = await fetch(`${apiUrl}/api/sessions/end`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sessionId: selectedSessionId })
+                body: JSON.stringify({ sessionId: selectedSessionId, source: 'desktop' })
             });
             const data = await res.json();
             if (data.success) {

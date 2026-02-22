@@ -20,7 +20,8 @@ const Login = () => {
         e.preventDefault();
         try {
             const res = await axios.post(`${apiUrl}/api/login`, credentials);
-            if (res.data.success) {
+            if (res.data.success && res.data.token) {
+                localStorage.setItem('ADMIN_TOKEN', res.data.token);
                 localStorage.setItem('isAuthenticated', 'true');
                 navigate('/dashboard');
             }

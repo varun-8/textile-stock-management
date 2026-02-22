@@ -80,9 +80,16 @@ const WorkScreen = () => {
     // Session Finish State
     const [showFinishPreview, setShowFinishPreview] = useState(false);
     const [finishStats, setFinishStats] = useState(null);
+    const [showSessionComplete, setShowSessionComplete] = useState(false);
 
     // Live Session Stats
     const [sessionStats, setSessionStats] = useState({ totalCount: 0, totalMetre: 0, totalWeight: 0 });
+
+    const normalizeStats = (stats = {}) => ({
+        totalCount: Number(stats.totalCount ?? stats.count ?? 0),
+        totalMetre: Number(stats.totalMetre ?? 0),
+        totalWeight: Number(stats.totalWeight ?? 0)
+    });
 
     const fetchSessionStats = async () => {
         if (!sessionId) return;
@@ -456,7 +463,7 @@ const WorkScreen = () => {
             setIsProcessing(true);
             const res = await api.get(`/api/sessions/${sessionId}/preview`);
             if (res.data.success) {
-                setFinishStats(res.data.stats);
+                setFinishStats(normalizeStats(res.data.stats));
                 setShowFinishPreview(true);
                 setShowMenu(false);
             } else {
@@ -473,28 +480,29 @@ const WorkScreen = () => {
     const confirmFinishSession = async () => {
         try {
             setIsProcessing(true);
-            const res = await api.post('/api/sessions/end', { sessionId });
+            console.log('📱 MOBILE: Ending session with source=mobile', { sessionId });
+            const res = await api.post('/api/sessions/end', { sessionId, source: 'mobile' });
+            console.log('📱 MOBILE: Response received:', { success: res.data.success, initiator: res.data.initiator });
             if (res.data.success) {
+                setFinishStats(normalizeStats(res.data.stats));
                 haptic.success();
-                showAlert('Session Finished Successfully!', 'success');
+                setShowFinishPreview(false);
+                setShowSessionComplete(true);
                 localStorage.removeItem('active_session_id');
                 localStorage.removeItem('active_session_type');
                 localStorage.removeItem('active_session_size');
-                setTimeout(() => window.location.reload(), 1500);
             } else {
                 showAlert(res.data.error, 'error');
             }
         } catch (err) {
+            console.error('📱 MOBILE: Error ending session:', err);
             showAlert(err.message, 'error');
         } finally {
             setIsProcessing(false);
-            setShowFinishPreview(false);
         }
     };
 
     const handleExitSession = async () => {
-        if (!window.confirm("Exit camera? Session will remain active.")) return;
-
         try {
             const sessionIdToUse = sessionId || localStorage.getItem('active_session_id');
             const scannerIdToUse = scannerId || localStorage.getItem('SL_SCANNER_ID');
@@ -522,6 +530,62 @@ const WorkScreen = () => {
         // Navigate back to sessions list
         navigate('/sessions');
     };
+
+    // Session Completion Screen
+    if (showSessionComplete && finishStats) {
+        return (
+            <div style={{
+                position: 'fixed', inset: 0, background: THEME.primary, zIndex: 2000,
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px'
+            }}>
+                <div style={{ textAlign: 'center', marginBottom: '40px', animation: 'slideUp 0.6s ease-out' }}>
+                    <div style={{ fontSize: '80px', marginBottom: '20px', animation: 'bounce 0.8s ease-in-out' }}>✅</div>
+                    <h1 style={{ color: 'white', fontSize: '28px', margin: 0, fontWeight: '800' }}>Session Complete!</h1>
+                    <p style={{ color: THEME.textMuted, marginTop: '12px', fontSize: '14px' }}>Your session has been successfully saved.</p>
+                </div>
+
+                <div style={{ width: '80%', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '40px' }}>
+                    <div style={{ background: THEME.secondary, padding: '20px', borderRadius: '16px', textAlign: 'center', animation: 'slideUp 0.7s ease-out' }}>
+                        <div style={{ fontSize: '32px', fontWeight: '800', color: 'white' }}>{finishStats.totalCount}</div>
+                        <div style={{ fontSize: '11px', fontWeight: '700', color: THEME.textMuted, marginTop: '4px' }}>ITEMS SCANNED</div>
+                    </div>
+                    <div style={{ background: THEME.secondary, padding: '20px', borderRadius: '16px', textAlign: 'center', animation: 'slideUp 0.8s ease-out' }}>
+                        <div style={{ fontSize: '32px', fontWeight: '800', color: THEME.accent }}>{finishStats.totalMetre.toFixed(0)}</div>
+                        <div style={{ fontSize: '11px', fontWeight: '700', color: THEME.textMuted, marginTop: '4px' }}>TOTAL METRE</div>
+                    </div>
+                    <div style={{ gridColumn: '1 / -1', background: THEME.secondary, padding: '20px', borderRadius: '16px', textAlign: 'center', animation: 'slideUp 0.9s ease-out' }}>
+                        <div style={{ fontSize: '32px', fontWeight: '800', color: THEME.success }}>{finishStats.totalWeight.toFixed(1)}</div>
+                        <div style={{ fontSize: '11px', fontWeight: '700', color: THEME.textMuted, marginTop: '4px' }}>TOTAL WEIGHT (KG)</div>
+                    </div>
+                </div>
+
+                <style>{`
+                    @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+                    @keyframes bounce { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.1); } }
+                `}</style>
+
+                <div style={{ width: '80%', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <button
+                        onClick={() => {
+                            setShowSessionComplete(false);
+                            setSessionId(null);
+                            setSessionMode('IN');
+                            setSessionSize(null);
+                            reset();
+                            navigate('/sessions');
+                        }}
+                        style={{
+                            padding: '14px 24px', borderRadius: '10px', border: 'none',
+                            background: THEME.accent, color: 'white', fontWeight: '700', fontSize: '14px',
+                            cursor: 'pointer', transition: 'all 0.3s ease'
+                        }}
+                    >
+                        BACK TO SESSIONS
+                    </button>
+                </div>
+            </div>
+        );
+    }
 
     // Render Logic
     if (showFinishPreview && finishStats) {

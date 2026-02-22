@@ -1,10 +1,6 @@
 const { app, BrowserWindow, screen } = require('electron');
 const path = require('path');
 
-// Ignore self-signed certificate errors
-app.commandLine.appendSwitch('ignore-certificate-errors');
-
-
 function createWindow() {
     const { width, height } = screen.getPrimaryDisplay().workAreaSize;
 
@@ -13,8 +9,8 @@ function createWindow() {
         height: height,
         icon: path.join(__dirname, 'icon.png'), // Placeholder
         webPreferences: {
-            nodeIntegration: true,
-            contextIsolation: false,
+            nodeIntegration: false,
+            contextIsolation: true,
         }
     });
 

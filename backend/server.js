@@ -3,36 +3,105 @@ const express = require('express');
 const mongoose = require('mongoose');
 const https = require('https');
 const fs = require('fs');
+const path = require('path');
 const { Server } = require('socket.io');
 const cors = require('cors');
-const bodyParser = require('body-parser');
+const morgan = require('morgan');
+const errorHandler = require('./middleware/errorMiddleware');
+const { issueAdminToken, requireAdminAuth, requireScannerAuth } = require('./middleware/authMiddleware');
+
+let helmet = null;
+let rateLimit = null;
+try {
+    helmet = require('helmet');
+} catch (err) {
+    console.warn('[Security] Optional dependency "helmet" not installed. Continuing without helmet.');
+}
+try {
+    rateLimit = require('express-rate-limit');
+} catch (err) {
+    console.warn('[Security] Optional dependency "express-rate-limit" not installed. Continuing without rate limiting.');
+}
 
 const app = express();
 
-// Load Certificates
+const isProduction = process.env.NODE_ENV === 'production';
+const requiredEnvs = ['APP_USERNAME', 'APP_PASSWORD', ...(isProduction ? ['JWT_SECRET'] : [])];
+const missingEnvs = requiredEnvs.filter((key) => !process.env[key]);
+if (missingEnvs.length > 0) {
+    throw new Error(`Missing required environment variables: ${missingEnvs.join(', ')}`);
+}
+
+if (!process.env.JWT_SECRET) {
+    process.env.JWT_SECRET = 'dev-insecure-jwt-secret-change-me';
+    console.warn('[Security] JWT_SECRET missing. Using insecure dev fallback. Set JWT_SECRET in .env.');
+}
+
+// Load TLS certificates
+const TLS_KEY_PATH = process.env.TLS_KEY_PATH || './stock-system.local-key.pem';
+const TLS_CERT_PATH = process.env.TLS_CERT_PATH || './stock-system.local.pem';
+
+if (!fs.existsSync(TLS_KEY_PATH) || !fs.existsSync(TLS_CERT_PATH)) {
+    throw new Error('TLS certificate files are missing. Set TLS_KEY_PATH and TLS_CERT_PATH.');
+}
+
 const httpsOptions = {
-    key: fs.readFileSync('./stock-system.local-key.pem'),
-    cert: fs.readFileSync('./stock-system.local.pem')
+    key: fs.readFileSync(TLS_KEY_PATH),
+    cert: fs.readFileSync(TLS_CERT_PATH)
 };
 
 const server = https.createServer(httpsOptions, app);
+
+const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((x) => x.trim())
+    .filter(Boolean);
+
+const isOriginAllowed = (origin) => {
+    if (!origin) return true;
+    if (origin.startsWith('file://')) return true;
+    if (allowedOrigins.length === 0) return true;
+    return allowedOrigins.includes(origin);
+};
+
 const io = new Server(server, {
     cors: {
-        origin: '*',
+        origin: (origin, callback) => {
+            if (isOriginAllowed(origin)) return callback(null, true);
+            return callback(new Error('CORS blocked'), false);
+        },
         methods: ['GET', 'POST']
     }
 });
 
-const morgan = require('morgan');
-const errorHandler = require('./middleware/errorMiddleware');
-
 // Middleware
-app.use(cors());
-app.use(bodyParser.json());
-app.use(morgan('dev')); // Logging for diagnostics
+if (helmet) {
+    app.use(helmet({
+        crossOriginResourcePolicy: false
+    }));
+}
+app.use(cors({
+    origin: (origin, callback) => {
+        if (isOriginAllowed(origin)) return callback(null, true);
+        return callback(new Error('CORS blocked'), false);
+    },
+    credentials: true
+}));
+app.use(express.json({ limit: '2mb' }));
+app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
+
+if (rateLimit) {
+    const authLimiter = rateLimit({
+        windowMs: 15 * 60 * 1000,
+        max: 20,
+        standardHeaders: true,
+        legacyHeaders: false
+    });
+    app.use('/api/login', authLimiter);
+    app.use('/api/auth', authLimiter);
+}
 
 // Serve PWA Static Files
-const path = require('path');
 app.use('/pwa', express.static(path.join(__dirname, 'public/pwa')));
 
 // Attach IO to request for routes
@@ -56,88 +125,43 @@ const getLocalIp = () => {
 };
 
 // Database Connection
-mongoose.connect('mongodb://127.0.0.1:27017/textile-stock-management').then(() => {
+mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/textile-stock-management').then(() => {
     console.log('Connected to MongoDB Local (textile-stock-management)');
 }).catch(err => {
     console.error('MongoDB Connection Error:', err);
 });
-
-// Authentication Middleware
-const authenticate = async (req, res, next) => {
-    // 1. Admin Login (Desktop) - Uses Body
-    if (req.path === '/api/login' || req.path.startsWith('/api/auth')) return next();
-
-    // 2. Mobile Routes - Require Scanner Identity
-    if (req.path.startsWith('/api/mobile')) {
-        const scannerId = req.headers['x-scanner-id'];
-
-        if (!scannerId) {
-            // Allow initial scan/ping ? No, enforce strict pairing.
-            // Exception: If we want to allow 'check-connectivity', maybe.
-            // But strict is better.
-            return res.status(401).json({ error: 'Missing logic: Scanner Not Paired' });
-        }
-
-        // Optional: Cache this check or check DB every time?
-        // For local LAN, DB check is fast (<2ms).
-        const Scanner = require('./models/Scanner');
-        const validScanner = await Scanner.findOne({ uuid: scannerId, status: 'ACTIVE' });
-
-        if (!validScanner) {
-            return res.status(403).json({ error: 'Scanner Unauthorized or Disabled' });
-        }
-
-        // Pass scanner info to route
-        req.scanner = validScanner;
-        return next();
-    }
-
-    // 3. Admin Routes - Allow for now (Assuming Desktop is trusted or implementation pending)
-    // For this refactor, we leave existing Admin Auth Logic (Body Check) for desktop routes if any,
-    // or just let them pass as they are mostly local.
-    // The previous implementation had a "Pass All" logic.
-    next();
-};
-
-app.use(authenticate);
 
 // Routes
 const barcodeRoutes = require('./routes/barcodeRoutes');
 const mobileRoutes = require('./routes/mobileRoutes');
 const statsRoutes = require('./routes/statsRoutes');
 const adminRoutes = require('./routes/adminRoutes');
-const authRoutes = require('./routes/adminRoutes'); // Will fix path in next step if typo
 
 // Init Services
 require('./services/backupService');
 
-app.use('/api/barcode', barcodeRoutes);
-app.use('/api/mobile', mobileRoutes);
-app.use('/api/stats', statsRoutes);
-app.use('/api/admin', adminRoutes);
-app.use('/api/sessions', require('./routes/sessionRoutes')); // New Session Routes
-app.use('/api/reports', require('./routes/reportsRoutes'));
-app.use('/api/sizes', require('./routes/sizesRoutes'));
+app.use('/api/mobile', requireScannerAuth, mobileRoutes);
+app.use('/api/barcode', requireAdminAuth, barcodeRoutes);
+app.use('/api/stats', requireAdminAuth, statsRoutes);
+app.use('/api/admin', requireAdminAuth, adminRoutes);
+app.use('/api/sessions', require('./routes/sessionRoutes'));
+app.use('/api/reports', requireAdminAuth, require('./routes/reportsRoutes'));
+app.use('/api/sizes', requireAdminAuth, require('./routes/sizesRoutes'));
 app.use('/api/employees', require('./routes/employeeRoutes'));
 
 // New Endpoint: Get Server IP (for Desktop to generate QR)
-app.get('/api/admin/server-ip', (req, res) => {
-    res.json({ ip: getLocalIp() });
-});
-
 // Auth Routes (Open for pairing/login)
 app.use('/api/auth', require('./routes/authRoutes'));
 
 app.post('/api/login', (req, res) => {
     const { username, password } = req.body;
 
-    // DEBUG LOG
-    console.log('Login Attempt:');
-    console.log('Received:', { username, password });
-    console.log('Expected:', { user: process.env.APP_USERNAME, pass: process.env.APP_PASSWORD });
-
     if (username === process.env.APP_USERNAME && password === process.env.APP_PASSWORD) {
-        return res.json({ success: true, message: 'Authenticated' });
+        const token = issueAdminToken({
+            username,
+            role: 'ADMIN'
+        });
+        return res.json({ success: true, message: 'Authenticated', token });
     }
     return res.status(401).json({ success: false, message: 'Invalid credentials' });
 });
