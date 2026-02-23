@@ -2,16 +2,34 @@ directories:
   output: release
   buildResources: build
 appId: com.srilakshmitextiles.inventory
-productName: Sri Lakshmi Textiles
+productName: Prodexa
 files:
   - filter:
       - dist/**/*
       - electron-main.cjs
+      - preload.cjs
+      - icon.png
       - package.json
+extraResources:
+  - from: resources
+    to: resources
+    filter:
+      - '**/*'
+  - from: ../backend
+    to: backend
+    filter:
+      - '**/*'
+  - from: ../backend/node_modules
+    to: backend/node_modules
+    filter:
+      - '**/*'
 win:
   target:
     - nsis
-    - portable
   icon: icon.png
   forceCodeSigning: false
+nsis:
+  oneClick: false
+  perMachine: true
+  allowToChangeInstallationDirectory: true
 electronVersion: 40.0.0

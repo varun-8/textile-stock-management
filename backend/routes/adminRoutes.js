@@ -16,6 +16,41 @@ router.get('/audit-logs', async (req, res) => {
     }
 });
 
+const getConfigPath = () => require('path').join(__dirname, '../config.json');
+
+// Get Backup Path
+router.get('/config/backup-path', (req, res) => {
+    try {
+        const configPath = getConfigPath();
+        const fs = require('fs');
+        if (fs.existsSync(configPath)) {
+            const config = JSON.parse(fs.readFileSync(configPath));
+            res.json({ path: config.backupPath || './backups' });
+        } else {
+            res.json({ path: './backups' });
+        }
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Update Backup Path
+router.post('/config/backup-path', (req, res) => {
+    try {
+        const configPath = getConfigPath();
+        const fs = require('fs');
+        let config = {};
+        if (fs.existsSync(configPath)) {
+            config = JSON.parse(fs.readFileSync(configPath));
+        }
+        config.backupPath = req.body.path || './backups';
+        fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // Manual Backup
 router.post('/backup', async (req, res) => {
     try {
@@ -35,6 +70,27 @@ router.get('/backups', async (req, res) => {
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
+});
+
+// Download Backup
+router.get('/backup/download/:filename', (req, res) => {
+    const filename = req.params.filename;
+
+    // Basic validation to prevent directory traversal
+    if (!filename || !filename.endsWith('.json')) {
+        return res.status(400).json({ error: 'Invalid filename' });
+    }
+
+    const path = require('path');
+    const fs = require('fs');
+    const backupDir = backupService.getBackupDir();
+    const filePath = path.join(backupDir, filename);
+
+    if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ error: 'Backup file not found' });
+    }
+
+    res.download(filePath, filename);
 });
 
 // Restore Backup

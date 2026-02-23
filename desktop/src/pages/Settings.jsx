@@ -128,7 +128,43 @@ const Settings = () => {
             } else {
                 alert('Restore failed');
             }
-        } catch (err) { alert('Restore failed'); }
+        } catch (err) { console.error(err); alert('Restore failed'); }
+    };
+
+    const handleDownload = async (filename) => {
+        try {
+            setBackupMsg('Downloading...');
+            const res = await fetch(`${apiUrl}/api/admin/backup/download/${filename}`, {
+                headers: { 'Authorization': `Bearer ${localStorage.getItem('ADMIN_TOKEN')}` }
+            });
+
+            if (!res.ok) throw new Error('Download failed');
+
+            // Because it's a blob/json file, we fetch it and create an object URL
+            const blob = await res.blob();
+
+            // Native Electron Download Bridge
+            if (window.electronAPI?.saveFile) {
+                const text = await blob.text();
+                const saved = await window.electronAPI.saveFile(filename, text);
+                if (saved) setBackupMsg('Download complete');
+                else setBackupMsg('');
+                return;
+            }
+
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            setBackupMsg('');
+        } catch (err) {
+            setBackupMsg('Error downloading backup');
+            console.error(err);
+        }
     };
 
     return (
@@ -250,6 +286,9 @@ const Settings = () => {
 
                             <button
                                 onClick={async () => {
+                                    try {
+                                        await fetch(`${apiUrl}/api/logout`, { method: 'POST' });
+                                    } catch (e) { console.error('Logout err', e); }
                                     localStorage.clear();
                                     window.location.href = '/';
                                 }}
@@ -263,50 +302,84 @@ const Settings = () => {
                     {/* --- BACKUP TAB --- */}
                     {activeTab === 'backup' && (
                         <div className="animate-fade-in">
-                            <h3 style={{ marginBottom: '1.5rem' }}>Backup Configuration</h3>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: '1.5rem', marginBottom: '2rem' }}>
 
-                            <div style={{ marginBottom: '2.5rem', paddingBottom: '2rem', borderBottom: '1px solid var(--border-color)' }}>
-                                <label style={labelStyle}>Server Backup Directory</label>
-                                <div style={{ display: 'flex', gap: '1rem' }}>
-                                    <input
-                                        type="text"
-                                        value={backupPath}
-                                        onChange={e => setBackupPath(e.target.value)}
-                                        placeholder="./backups"
-                                        style={{
-                                            flex: 1, padding: '0.8rem', borderRadius: '8px',
-                                            border: '1px solid var(--border-color)', background: 'var(--bg-primary)',
-                                            color: 'var(--text-primary)', fontFamily: 'monospace'
-                                        }}
-                                    />
-                                    <button onClick={handleSavePath} className="btn btn-primary" style={{ padding: '0 1.5rem' }}>Save Path</button>
+                                {/* Auto Backup Config Card */}
+                                <div style={infoCardStyle}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', marginBottom: '1rem' }}>
+                                        <div style={{ width: '40px', height: '40px', borderRadius: '8px', background: 'rgba(99, 102, 241, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent-color)' }}>
+                                            <IconCloud />
+                                        </div>
+                                        <h3 style={{ margin: 0, fontSize: '1.2rem' }}>Auto-Backup Setup</h3>
+                                    </div>
+                                    <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.5rem', lineHeight: '1.5' }}>
+                                        System state is backed up automatically at <strong>11:00 PM daily</strong> and upon <strong>Admin Login/Logout</strong>. Choose where these files are saved.
+                                    </p>
+                                    <label style={labelStyle}>Target Directory Path</label>
+                                    <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.8rem' }}>
+                                        <input
+                                            type="text"
+                                            value={backupPath}
+                                            onClick={async () => {
+                                                if (window.electronAPI?.selectDirectory) {
+                                                    const path = await window.electronAPI.selectDirectory();
+                                                    if (path) setBackupPath(path);
+                                                }
+                                            }}
+                                            onChange={e => setBackupPath(e.target.value)}
+                                            placeholder="./backups (Click to browse)"
+                                            style={{
+                                                flex: 1, padding: '0.8rem', borderRadius: '8px',
+                                                border: '1px solid var(--border-color)', background: 'var(--bg-primary)',
+                                                color: 'var(--text-primary)', fontFamily: 'monospace',
+                                                cursor: window.electronAPI ? 'pointer' : 'text'
+                                            }}
+                                        />
+                                        <button onClick={handleSavePath} className="btn btn-primary" style={{ padding: '0 1rem' }}>Save</button>
+                                    </div>
+                                    <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', opacity: 0.7, margin: 0 }}>
+                                        Supports absolute paths (e.g. <code>C:/Backups</code>) or relative paths. Ensure the server has write permissions.
+                                    </p>
                                 </div>
-                                <p style={{ fontSize: '0.8rem', marginTop: '0.5rem', opacity: 0.6 }}>
-                                    Absolute path on the server where automated backups will be stored. Ensure the server process has write permissions.
-                                </p>
+
+                                {/* Manual Action Card */}
+                                <div style={infoCardStyle}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', marginBottom: '1rem' }}>
+                                        <div style={{ width: '40px', height: '40px', borderRadius: '8px', background: 'rgba(99, 102, 241, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent-color)' }}>
+                                            <IconSettings />
+                                        </div>
+                                        <h3 style={{ margin: 0, fontSize: '1.2rem' }}>Manual Actions</h3>
+                                    </div>
+                                    <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.5rem', lineHeight: '1.5' }}>
+                                        Create an instant snapshot of your current database state, or restore the system from an existing <code>.json</code> backup file.
+                                    </p>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                        <button onClick={handleCreateBackup} className="btn btn-primary" style={{ width: '100%', padding: '1rem', display: 'flex', justifyContent: 'center', gap: '0.5rem', fontWeight: 'bold' }}>
+                                            <IconCloud /> Create Snapshot Now
+                                        </button>
+
+                                        <div style={{ position: 'relative', borderRadius: '8px', border: '2px dashed var(--accent-color)', background: 'rgba(99, 102, 241, 0.05)', transition: 'all 0.2s ease', overflow: 'hidden' }}>
+                                            <input
+                                                type="file"
+                                                accept=".json"
+                                                onChange={handleImportBackup}
+                                                style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer', zIndex: 10 }}
+                                            />
+                                            <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--accent-color)', fontWeight: 'bold', fontSize: '0.9rem', pointerEvents: 'none' }}>
+                                                📥 Click or Drop .json to Import/Restore
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
 
-                            <h3 style={{ marginBottom: '1.5rem' }}>Manual Actions</h3>
-                            <div style={{ display: 'flex', gap: '1.5rem', marginBottom: '2rem', flexWrap: 'wrap' }}>
-                                <button onClick={handleCreateBackup} className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '1rem 2rem' }}>
-                                    <IconCloud /> Create System Backup
-                                </button>
-
-                                <div style={{ position: 'relative' }}>
-                                    <input
-                                        type="file"
-                                        accept=".json"
-                                        onChange={handleImportBackup}
-                                        style={{ position: 'absolute', opacity: 0, width: '100%', height: '100%', cursor: 'pointer' }}
-                                    />
-                                    <button className="btn btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '1rem 2rem' }}>
-                                        📥 Import Backup File
-                                    </button>
+                            {backupMsg && (
+                                <div style={{ background: 'var(--bg-tertiary)', padding: '1rem', borderRadius: '8px', marginBottom: '2rem', borderLeft: '4px solid var(--accent-color)', fontWeight: '600' }}>
+                                    {backupMsg}
                                 </div>
-                            </div>
-                            {backupMsg && <div style={{ background: 'var(--bg-tertiary)', padding: '1rem', borderRadius: '8px', marginBottom: '2rem', borderLeft: '4px solid var(--accent-color)' }}>{backupMsg}</div>}
+                            )}
 
-                            <h3 style={{ margin: '0 0 1rem' }}>Backup History</h3>
+                            <h3 style={{ margin: '0 0 1rem', paddingBottom: '0.8rem', borderBottom: '1px solid var(--border-color)' }}>Snapshot History</h3>
                             {loadingBackups ? <div style={{ opacity: 0.5 }}>Loading archives...</div> : (
                                 <div style={{ background: 'var(--bg-primary)', borderRadius: '12px', overflow: 'hidden', border: '1px solid var(--border-color)' }}>
                                     {backups.length === 0 ? (
@@ -314,29 +387,58 @@ const Settings = () => {
                                     ) : (
                                         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                                             <tbody>
-                                                {backups.map((filename, i) => (
-                                                    <tr key={i} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                                                        <td style={{ padding: '1rem', fontFamily: 'monospace', fontSize: '0.9rem' }}>{filename}</td>
-                                                        <td style={{ padding: '1rem', textAlign: 'right' }}>
-                                                            <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
-                                                                <a
-                                                                    href={`${apiUrl}/api/admin/backup/download/${filename}`}
-                                                                    target="_blank"
-                                                                    rel="noreferrer"
-                                                                    style={{ color: 'var(--accent-color)', textDecoration: 'none', fontWeight: '600', fontSize: '0.85rem' }}
-                                                                >
-                                                                    Download
-                                                                </a>
-                                                                <button
-                                                                    onClick={() => handleRestore(filename)}
-                                                                    style={{ background: 'none', border: 'none', color: 'var(--error-color)', cursor: 'pointer', fontWeight: '600', fontSize: '0.85rem' }}
-                                                                >
-                                                                    Restore
-                                                                </button>
-                                                            </div>
-                                                        </td>
-                                                    </tr>
-                                                ))}
+                                                {backups.map((filename, i) => {
+                                                    const match = filename.match(/^backup-([A-Z]+)-(.*)\.json$/);
+                                                    let type = 'BACKUP';
+                                                    let displayDate = filename;
+
+                                                    if (match) {
+                                                        type = match[1];
+                                                        const [datePart, timePart] = match[2].split('T');
+                                                        if (datePart && timePart) {
+                                                            const tk = timePart.split('-');
+                                                            if (tk.length >= 3) {
+                                                                try {
+                                                                    const dObj = new Date(`${datePart}T${tk[0]}:${tk[1]}:${tk[2]}.${tk[3]}`);
+                                                                    if (!isNaN(dObj.getTime())) displayDate = dObj.toLocaleString();
+                                                                    else displayDate = `${datePart} ${tk[0]}:${tk[1]}`;
+                                                                } catch (e) {
+                                                                    console.debug(e);
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+
+                                                    return (
+                                                        <tr key={i} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                                                            <td style={{ padding: '1rem', width: '80px' }}>
+                                                                <div style={{ background: 'var(--bg-tertiary)', padding: '0.4rem 0.6rem', borderRadius: '6px', fontSize: '0.7rem', fontWeight: 'bold', textAlign: 'center', color: 'var(--accent-color)' }}>
+                                                                    {type}
+                                                                </div>
+                                                            </td>
+                                                            <td style={{ padding: '1rem' }}>
+                                                                <div style={{ fontWeight: '700', fontSize: '1rem', marginBottom: '0.3rem', color: 'var(--text-primary)' }}>{displayDate}</div>
+                                                                <div style={{ fontFamily: 'monospace', fontSize: '0.75rem', color: 'var(--text-secondary)', opacity: 0.7 }}>{filename}</div>
+                                                            </td>
+                                                            <td style={{ padding: '1rem', textAlign: 'right' }}>
+                                                                <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
+                                                                    <button
+                                                                        onClick={() => handleDownload(filename)}
+                                                                        style={{ background: 'none', border: 'none', color: 'var(--accent-color)', cursor: 'pointer', fontWeight: '600', fontSize: '0.85rem' }}
+                                                                    >
+                                                                        Download
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => handleRestore(filename)}
+                                                                        style={{ background: 'none', border: 'none', color: 'var(--error-color)', cursor: 'pointer', fontWeight: '600', fontSize: '0.85rem' }}
+                                                                    >
+                                                                        Restore
+                                                                    </button>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    )
+                                                })}
                                             </tbody>
                                         </table>
                                     )}

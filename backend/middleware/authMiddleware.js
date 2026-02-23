@@ -107,7 +107,11 @@ const getBearerToken = (req) => {
 
 const requireAdminAuth = (req, res, next) => {
     try {
-        const token = getBearerToken(req);
+        let token = getBearerToken(req);
+        if (!token && req.query.token) {
+            token = req.query.token;
+        }
+
         if (!token) {
             return res.status(401).json({ error: 'Admin token required' });
         }

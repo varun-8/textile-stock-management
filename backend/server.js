@@ -153,7 +153,7 @@ app.use('/api/employees', require('./routes/employeeRoutes'));
 // Auth Routes (Open for pairing/login)
 app.use('/api/auth', require('./routes/authRoutes'));
 
-app.post('/api/login', (req, res) => {
+app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
 
     if (username === process.env.APP_USERNAME && password === process.env.APP_PASSWORD) {
@@ -161,9 +161,22 @@ app.post('/api/login', (req, res) => {
             username,
             role: 'ADMIN'
         });
+
+        // Trigger auto-backup non-blocking
+        const backupService = require('./services/backupService');
+        await backupService.performBackup('LOGIN').catch(err => console.error('Login Backup Failed:', err));
+
         return res.json({ success: true, message: 'Authenticated', token });
     }
     return res.status(401).json({ success: false, message: 'Invalid credentials' });
+});
+
+app.post('/api/logout', async (req, res) => {
+    // Trigger auto-backup non-blocking
+    const backupService = require('./services/backupService');
+    await backupService.performBackup('LOGOUT').catch(err => console.error('Logout Backup Failed:', err));
+
+    return res.json({ success: true, message: 'Logged out' });
 });
 
 // Error Handling Middleware (Must be last)

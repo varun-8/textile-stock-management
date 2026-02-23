@@ -2,37 +2,71 @@ const cron = require('node-cron');
 const fs = require('fs-extra');
 const path = require('path');
 const mongoose = require('mongoose');
+
+// Import all models
 const Barcode = require('../models/Barcode');
 const ClothRoll = require('../models/ClothRoll');
 const AuditLog = require('../models/AuditLog');
+const Employee = require('../models/Employee');
+const MissedScan = require('../models/MissedScan');
+const Scanner = require('../models/Scanner');
+const Session = require('../models/Session');
+const Size = require('../models/Size');
+const User = require('../models/User');
 
-const BACKUP_DIR = path.join(__dirname, '../backups');
+const getConfigPath = () => path.join(__dirname, '../config.json');
 
-// Ensure backup dir exists
-fs.ensureDirSync(BACKUP_DIR);
+const getBackupDir = () => {
+    let backupPath = './backups';
+    try {
+        const configPath = getConfigPath();
+        if (fs.existsSync(configPath)) {
+            const config = fs.readJsonSync(configPath);
+            if (config.backupPath) backupPath = config.backupPath;
+        }
+    } catch (err) {
+        console.error('Error reading config:', err);
+    }
+    const fullPath = path.isAbsolute(backupPath) ? backupPath : path.join(__dirname, '..', backupPath);
+    fs.ensureDirSync(fullPath);
+    return fullPath;
+};
 
 const performBackup = async (type = 'AUTO') => {
+    const backupDir = getBackupDir();
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const filename = `backup-${type}-${timestamp}.json`;
-    const filePath = path.join(BACKUP_DIR, filename);
+    const filePath = path.join(backupDir, filename);
 
-    console.log(`[Backup] Starting ${type} backup...`);
+    console.log(`[Backup] Starting ${type} backup in ${backupDir}...`);
 
     try {
         const barcodes = await Barcode.find({});
         const clothRolls = await ClothRoll.find({});
         const auditLogs = await AuditLog.find({});
+        const employees = await Employee.find({});
+        const missedScans = await MissedScan.find({});
+        const scanners = await Scanner.find({});
+        const sessions = await Session.find({});
+        const sizes = await Size.find({});
+        const users = await User.find({});
 
         const backupData = {
             metadata: {
                 timestamp: new Date(),
-                version: '1.0',
+                version: '1.1',
                 type
             },
             data: {
                 barcodes,
                 clothRolls,
-                auditLogs
+                auditLogs,
+                employees,
+                missedScans,
+                scanners,
+                sessions,
+                sizes,
+                users
             }
         };
 
@@ -58,12 +92,13 @@ const performBackup = async (type = 'AUTO') => {
 
 const cleanupOldBackups = async () => {
     try {
-        const files = await fs.readdir(BACKUP_DIR);
+        const backupDir = getBackupDir();
+        const files = await fs.readdir(backupDir);
         const now = Date.now();
         const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
 
         for (const file of files) {
-            const filePath = path.join(BACKUP_DIR, file);
+            const filePath = path.join(backupDir, file);
             const stats = await fs.stat(filePath);
             if (now - stats.mtimeMs > SEVEN_DAYS) {
                 await fs.remove(filePath);
@@ -76,7 +111,8 @@ const cleanupOldBackups = async () => {
 };
 
 const restoreBackup = async (filename) => {
-    const filePath = path.join(BACKUP_DIR, filename);
+    const backupDir = getBackupDir();
+    const filePath = path.join(backupDir, filename);
     if (!fs.existsSync(filePath)) {
         throw new Error('Backup file not found');
     }
@@ -85,15 +121,26 @@ const restoreBackup = async (filename) => {
         console.log(`[Restore] Restoring from ${filename}...`);
         const backup = await fs.readJson(filePath);
 
-        // Clear current data (DANGEROUS - Handle with care)
-        // ideally transaction, but for this file-based restore we just wipe and insert
-        await Barcode.deleteMany({});
-        await ClothRoll.deleteMany({});
-        await AuditLog.deleteMany({});
+        const restoreOps = [
+            { model: Barcode, data: backup.data.barcodes },
+            { model: ClothRoll, data: backup.data.clothRolls },
+            { model: AuditLog, data: backup.data.auditLogs },
+            { model: Employee, data: backup.data.employees },
+            { model: MissedScan, data: backup.data.missedScans },
+            { model: Scanner, data: backup.data.scanners },
+            { model: Session, data: backup.data.sessions },
+            { model: Size, data: backup.data.sizes },
+            { model: User, data: backup.data.users }
+        ];
 
-        if (backup.data.barcodes.length) await Barcode.insertMany(backup.data.barcodes);
-        if (backup.data.clothRolls.length) await ClothRoll.insertMany(backup.data.clothRolls);
-        if (backup.data.auditLogs.length) await AuditLog.insertMany(backup.data.auditLogs);
+        for (const op of restoreOps) {
+            if (op.model) {
+                await op.model.deleteMany({});
+                if (op.data && op.data.length > 0) {
+                    await op.model.insertMany(op.data);
+                }
+            }
+        }
 
         console.log('[Restore] Complete');
 
@@ -117,4 +164,9 @@ cron.schedule('0 23 * * *', () => {
 
 console.log('[Scheduler] Daily backup scheduled for 23:00');
 
-module.exports = { performBackup, restoreBackup, listBackups: async () => fs.readdir(BACKUP_DIR) };
+module.exports = {
+    performBackup,
+    restoreBackup,
+    listBackups: async () => fs.readdir(getBackupDir()),
+    getBackupDir
+};

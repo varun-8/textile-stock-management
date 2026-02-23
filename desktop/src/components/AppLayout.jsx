@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useConfig } from '../context/ConfigContext';
 import { IconBox, IconScan, IconSettings, IconCloud, IconUsers, IconBroadcast } from './Icons';
+import AppLogo from '../assets/logo.svg';
 
 // Simple Chevron Icons if not imported (assuming they might not exist in Icons.js, defining inline or using simple text if needed, but trying to use standard approach. 
 // If Icons.js doesn't have them, I'll add SVGs directly).
@@ -69,7 +70,7 @@ const AppLayout = ({ children }) => {
                     overflow: 'hidden',
                     whiteSpace: 'nowrap'
                 }} className="app-region-drag">
-                    <img src="/logo.svg" alt="Prodexa" style={{ width: isCollapsed ? '40px' : '56px', height: isCollapsed ? '40px' : '56px', transition: 'all 0.3s ease' }} />
+                    <img src={AppLogo} alt="Prodexa" style={{ width: isCollapsed ? '40px' : '56px', height: isCollapsed ? '40px' : '56px', transition: 'all 0.3s ease' }} />
                     <div style={{
                         display: 'flex',
                         flexDirection: 'column',
@@ -129,7 +130,13 @@ const AppLayout = ({ children }) => {
 
                 <div style={{ marginTop: 'auto', padding: isCollapsed ? '1.5rem 0' : '1.5rem', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'center' }}>
                     <button
-                        onClick={() => { localStorage.clear(); navigate('/'); }}
+                        onClick={async () => {
+                            try {
+                                await fetch(`${apiUrl}/api/logout`, { method: 'POST' });
+                            } catch (e) { console.error('Logout error:', e); }
+                            localStorage.clear();
+                            navigate('/');
+                        }}
                         className="sidebar-item"
                         style={{
                             width: isCollapsed ? '40px' : '100%',

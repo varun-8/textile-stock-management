@@ -24,7 +24,7 @@ export const ConfigProvider = ({ children }) => {
     };
 
     // Theme
-    const [theme, setTheme] = useState(localStorage.getItem('THEME') || 'dark');
+    const [theme, setTheme] = useState(localStorage.getItem('THEME') || 'light');
 
     useEffect(() => {
         document.body.setAttribute('data-theme', theme);

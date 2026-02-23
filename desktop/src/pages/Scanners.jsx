@@ -212,7 +212,7 @@ const Scanners = () => {
                                     <div style={{ padding: '1.5rem', flex: 1 }}>
                                         <div style={{ marginBottom: '1.5rem' }}>
                                             <div style={{ fontSize: '0.7rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '8px' }}>CURRENT USER</div>
-                                            {scanner.currentEmployee ? (
+                                            {scanner.currentEmployee && scanner.currentEmployee.name ? (
                                                 <div style={{
                                                     display: 'flex', alignItems: 'center', gap: '10px',
                                                     background: 'rgba(99, 102, 241, 0.05)', padding: '10px 14px', borderRadius: '8px',

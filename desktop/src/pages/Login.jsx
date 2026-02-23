@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useConfig } from '../context/ConfigContext';
+import AppLogo from '../assets/logo.svg';
 
 const Login = () => {
     const { apiUrl, updateApiUrl } = useConfig();
@@ -45,7 +46,7 @@ const Login = () => {
             <button onClick={() => setShowSettings(true)} style={settingsBtnStyle}>⚙️</button>
 
             <div className="panel animate-fade-in glass" style={loginPanelStyle}>
-                <img src="/logo.svg" alt="Prodexa" style={{ height: '64px', marginBottom: '1rem' }} />
+                <img src={AppLogo} alt="Prodexa" style={{ height: '64px', marginBottom: '1rem' }} />
                 <h1 style={{ fontSize: '1.75rem', marginBottom: '0.25rem', fontWeight: '800', letterSpacing: '-0.03em' }}>Prodexa</h1>
                 <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0.5rem', fontWeight: '500' }}>Warehouse Operations Software</p>
                 <div style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--accent-color)', marginBottom: '2.5rem', opacity: 0.8 }}>For Sri Lakshmi Textiles</div>
