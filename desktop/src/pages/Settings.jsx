@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useConfig } from '../context/ConfigContext';
 import { IconSettings, IconCloud, IconScan } from '../components/Icons';
+import { useNotification } from '../context/NotificationContext';
 
 const Settings = () => {
     const { apiUrl, updateApiUrl, theme, toggleTheme } = useConfig();
+    const { showNotification } = useNotification();
     const [activeTab, setActiveTab] = useState('general');
     const [backupPath, setBackupPath] = useState('');
     const [backups, setBackups] = useState([]);
@@ -14,6 +16,14 @@ const Settings = () => {
     const [serverIp, setServerIp] = useState('Loading...');
     const [scanners, setScanners] = useState([]);
 
+    // Wipe states
+    const [showWipeConfirm, setShowWipeConfirm] = useState(false);
+    const [wipePasswordInput, setWipePasswordInput] = useState('');
+
+    // API Edit states
+    const [isEditingApi, setIsEditingApi] = useState(false);
+    const [tempApiUrl, setTempApiUrl] = useState(apiUrl);
+
     useEffect(() => {
         fetchConfig();
         fetchBackups();
@@ -22,7 +32,10 @@ const Settings = () => {
 
     const fetchConfig = async () => {
         try {
-            const res = await fetch(`${apiUrl}/api/admin/config/backup-path`);
+            const token = localStorage.getItem('ADMIN_TOKEN');
+            const res = await fetch(`${apiUrl}/api/admin/config/backup-path`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
             const data = await res.json();
             if (data.path) setBackupPath(data.path);
         } catch (err) { console.error(err); }
@@ -31,7 +44,10 @@ const Settings = () => {
     const fetchBackups = async () => {
         setLoadingBackups(true);
         try {
-            const res = await fetch(`${apiUrl}/api/admin/backups`);
+            const token = localStorage.getItem('ADMIN_TOKEN');
+            const res = await fetch(`${apiUrl}/api/admin/backups`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
             const data = await res.json();
             setBackups(Array.isArray(data) ? data : []);
         } catch (err) { console.error(err); }
@@ -40,13 +56,18 @@ const Settings = () => {
 
     const fetchSystemInfo = async () => {
         try {
+            const token = localStorage.getItem('ADMIN_TOKEN');
             // Fetch IP
-            const resIp = await fetch(`${apiUrl}/api/admin/server-ip`);
+            const resIp = await fetch(`${apiUrl}/api/admin/server-ip`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
             const dataIp = await resIp.json();
             setServerIp(dataIp.ip);
 
             // Fetch Scanners for count
-            const resScan = await fetch(`${apiUrl}/api/admin/scanners`);
+            const resScan = await fetch(`${apiUrl}/api/admin/scanners`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
             const dataScan = await resScan.json();
             setScanners(dataScan);
         } catch (err) { console.error(err); }
@@ -54,9 +75,13 @@ const Settings = () => {
 
     const handleSavePath = async () => {
         try {
+            const token = localStorage.getItem('ADMIN_TOKEN');
             await fetch(`${apiUrl}/api/admin/config/backup-path`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
                 body: JSON.stringify({ path: backupPath })
             });
             alert('Backup path updated successfully');
@@ -66,7 +91,11 @@ const Settings = () => {
     const handleCreateBackup = async () => {
         setBackupMsg('Creating backup...');
         try {
-            const res = await fetch(`${apiUrl}/api/admin/backup`, { method: 'POST' });
+            const token = localStorage.getItem('ADMIN_TOKEN');
+            const res = await fetch(`${apiUrl}/api/admin/backup`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
             const data = await res.json();
             if (res.ok) {
                 setBackupMsg(`Backup created: ${data.filename}`);
@@ -91,9 +120,13 @@ const Settings = () => {
                 const content = JSON.parse(e.target.result);
                 setBackupMsg('Restoring data...');
 
+                const token = localStorage.getItem('ADMIN_TOKEN');
                 const res = await fetch(`${apiUrl}/api/admin/restore`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
                     body: JSON.stringify({ fileContent: content })
                 });
 
@@ -117,9 +150,13 @@ const Settings = () => {
         if (!window.confirm(`Restore from ${filename}? Current data will be replaced.`)) return;
 
         try {
+            const token = localStorage.getItem('ADMIN_TOKEN');
             const res = await fetch(`${apiUrl}/api/admin/restore`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
                 body: JSON.stringify({ filename })
             });
             if (res.ok) {
@@ -164,6 +201,43 @@ const Settings = () => {
         } catch (err) {
             setBackupMsg('Error downloading backup');
             console.error(err);
+        }
+    };
+
+    const handleWipe = async () => {
+        if (!wipePasswordInput) {
+            showNotification('Please enter the wipe password.', 'error');
+            return;
+        }
+
+        const confirmed = await showConfirm(
+            'CRITICAL: System Wipe',
+            'Are you absolutely sure? This operation will PERMANENTLY delete all stock, barcodes, sessions, and configurations. This cannot be undone.',
+            'danger'
+        );
+
+        if (!confirmed) return;
+
+        try {
+            const token = localStorage.getItem('ADMIN_TOKEN');
+            const res = await fetch(`${apiUrl}/api/admin/system/wipe`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ password: wipePasswordInput })
+            });
+
+            const data = await res.json();
+            if (res.ok) {
+                showNotification(data.message, 'success');
+                setTimeout(() => window.location.reload(), 2000);
+            } else {
+                showNotification(data.error || 'System wipe failed.', 'error');
+            }
+        } catch (err) {
+            showNotification('Communication failure during wipe operation.', 'error');
         }
     };
 
@@ -264,20 +338,40 @@ const Settings = () => {
                                 <div style={{ display: 'flex', gap: '0.5rem' }}>
                                     <input
                                         type="text"
-                                        value={apiUrl}
-                                        readOnly
+                                        value={isEditingApi ? tempApiUrl : apiUrl}
+                                        readOnly={!isEditingApi}
+                                        onChange={(e) => setTempApiUrl(e.target.value)}
                                         style={{
                                             flex: 1, padding: '0.8rem', borderRadius: '8px',
-                                            border: '1px solid var(--border-color)', background: 'var(--bg-tertiary)',
-                                            color: 'var(--text-secondary)', fontFamily: 'monospace'
+                                            border: isEditingApi ? '2px solid var(--accent-color)' : '1px solid var(--border-color)',
+                                            background: isEditingApi ? 'var(--bg-primary)' : 'var(--bg-tertiary)',
+                                            color: isEditingApi ? 'var(--text-primary)' : 'var(--text-secondary)',
+                                            fontFamily: 'monospace'
                                         }}
                                     />
-                                    <button
-                                        onClick={() => { const url = prompt("Enter new API URL:", apiUrl); if (url) updateApiUrl(url); }}
-                                        className="btn btn-secondary"
-                                    >
-                                        Edit
-                                    </button>
+                                    {isEditingApi ? (
+                                        <>
+                                            <button
+                                                onClick={() => { updateApiUrl(tempApiUrl); setIsEditingApi(false); }}
+                                                className="btn btn-primary"
+                                            >
+                                                Save
+                                            </button>
+                                            <button
+                                                onClick={() => { setIsEditingApi(false); setTempApiUrl(apiUrl); }}
+                                                className="btn btn-secondary"
+                                            >
+                                                Cancel
+                                            </button>
+                                        </>
+                                    ) : (
+                                        <button
+                                            onClick={() => setIsEditingApi(true)}
+                                            className="btn btn-secondary"
+                                        >
+                                            Edit
+                                        </button>
+                                    )}
                                 </div>
                                 <p style={{ fontSize: '0.8rem', marginTop: '0.5rem', opacity: 0.6 }}>
                                     Current connection endpoint for scanner data synchronization.
@@ -475,6 +569,82 @@ const Settings = () => {
                                     <span style={{ fontSize: '0.8rem', opacity: 0.6, textTransform: 'uppercase', marginBottom: '0.5rem', display: 'block' }}>System Version</span>
                                     <div style={{ fontSize: '1.5rem', fontWeight: '800' }}>v2.4.0</div>
                                     <div style={{ fontSize: '0.85rem', marginTop: '0.5rem', opacity: 0.7 }}>Build 2026.02</div>
+                                </div>
+                            </div>
+
+                            {/* Danger Zone */}
+                            <div style={{ marginTop: '3rem', paddingTop: '2rem', borderTop: '1px solid var(--border-color)' }}>
+                                <div style={{
+                                    background: 'rgba(239, 68, 68, 0.03)',
+                                    borderRadius: '12px',
+                                    border: '1px solid rgba(239, 68, 68, 0.2)',
+                                    overflow: 'hidden'
+                                }}>
+                                    <div style={{ padding: '1.5rem', borderBottom: '1px solid rgba(239, 68, 68, 0.1)', background: 'var(--bg-secondary)' }}>
+                                        <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--error-color)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                            <span>⚠️</span> Danger Zone
+                                        </h3>
+                                        <p style={{ margin: '0.5rem 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                            System-wide data reset and permanent deletion.
+                                        </p>
+                                    </div>
+                                    <div style={{ padding: '2.5rem', textAlign: 'center' }}>
+                                        {!showWipeConfirm ? (
+                                            <button
+                                                onClick={() => setShowWipeConfirm(true)}
+                                                className="btn"
+                                                style={{
+                                                    maxWidth: '400px', margin: '0 auto', justifyContent: 'center', padding: '1rem 2rem',
+                                                    background: 'var(--error-color)', color: '#fff', border: 'none',
+                                                    fontWeight: '800', borderRadius: '8px', cursor: 'pointer',
+                                                    fontSize: '0.9rem', letterSpacing: '0.05em', display: 'flex'
+                                                }}
+                                            >
+                                                INITIALIZE SYSTEM WIPE
+                                            </button>
+                                        ) : (
+                                            <div style={{ maxWidth: '400px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                                <p style={{ color: 'var(--error-color)', fontWeight: 'bold', fontSize: '0.9rem' }}>
+                                                    ENTER WIPE PASSWORD TO PROCEED:
+                                                </p>
+                                                <input
+                                                    type="password"
+                                                    value={wipePasswordInput}
+                                                    onChange={e => setWipePasswordInput(e.target.value)}
+                                                    placeholder="Enter password..."
+                                                    autoFocus
+                                                    style={{
+                                                        width: '100%', padding: '0.8rem', borderRadius: '8px',
+                                                        border: '2px solid var(--error-color)', background: 'var(--bg-primary)',
+                                                        color: 'var(--text-primary)', textAlign: 'center', fontSize: '1.1rem', fontWeight: 'bold'
+                                                    }}
+                                                />
+                                                <div style={{ display: 'flex', gap: '1rem' }}>
+                                                    <button
+                                                        onClick={handleWipe}
+                                                        className="btn"
+                                                        style={{
+                                                            flex: 2, justifyContent: 'center', padding: '0.8rem',
+                                                            background: 'var(--error-color)', color: '#fff', border: 'none',
+                                                            fontWeight: '800', borderRadius: '8px', cursor: 'pointer'
+                                                        }}
+                                                    >
+                                                        CONFIRM WIPE
+                                                    </button>
+                                                    <button
+                                                        onClick={() => { setShowWipeConfirm(false); setWipePasswordInput(''); }}
+                                                        className="btn btn-secondary"
+                                                        style={{ flex: 1, justifyContent: 'center' }}
+                                                    >
+                                                        CANCEL
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+                                        <p style={{ marginTop: '1.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
+                                            Caution: This will reset inventory, logout all sessions, and clear all history logs.
+                                        </p>
+                                    </div>
                                 </div>
                             </div>
                         </div>

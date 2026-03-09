@@ -1,8 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { useConfig } from '../context/ConfigContext';
-import axios from 'axios';
-import QRCode from 'react-qr-code';
 import { IconBroadcast, IconTrash, IconScan, IconX } from '../components/Icons';
+import { useNotification } from '../context/NotificationContext';
 
 const Scanners = () => {
     const { apiUrl } = useConfig();
@@ -10,10 +7,10 @@ const Scanners = () => {
     const [setupToken, setSetupToken] = useState('');
     const [qrTarget, setQrTarget] = useState(null); // null, 'NEW', or scanner object
     const [serverIp, setServerIp] = useState('');
-    const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
     const [deleteConfirm, setDeleteConfirm] = useState(null);
     const [deleting, setDeleting] = useState(false);
+    const { showNotification } = useNotification();
 
     useEffect(() => {
         fetchScanners();
@@ -46,7 +43,7 @@ const Scanners = () => {
             if (res.data.ip) setServerIp(res.data.ip);
         } catch (err) {
             console.error("Failed to fetch Server IP", err);
-            setError("Could not resolve Server LAN IP");
+            showNotification("Could not resolve Server LAN IP", 'error');
         }
     };
 
@@ -56,7 +53,7 @@ const Scanners = () => {
             if (res.data.token) setSetupToken(res.data.token);
         } catch (err) {
             console.error("Failed to fetch pairing token", err);
-            setError("Could not generate pairing token");
+            showNotification("Could not generate pairing token", 'error');
         }
     };
 
@@ -89,7 +86,7 @@ const Scanners = () => {
                 setDeleteConfirm(null);
             }
         } catch (err) {
-            setError(`Error: ${err.response?.data?.error || 'Failed to remove scanner'}`);
+            showNotification(`Error: ${err.response?.data?.error || 'Failed to remove scanner'}`, 'error');
         } finally {
             setDeleting(false);
         }
@@ -143,11 +140,7 @@ const Scanners = () => {
 
             <div style={{ flex: 1, padding: '2rem 2.5rem', overflowY: 'auto' }}>
 
-                {error && (
-                    <div style={{ background: 'var(--error-bg)', color: 'var(--error-color)', padding: '1rem', borderRadius: '8px', marginBottom: '1.5rem', fontSize: '0.85rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                        <span>⚠️</span> {error}
-                    </div>
-                )}
+                {/* Header removed error display as it's now handled by showNotification */}
 
                 {/* Empty State */}
                 {scanners.length === 0 && !loading ? (

@@ -1,6 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useConfig } from '../context/ConfigContext';
 import { IconUsers, IconTrash, IconEye, IconEyeOff, IconEdit } from '../components/Icons';
+import { useNotification } from '../context/NotificationContext';
 
 const Employees = () => {
     const { apiUrl } = useConfig();
@@ -10,6 +9,7 @@ const Employees = () => {
     const [loading, setLoading] = useState(true);
     const [adding, setAdding] = useState(false);
     const [deletingId, setDeletingId] = useState(null);
+    const { showNotification, showConfirm } = useNotification();
     const [error, setError] = useState('');
     const nameInputRef = useRef(null);
 
@@ -48,7 +48,10 @@ const Employees = () => {
     const fetchEmployees = async () => {
         setLoading(true);
         try {
-            const res = await fetch(`${apiUrl}/api/employees`);
+            const token = localStorage.getItem('ADMIN_TOKEN');
+            const res = await fetch(`${apiUrl}/api/employees`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
             if (res.ok) {
                 const data = await res.json();
                 setEmployees(data);
@@ -70,9 +73,13 @@ const Employees = () => {
         setAdding(true);
         setError('');
         try {
+            const token = localStorage.getItem('ADMIN_TOKEN');
             const res = await fetch(`${apiUrl}/api/employees/add`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
                 body: JSON.stringify({ name: newName.trim(), pin: newPin.trim() })
             });
 
@@ -92,23 +99,32 @@ const Employees = () => {
     };
 
     const handleDelete = async (id, name) => {
-        // Prevent native confirm blurs by restoring focus immediately if cancelled
-        if (!window.confirm(`Are you sure you want to TERMINATE ${name}? Their access will be revoked but history preserved.`)) {
-            window.focus();
+        const confirmed = await showConfirm(
+            'Terminate Access',
+            `Are you sure you want to TERMINATE ${name}? Their access will be revoked but history preserved.`,
+            'danger'
+        );
+
+        if (!confirmed) {
             if (nameInputRef.current) nameInputRef.current.focus();
             return;
         }
 
         setDeletingId(id);
         try {
-            const res = await fetch(`${apiUrl}/api/employees/${id}`, { method: 'DELETE' });
+            const token = localStorage.getItem('ADMIN_TOKEN');
+            const res = await fetch(`${apiUrl}/api/employees/${id}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
             if (res.ok) {
+                showNotification(`Staff access for ${name} terminated`, 'success');
                 await fetchEmployees();
             } else {
-                alert('Failed to terminate');
+                showNotification('Failed to terminate access', 'error');
             }
         } catch (err) {
-            alert('Failed to terminate employee');
+            showNotification('Network error during termination', 'error');
         } finally {
             setDeletingId(null);
         }
@@ -125,29 +141,33 @@ const Employees = () => {
 
     const saveNewPin = async (id) => {
         if (!editPinValue || editPinValue.length < 4) {
-            alert('PIN must be at least 4 digits');
+            showNotification('PIN must be at least 4 digits', 'warning');
             return;
         }
 
         try {
+            const token = localStorage.getItem('ADMIN_TOKEN');
             const res = await fetch(`${apiUrl}/api/employees/update-pin/${id}`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
                 body: JSON.stringify({ pin: editPinValue })
             });
 
             if (res.ok) {
                 setEditingPinId(null);
                 setEditPinValue('');
-                fetchEmployees(); // Refresh to ensure data consistency
-                alert('PIN Updated Successfully');
+                fetchEmployees();
+                showNotification('Security PIN updated successfully', 'success');
             } else {
                 const data = await res.json();
-                alert(data.error || 'Failed to update PIN');
+                showNotification(data.error || 'Failed to update PIN', 'error');
             }
         } catch (err) {
             console.error(err);
-            alert('Network Error');
+            showNotification('Network error during PIN update', 'error');
         }
     };
 

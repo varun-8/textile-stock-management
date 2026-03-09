@@ -11,6 +11,7 @@ const BarcodeGenerator = () => {
     const { apiUrl } = useConfig();
     const navigate = useNavigate();
     const { showNotification } = useNotification();
+    const token = localStorage.getItem('ADMIN_TOKEN');
     const [year, setYear] = useState(new Date().getFullYear());
     // Auto-format year to 2-digits if needed, but usually full year is stored, displayed as 2-digit
     const displayYear = String(year).slice(-2);
@@ -67,7 +68,9 @@ const BarcodeGenerator = () => {
     const fetchSequence = async () => {
         setSeqLoading(true);
         try {
-            const res = await fetch(`${apiUrl}/api/barcode/sequence?year=${year}&size=${size}`);
+            const res = await fetch(`${apiUrl}/api/barcode/sequence?year=${year}&size=${size}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
             const data = await res.json();
             if (!data.error) setSeqInfo(data);
         } catch (err) { console.error(err); }
@@ -76,7 +79,9 @@ const BarcodeGenerator = () => {
 
     const fetchMissing = async () => {
         try {
-            const res = await fetch(`${apiUrl}/api/barcode/missing?year=${year}&size=${size}`);
+            const res = await fetch(`${apiUrl}/api/barcode/missing?year=${year}&size=${size}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
             const data = await res.json();
             if (data.missing) setMissingBarcodes(data.missing);
         } catch (err) { console.error(err); }
@@ -85,7 +90,9 @@ const BarcodeGenerator = () => {
     const fetchHistory = async () => {
         setHistoryLoading(true);
         try {
-            const res = await fetch(`${apiUrl}/api/barcode/history`);
+            const res = await fetch(`${apiUrl}/api/barcode/history`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
             const data = await res.json();
             if (Array.isArray(data)) setHistory(data);
         } catch (err) { console.error(err); }
@@ -132,7 +139,10 @@ const BarcodeGenerator = () => {
         try {
             const res = await fetch(`${apiUrl}/api/barcode/generate`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
                 body: JSON.stringify({ year, size, quantity, paperSize })
             });
             const data = await res.json();

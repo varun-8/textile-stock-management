@@ -120,20 +120,97 @@ const Toast = ({ message, type, onClose }) => {
     );
 };
 
+const ConfirmModal = ({ isOpen, title, message, onConfirm, onCancel, type }) => {
+    if (!isOpen) return null;
+
+    const getColor = () => {
+        switch (type) {
+            case 'danger': return 'var(--error-color)';
+            case 'warning': return 'var(--warning-color)';
+            default: return 'var(--accent-color)';
+        }
+    };
+
+    return ReactDOM.createPortal(
+        <div style={{
+            position: 'fixed', inset: 0, zIndex: 10000,
+            background: 'var(--modal-overlay)', backdropFilter: 'blur(4px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px'
+        }}>
+            <div className="animate-fade-in" style={{
+                width: '100%', maxWidth: '400px', background: 'var(--bg-secondary)',
+                borderRadius: '16px', border: `1px solid var(--border-color)`,
+                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)', overflow: 'hidden'
+            }}>
+                <div style={{ padding: '2rem', textAlign: 'center' }}>
+                    <div style={{
+                        width: '56px', height: '56px', borderRadius: '50%',
+                        background: `${getColor()}20`, color: getColor(),
+                        margin: '0 auto 1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: '1.5rem'
+                    }}>
+                        {type === 'danger' ? '⚠️' : '❓'}
+                    </div>
+                    <h3 style={{ margin: '0 0 0.5rem', fontSize: '1.25rem', fontWeight: '800', color: 'var(--text-primary)' }}>{title}</h3>
+                    <p style={{ margin: 0, fontSize: '0.95rem', color: 'var(--text-secondary)', lineHeight: '1.5' }}>{message}</p>
+                </div>
+                <div style={{ padding: '1.25rem', background: 'var(--bg-tertiary)', display: 'flex', gap: '1rem' }}>
+                    <button
+                        onClick={onCancel}
+                        style={{
+                            flex: 1, padding: '0.8rem', borderRadius: '8px', border: '1px solid var(--border-color)',
+                            background: 'transparent', color: 'var(--text-primary)', fontWeight: '600', cursor: 'pointer'
+                        }}
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        onClick={onConfirm}
+                        style={{
+                            flex: 1, padding: '0.8rem', borderRadius: '8px', border: 'none',
+                            background: getColor(), color: 'white', fontWeight: '700', cursor: 'pointer'
+                        }}
+                    >
+                        Confirm
+                    </button>
+                </div>
+            </div>
+        </div>,
+        document.body
+    );
+};
+
 export const NotificationProvider = ({ children }) => {
     const [notifications, setNotifications] = useState([]);
+    const [modal, setModal] = useState({ isOpen: false, title: '', message: '', type: 'info', resolve: null });
 
     const showNotification = useCallback((message, type = 'info') => {
         const id = Date.now();
         setNotifications((prev) => [...prev, { id, message, type }]);
     }, []);
 
+    const showConfirm = useCallback((title, message, type = 'info') => {
+        return new Promise((resolve) => {
+            setModal({ isOpen: true, title, message, type, resolve });
+        });
+    }, []);
+
+    const handleConfirm = () => {
+        if (modal.resolve) modal.resolve(true);
+        setModal({ ...modal, isOpen: false, resolve: null });
+    };
+
+    const handleCancel = () => {
+        if (modal.resolve) modal.resolve(false);
+        setModal({ ...modal, isOpen: false, resolve: null });
+    };
+
     const removeNotification = useCallback((id) => {
         setNotifications((prev) => prev.filter((n) => n.id !== id));
     }, []);
 
     return (
-        <NotificationContext.Provider value={{ showNotification }}>
+        <NotificationContext.Provider value={{ showNotification, showConfirm }}>
             {children}
             {notifications.map((n) => (
                 <Toast
@@ -143,6 +220,14 @@ export const NotificationProvider = ({ children }) => {
                     onClose={() => removeNotification(n.id)}
                 />
             ))}
+            <ConfirmModal
+                isOpen={modal.isOpen}
+                title={modal.title}
+                message={modal.message}
+                type={modal.type}
+                onConfirm={handleConfirm}
+                onCancel={handleCancel}
+            />
         </NotificationContext.Provider>
     );
 };

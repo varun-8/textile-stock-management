@@ -43,9 +43,16 @@ router.get('/dashboard', async (req, res) => {
 router.get('/list/:type', async (req, res) => {
     try {
         const { type } = req.params;
-        const { startDate, endDate } = req.query;
+        const { startDate, endDate, articleSize } = req.query;
         let data = [];
         let query = {};
+
+        // Pic Size (Barcode Part) Filter
+        if (articleSize) {
+            // Barcode format: YY-SIZE-SEQ. We match the middle part.
+            // Using regex to match -SIZE-
+            query.barcode = { $regex: new RegExp(`-${articleSize}-`, 'i') };
+        }
 
         // Date Filter Logic
         if (startDate || endDate) {

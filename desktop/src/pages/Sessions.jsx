@@ -5,6 +5,7 @@ import { useConfig } from '../context/ConfigContext';
 
 const Sessions = () => {
     const { apiUrl } = useConfig();
+    const token = localStorage.getItem('ADMIN_TOKEN');
     const [sessions, setSessions] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [showCreateModal, setShowCreateModal] = useState(false);
@@ -84,7 +85,9 @@ const Sessions = () => {
             if (isSessionEnd && isDesktopInitiator) {
                 console.log('✅ SHOWING REPORT - Session ended by desktop');
                 try {
-                    const res = await fetch(`${apiUrl}/api/sessions/${data.sessionId}/summary`);
+                    const res = await fetch(`${apiUrl}/api/sessions/${data.sessionId}/summary`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
                     const report = await res.json();
                     if (report.success) {
                         setReportData(report);
@@ -108,7 +111,9 @@ const Sessions = () => {
 
         // Fetch existing items for this session to populate the monitor immediately
         try {
-            const res = await fetch(`${apiUrl}/api/sessions/${session._id}/preview`);
+            const res = await fetch(`${apiUrl}/api/sessions/${session._id}/preview`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
             const data = await res.json();
             if (data.success && data.items) {
                 const historicScans = data.items.map(item => ({
@@ -130,7 +135,9 @@ const Sessions = () => {
 
     const fetchSessions = async () => {
         try {
-            const res = await fetch(`${apiUrl}/api/sessions/active`);
+            const res = await fetch(`${apiUrl}/api/sessions/active`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
             const data = await res.json();
             setSessions(Array.isArray(data) ? data : []);
             setIsLoading(false);
@@ -143,7 +150,9 @@ const Sessions = () => {
     const fetchSizes = async () => {
         try {
 
-            const resSizes = await fetch(`${apiUrl}/api/sizes`);
+            const resSizes = await fetch(`${apiUrl}/api/sizes`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
             const data = await resSizes.json();
             setSizes(data);
             if (data.length > 0 && !targetSize) setTargetSize(data[0].code);
@@ -162,7 +171,9 @@ const Sessions = () => {
                 url += `?${params.toString()}`;
             }
 
-            const res = await fetch(url);
+            const res = await fetch(url, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
             const data = await res.json();
             setHistory(Array.isArray(data) ? data : []);
         } catch (err) {
@@ -197,7 +208,10 @@ const Sessions = () => {
         try {
             const res = await fetch(`${apiUrl}/api/sessions/create`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
                 body: JSON.stringify({
                     type: sessionType,
                     targetSize: targetSize,
@@ -216,7 +230,9 @@ const Sessions = () => {
 
     const initiateCloseSession = async (sessionId) => {
         try {
-            const res = await fetch(`${apiUrl}/api/sessions/${sessionId}/preview`);
+            const res = await fetch(`${apiUrl}/api/sessions/${sessionId}/preview`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
             const data = await res.json();
             if (data.success) {
                 setPreviewStats(data.stats);
@@ -236,7 +252,10 @@ const Sessions = () => {
         try {
             const res = await fetch(`${apiUrl}/api/sessions/end`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
                 body: JSON.stringify({ sessionId: selectedSessionId, source: 'desktop' })
             });
             const data = await res.json();
@@ -256,7 +275,7 @@ const Sessions = () => {
     }
 
     const handleExport = (sessionId, type, size, reportType) => {
-        const url = `${apiUrl}/api/sessions/${sessionId}/export/${reportType}`;
+        const url = `${apiUrl}/api/sessions/${sessionId}/export/${reportType}?token=${token}`;
         const a = document.createElement('a');
         a.href = url;
         a.style.display = 'none';
@@ -268,7 +287,9 @@ const Sessions = () => {
 
     const handleViewReport = async (sessionId) => {
         try {
-            const res = await fetch(`${apiUrl}/api/sessions/${sessionId}/summary`);
+            const res = await fetch(`${apiUrl}/api/sessions/${sessionId}/summary`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
             const data = await res.json();
             if (data.success) {
                 setReportData(data);
