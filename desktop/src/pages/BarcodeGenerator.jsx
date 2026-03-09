@@ -4,26 +4,30 @@ import JsBarcode from 'jsbarcode';
 import { useNavigate } from 'react-router-dom';
 import { io } from "socket.io-client";
 import { useConfig } from '../context/ConfigContext';
+import { useNotification } from '../context/NotificationContext';
 import { IconBox } from '../components/Icons';
 
 const BarcodeGenerator = () => {
     const { apiUrl } = useConfig();
     const navigate = useNavigate();
+    const { showNotification } = useNotification();
     const [year, setYear] = useState(new Date().getFullYear());
     // Auto-format year to 2-digits if needed, but usually full year is stored, displayed as 2-digit
     const displayYear = String(year).slice(-2);
 
     const [size, setSize] = useState('');
-    const [quantity, setQuantity] = useState(24);
+    const [quantity, setQuantity] = useState(44);
     const [seqInfo, setSeqInfo] = useState({ lastSequence: 0, nextSequence: 1 });
     const [missingBarcodes, setMissingBarcodes] = useState([]);
     const [loading, setLoading] = useState(false);
     const [seqLoading, setSeqLoading] = useState(false);
     const [error, setError] = useState('');
     const [successMsg, setSuccessMsg] = useState('');
+    const [history, setHistory] = useState([]);
+    const [historyLoading, setHistoryLoading] = useState(false);
 
     const [sizes, setSizes] = useState([]);
-    const MAX_PER_PAGE = 96; // 4 full pages of 24
+    const [paperSize, setPaperSize] = useState('a3');
 
     useEffect(() => {
         fetchSizes().then((data) => {
@@ -37,6 +41,7 @@ const BarcodeGenerator = () => {
         if (!size) return;
         fetchSequence();
         fetchMissing();
+        fetchHistory();
 
         const socket = io(apiUrl);
         socket.on('sequence_update', (data) => {
@@ -77,14 +82,26 @@ const BarcodeGenerator = () => {
         } catch (err) { console.error(err); }
     };
 
-    const generatePDF = (barcodes) => {
-        const doc = new jsPDF();
-        const cols = 3;
-        const rowsPerPage = 8;
-        const startX = 15;
+    const fetchHistory = async () => {
+        setHistoryLoading(true);
+        try {
+            const res = await fetch(`${apiUrl}/api/barcode/history`);
+            const data = await res.json();
+            if (Array.isArray(data)) setHistory(data);
+        } catch (err) { console.error(err); }
+        finally { setHistoryLoading(false); }
+    };
+
+    const generatePDF = (barcodes, batchYear = year, batchSize = size, forcedPaperSize = paperSize) => {
+        const isA3 = forcedPaperSize === 'a3';
+        const doc = new jsPDF('p', 'mm', isA3 ? 'a3' : 'a4');
+
+        const cols = isA3 ? 4 : 3;
+        const rowsPerPage = isA3 ? 11 : 8;
+        const startX = isA3 ? 20 : 15;
         const startY = 15;
-        const cellWidth = 60;
-        const cellHeight = 34;
+        const cellWidth = 65;
+        const cellHeight = 35;
 
         barcodes.forEach((item, index) => {
             const pageIndex = index % (cols * rowsPerPage);
@@ -102,33 +119,32 @@ const BarcodeGenerator = () => {
                 format: "CODE128", width: 4, height: 80, displayValue: true, fontSize: 20, fontOptions: "bold", margin: 10, textMargin: 5
             });
 
-            doc.addImage(canvas.toDataURL("image/png"), 'PNG', x, y, 50, 25);
+            doc.addImage(canvas.toDataURL("image/png"), 'PNG', x, y, 55, 26);
             doc.setDrawColor(230);
             doc.setLineWidth(0.1);
-            doc.rect(x, y, 50, 25);
+            doc.rect(x, y, 55, 26);
         });
-        doc.save(`PRO_Barcodes_${year}_${size}_${Date.now()}.pdf`);
+        doc.save(`PRO_Barcodes_${batchYear}_${batchSize}_${forcedPaperSize.toUpperCase()}_${Date.now()}.pdf`);
     };
 
     const handleGenerate = async () => {
-        setError(''); setSuccessMsg('');
-        if (quantity > MAX_PER_PAGE) return setError(`Current system batch limit is ${MAX_PER_PAGE} units.`);
-
         setLoading(true);
         try {
             const res = await fetch(`${apiUrl}/api/barcode/generate`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ year, size, quantity })
+                body: JSON.stringify({ year, size, quantity, paperSize })
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error);
-            generatePDF(data.barcodes);
-            setSuccessMsg(`Production batch created: ${data.barcodes.length} Barcodes exported.`);
-            fetchSequence(); // Refresh header
-            fetchMissing(); // Refresh missing list
-        } catch (err) { setError(err.message); }
-        finally { setLoading(false); }
+            generatePDF(data.barcodes, year, size, paperSize);
+            showNotification(`Success: ${data.barcodes.length} Barcodes generated.`, 'success');
+            fetchSequence();
+            fetchMissing();
+            fetchHistory();
+        } catch (err) {
+            showNotification(err.message, 'error');
+        } finally { setLoading(false); }
     };
 
     const labelStyle = { display: 'block', fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.5rem' };
@@ -218,7 +234,7 @@ const BarcodeGenerator = () => {
                                 </div>
 
                                 <div>
-                                    <label style={labelStyle}>Article Size Code</label>
+                                    <label style={labelStyle}>Pic Size Code</label>
                                     <div style={{ position: 'relative' }}>
                                         <select
                                             value={size}
@@ -232,65 +248,54 @@ const BarcodeGenerator = () => {
                                 </div>
 
                                 <div>
+                                    <label style={labelStyle}>Sheet Size</label>
+                                    <div style={{ position: 'relative' }}>
+                                        <select
+                                            value={paperSize}
+                                            onChange={(e) => setPaperSize(e.target.value)}
+                                            style={{ ...inputStyle, cursor: 'pointer', appearance: 'none' }}
+                                        >
+                                            <option value="a4">A4 Sheet (210 x 297mm)</option>
+                                            <option value="a3">A3 Sheet (297 x 420mm)</option>
+                                        </select>
+                                        <div style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: 'var(--text-secondary)' }}>▼</div>
+                                    </div>
+                                </div>
+
+                                <div>
                                     <label style={labelStyle}>Batch Quantity (Units)</label>
-                                    <input
-                                        type="number"
-                                        value={quantity}
-                                        min="1"
-                                        max={MAX_PER_PAGE}
-                                        onChange={(e) => setQuantity(parseInt(e.target.value) || '')}
-                                        style={inputStyle}
-                                    />
-                                    <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
-                                        Max Limit: {MAX_PER_PAGE} units per batch
+                                    <div style={{ display: 'flex', gap: '10px' }}>
+                                        <input
+                                            type="number"
+                                            value={quantity}
+                                            min="1"
+                                            onChange={(e) => setQuantity(parseInt(e.target.value) || '')}
+                                            style={{ ...inputStyle, flex: 1 }}
+                                        />
+                                        <button
+                                            onClick={() => setQuantity(paperSize === 'a3' ? 44 : 24)}
+                                            style={{ background: 'var(--bg-tertiary)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '0 15px', fontWeight: '700', cursor: 'pointer', fontSize: '0.75rem' }}
+                                        >
+                                            FILL PAGE
+                                        </button>
+                                    </div>
+                                    <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.8rem', fontWeight: '600' }}>
+                                        {paperSize === 'a3' ? '💡 A3 Sheet: Holds 44 barcodes per page' : '💡 A4 Sheet: Holds 24 barcodes per page'}
                                     </p>
                                 </div>
+
                             </div>
 
-                            {/* Integrity Alert */}
-                            {missingBarcodes.length > 0 && (
-                                <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid var(--error-color)', padding: '1.5rem', borderRadius: '12px', marginBottom: '2rem' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
-                                        <div style={{ width: '24px', height: '24px', borderRadius: '50%', background: 'var(--error-color)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.9rem', fontWeight: 'bold' }}>!</div>
-                                        <h4 style={{ color: 'var(--error-color)', margin: 0, fontSize: '0.95rem', fontWeight: '700' }}>INTEGRITY ALERT: Sequence Gap Detected</h4>
-                                    </div>
-                                    <p style={{ fontSize: '0.85rem', marginBottom: '1rem', color: 'var(--text-secondary)' }}>
-                                        The system detected missing sequences in the current parameter set. These should be regenerated to maintain continuity.
-                                    </p>
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-                                        {missingBarcodes.map(b => (
-                                            <span key={b.full_barcode} style={{
-                                                background: 'var(--bg-primary)', border: '1px solid var(--border-color)',
-                                                padding: '4px 10px', borderRadius: '6px', fontSize: '0.8rem',
-                                                fontFamily: 'monospace', fontWeight: '700', color: 'var(--text-primary)'
-                                            }}>
-                                                {b.full_barcode}
-                                            </span>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
 
-                            {error && (
-                                <div style={{ background: 'var(--error-bg)', color: 'var(--error-color)', padding: '1rem', borderRadius: '8px', marginBottom: '1.5rem', fontSize: '0.85rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                                    <span>⚠️</span> {error}
-                                </div>
-                            )}
-
-                            {successMsg && (
-                                <div style={{ background: 'var(--success-bg)', color: 'var(--success-color)', padding: '1rem', borderRadius: '8px', marginBottom: '1.5rem', fontSize: '0.85rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                                    <span>✅</span> {successMsg}
-                                </div>
-                            )}
 
                             <button
                                 onClick={handleGenerate}
-                                disabled={loading || !quantity}
+                                disabled={loading || !quantity || !size}
                                 className="btn btn-primary"
                                 style={{
                                     width: '100%', padding: '1.25rem', fontSize: '1rem', fontWeight: '700', letterSpacing: '0.02em',
                                     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.75rem',
-                                    opacity: loading || !quantity ? 0.7 : 1, cursor: loading || !quantity ? 'not-allowed' : 'pointer'
+                                    opacity: loading || !quantity || !size ? 0.7 : 1, cursor: loading || !quantity || !size ? 'not-allowed' : 'pointer'
                                 }}
                             >
                                 {loading ? (
@@ -306,14 +311,92 @@ const BarcodeGenerator = () => {
                             </button>
                         </div>
                     </div>
-                </div>
-            </div>
+
+                    {/* Integrity Alert */}
+                    {missingBarcodes.length > 0 && (
+                        <div style={{ marginTop: '2rem', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid var(--error-color)', padding: '1.5rem', borderRadius: '12px', marginBottom: '2rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+                                <div style={{ width: '24px', height: '24px', borderRadius: '50%', background: 'var(--error-color)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.9rem', fontWeight: 'bold' }}>!</div>
+                                <h4 style={{ color: 'var(--error-color)', margin: 0, fontSize: '0.95rem', fontWeight: '700' }}>INTEGRITY ALERT: Sequence Gap Detected</h4>
+                            </div>
+                            <p style={{ fontSize: '0.85rem', marginBottom: '1rem', color: 'var(--text-secondary)' }}>
+                                The system detected missing sequences in the current parameter set. These should be regenerated to maintain continuity.
+                            </p>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                                {missingBarcodes.map(b => (
+                                    <span key={b.full_barcode} style={{
+                                        background: 'var(--bg-primary)', border: '1px solid var(--border-color)',
+                                        padding: '4px 10px', borderRadius: '6px', fontSize: '0.8rem',
+                                        fontFamily: 'monospace', fontWeight: '700', color: 'var(--text-primary)'
+                                    }}>
+                                        {b.full_barcode}
+                                    </span>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* History Panel */}
+                    <div className="panel" style={{ padding: '0', background: 'var(--bg-secondary)', borderRadius: '16px', border: '1px solid var(--border-color)', overflow: 'hidden', marginTop: '2rem' }}>
+                        <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div>
+                                <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text-primary)' }}>Generation History</h3>
+                                <p style={{ margin: '0.5rem 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                    Recent batch generations and PDF recovery.
+                                </p>
+                            </div>
+                            <button onClick={fetchHistory} style={{ background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '0.5rem 1rem', borderRadius: '8px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' }}>
+                                Refresh
+                            </button>
+                        </div>
+
+                        <div style={{ padding: '0', overflowX: 'auto' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                                <thead style={{ background: 'var(--bg-tertiary)', borderBottom: '1px solid var(--border-color)' }}>
+                                    <tr>
+                                        <th style={{ padding: '1rem 1.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Date & Time</th>
+                                        <th style={{ padding: '1rem 1.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Pic Size</th>
+                                        <th style={{ padding: '1rem 1.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Sheet</th>
+                                        <th style={{ padding: '1rem 1.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Sequence Range</th>
+                                        <th style={{ padding: '1rem 1.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Qty</th>
+                                        <th style={{ padding: '1rem 1.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {historyLoading ? (
+                                        <tr><td colSpan="5" style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>Loading history...</td></tr>
+                                    ) : history.length === 0 ? (
+                                        <tr><td colSpan="5" style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>No recent generation history found.</td></tr>
+                                    ) : history.map((h, i) => (
+                                        <tr key={i} className="hover-row" style={{ borderBottom: '1px solid var(--border-color)', transition: 'background 0.2s' }}>
+                                            <td style={{ padding: '1rem 1.5rem', color: 'var(--text-primary)', fontWeight: '600' }}>{h.date}</td>
+                                            <td style={{ padding: '1rem 1.5rem', color: 'var(--accent-color)', fontWeight: '700' }}>{h.size}</td>
+                                            <td style={{ padding: '1rem 1.5rem', color: 'var(--text-secondary)', fontSize: '0.75rem', fontWeight: 'bold' }}>{(h.paperSize || 'A4').toUpperCase()}</td>
+                                            <td style={{ padding: '1rem 1.5rem', color: 'var(--text-primary)', fontFamily: 'monospace' }}>{h.sequenceRange}</td>
+                                            <td style={{ padding: '1rem 1.5rem', color: 'var(--text-secondary)' }}>{h.count}</td>
+                                            <td style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>
+                                                <button
+                                                    onClick={() => generatePDF(h.barcodes, h.year, h.size, h.paperSize || 'a4')}
+                                                    style={{ background: 'rgba(99, 102, 241, 0.1)', color: 'var(--accent-color)', border: 'none', padding: '0.5rem 1rem', borderRadius: '8px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' }}
+                                                >
+                                                    📥 Re-download PDF
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div >
+            </div >
 
             <style>{`
                 .spinner { animation: spin 1s linear infinite; }
                 @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+                .hover-row:hover { background: var(--bg-tertiary); }
             `}</style>
-        </div>
+        </div >
     );
 };
 

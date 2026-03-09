@@ -146,7 +146,7 @@ app.use('/api/stats', requireAdminAuth, statsRoutes);
 app.use('/api/admin', requireAdminAuth, adminRoutes);
 app.use('/api/sessions', require('./routes/sessionRoutes'));
 app.use('/api/reports', requireAdminAuth, require('./routes/reportsRoutes'));
-app.use('/api/sizes', requireAdminAuth, require('./routes/sizesRoutes'));
+app.use('/api/sizes', require('./routes/sizesRoutes'));
 app.use('/api/employees', require('./routes/employeeRoutes'));
 
 // New Endpoint: Get Server IP (for Desktop to generate QR)

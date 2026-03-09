@@ -4,6 +4,7 @@ const Size = require('../models/Size');
 
 const Barcode = require('../models/Barcode');
 const ClothRoll = require('../models/ClothRoll');
+const { requireAdminAuth } = require('../middleware/authMiddleware');
 
 // GET all sizes with stats
 router.get('/', async (req, res) => {
@@ -53,7 +54,7 @@ router.get('/', async (req, res) => {
 });
 
 // POST new size
-router.post('/add', async (req, res) => {
+router.post('/add', requireAdminAuth, async (req, res) => {
     try {
         const { code } = req.body;
         if (!code) return res.status(400).json({ error: 'Size Code is required' });
@@ -70,7 +71,7 @@ router.post('/add', async (req, res) => {
 });
 
 // DELETE size
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requireAdminAuth, async (req, res) => {
     try {
         const { id } = req.params;
         const sizeToDelete = await Size.findById(id);

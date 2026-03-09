@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useConfig } from '../context/ConfigContext';
 import { IconUsers, IconTrash, IconEye, IconEyeOff, IconEdit } from '../components/Icons';
 
@@ -9,7 +9,32 @@ const Employees = () => {
     const [newPin, setNewPin] = useState('');
     const [loading, setLoading] = useState(true);
     const [adding, setAdding] = useState(false);
+    const [deletingId, setDeletingId] = useState(null);
     const [error, setError] = useState('');
+    const nameInputRef = useRef(null);
+
+    // Global cursor state management during loading and async operations
+    useEffect(() => {
+        if (loading || adding || deletingId) {
+            document.body.style.cursor = 'wait';
+        } else {
+            document.body.style.cursor = 'default';
+            // Refocus input whenever a blocking operation finishes successfully
+            if (nameInputRef.current) {
+                // Fix for Electron: Native dialogs (like window.confirm) take focus away from the renderer.
+                // We must explicitly ask for window focus back before setting inner element focus.
+                window.focus();
+
+                // Add tiny delay to ensure React commits DOM and Electron routing settles
+                setTimeout(() => {
+                    if (nameInputRef.current) {
+                        nameInputRef.current.focus();
+                    }
+                }, 50);
+            }
+        }
+        return () => { document.body.style.cursor = 'default'; };
+    }, [loading, adding, deletingId]);
 
     // State for PIN visibility and editing
     const [visiblePins, setVisiblePins] = useState({});
@@ -54,7 +79,7 @@ const Employees = () => {
             if (res.ok) {
                 setNewName('');
                 setNewPin('');
-                fetchEmployees();
+                await fetchEmployees();
             } else {
                 const data = await res.json();
                 setError(data.error || 'Failed to add employee');
@@ -67,17 +92,25 @@ const Employees = () => {
     };
 
     const handleDelete = async (id, name) => {
-        if (!window.confirm(`Are you sure you want to TERMINATE ${name}? Their access will be revoked but history preserved.`)) return;
+        // Prevent native confirm blurs by restoring focus immediately if cancelled
+        if (!window.confirm(`Are you sure you want to TERMINATE ${name}? Their access will be revoked but history preserved.`)) {
+            window.focus();
+            if (nameInputRef.current) nameInputRef.current.focus();
+            return;
+        }
 
+        setDeletingId(id);
         try {
             const res = await fetch(`${apiUrl}/api/employees/${id}`, { method: 'DELETE' });
             if (res.ok) {
-                fetchEmployees();
+                await fetchEmployees();
             } else {
                 alert('Failed to terminate');
             }
         } catch (err) {
             alert('Failed to terminate employee');
+        } finally {
+            setDeletingId(null);
         }
     };
 
@@ -132,7 +165,8 @@ const Employees = () => {
     const inputStyle = {
         width: '100%', padding: '0.9rem', borderRadius: '8px',
         border: '1px solid var(--border-color)', background: 'var(--bg-primary)',
-        color: 'var(--text-primary)', fontSize: '0.95rem', fontWeight: '500'
+        color: 'var(--text-primary)', fontSize: '0.95rem', fontWeight: '500',
+        cursor: 'text'
     };
 
 
@@ -208,7 +242,7 @@ const Employees = () => {
                                                             value={editPinValue}
                                                             onChange={e => setEditPinValue(e.target.value.replace(/\D/g, ''))}
                                                             placeholder="PIN"
-                                                            style={{ width: '60px', padding: '4px', borderRadius: '4px', border: '1px solid var(--accent-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)', outline: 'none' }}
+                                                            style={{ width: '60px', padding: '4px', borderRadius: '4px', border: '1px solid var(--accent-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)', outline: 'none', cursor: 'text' }}
                                                         />
                                                         <button onClick={() => saveNewPin(emp._id)} style={{ background: 'var(--success-color)', border: 'none', borderRadius: '4px', color: 'white', cursor: 'pointer', padding: '0 6px', fontSize: '0.7rem', fontWeight: 'bold' }}>✓</button>
                                                         <button onClick={() => setEditingPinId(null)} style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '4px', color: 'var(--text-primary)', cursor: 'pointer', padding: '0 6px', fontSize: '0.7rem' }}>✕</button>
@@ -291,6 +325,7 @@ const Employees = () => {
                                 <div>
                                     <label style={labelStyle}>Employee Name</label>
                                     <input
+                                        ref={nameInputRef}
                                         type="text"
                                         value={newName}
                                         onChange={e => setNewName(e.target.value)}

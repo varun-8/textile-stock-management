@@ -135,11 +135,15 @@ select {
   font-size: 0.875rem;
   outline: none;
   transition: border-color 0.2s, box-shadow 0.2s;
+  caret-color: var(--text-primary);
+  cursor: text !important;
 }
 
 input:focus {
   border-color: var(--accent-color);
   box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+  caret-color: var(--accent-color);
+  cursor: text !important;
 }
 
 /* Custom Scrollbar */

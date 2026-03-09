@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { MobileProvider, useMobile } from './context/MobileContext';
+import { NotificationProvider } from './context/NotificationContext';
 import WorkScreen from './pages/WorkScreen';
 import SetupScreen from './pages/SetupScreen';
 import PinScreen from './pages/PinScreen';
@@ -118,11 +119,13 @@ function AppContent() {
 function App() {
   return (
     <MobileProvider>
-      <HashRouter>
-        <AppShell>
-          <AppContent />
-        </AppShell>
-      </HashRouter>
+      <NotificationProvider>
+        <HashRouter>
+          <AppShell>
+            <AppContent />
+          </AppShell>
+        </HashRouter>
+      </NotificationProvider>
     </MobileProvider>
   );
 }

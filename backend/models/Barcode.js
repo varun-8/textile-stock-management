@@ -6,10 +6,8 @@ const barcodeSchema = new mongoose.Schema({
         required: true
     },
     size: {
-        type: Number,
-        required: true,
-        min: 38,
-        max: 51
+        type: String,
+        required: true
     },
     sequence: {
         type: Number,
@@ -24,6 +22,11 @@ const barcodeSchema = new mongoose.Schema({
         type: String,
         enum: ['Unused', 'Used'],
         default: 'Unused'
+    },
+    paperSize: {
+        type: String,
+        enum: ['a4', 'a3'],
+        default: 'a4'
     },
     createdAt: {
         type: Date,

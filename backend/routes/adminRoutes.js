@@ -3,6 +3,12 @@ const router = express.Router();
 const backupService = require('../services/backupService');
 const AuditLog = require('../models/AuditLog');
 const Scanner = require('../models/Scanner');
+const Barcode = require('../models/Barcode');
+const ClothRoll = require('../models/ClothRoll');
+const Employee = require('../models/Employee');
+const Session = require('../models/Session');
+const MissedScan = require('../models/MissedScan');
+const Size = require('../models/Size');
 const os = require('os');
 const { issuePairingToken } = require('../middleware/authMiddleware');
 
@@ -222,6 +228,38 @@ router.delete('/scanners/:scannerId', async (req, res) => {
         }
         res.json({ success: true, message: 'Scanner removed' });
     } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// System Wipe
+router.post('/system/wipe', async (req, res) => {
+    try {
+        const { password } = req.body;
+        const systemPassword = process.env.SYSTEM_WIPE_PASSWORD || 'devevolopmentkey95';
+
+        if (password !== systemPassword) {
+            return res.status(401).json({ error: 'Incorrect wipe password. Operation aborted.' });
+        }
+
+        console.log('⚠️ SYSTEM WIPE INITIATED');
+
+        // Wipe all transactional and configuration data
+        await Promise.all([
+            Barcode.deleteMany({}),
+            ClothRoll.deleteMany({}),
+            Employee.deleteMany({}),
+            Session.deleteMany({}),
+            Scanner.deleteMany({}),
+            MissedScan.deleteMany({}),
+            Size.deleteMany({}),
+            AuditLog.deleteMany({})
+        ]);
+
+        console.log('✅ SYSTEM WIPE COMPLETE');
+        res.json({ success: true, message: 'All system data has been wiped successfully.' });
+    } catch (err) {
+        console.error('❌ SYSTEM WIPE FAILED:', err);
         res.status(500).json({ error: err.message });
     }
 });

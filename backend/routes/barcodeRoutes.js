@@ -33,12 +33,6 @@ router.post('/generate', async (req, res) => {
         const qty = parseInt(quantity);
         if (qty <= 0) return res.status(400).json({ error: 'Quantity must be positive' });
 
-        // Limit quantity for single page (e.g. max 65 for 5x13 grid on A4, just an example limit)
-        // User asked to "Prevent multi-page", so we enforce a hard limit.
-        if (qty > 65) {
-            return res.status(400).json({ error: 'Quantity exceeds single page limit (max 65)' });
-        }
-
         // Find last sequence
         // We do this inside the request. Note: Race condition possible here but caught by Unique Index.
         const lastBarcode = await Barcode.findOne({ year, size }).sort({ sequence: -1 });
@@ -49,8 +43,6 @@ router.post('/generate', async (req, res) => {
         for (let i = 1; i <= qty; i++) {
             const seq = currentSequence + i;
             const seqString = seq.toString().padStart(4, '0');
-            // Format: YY-SZ-XXXX (e.g. 26-40-0001)
-            // Ensure year is 2 digits
             const yy = year.toString().slice(-2);
             const full_barcode = `${yy}-${size}-${seqString}`;
 
@@ -59,7 +51,8 @@ router.post('/generate', async (req, res) => {
                 size,
                 sequence: seq,
                 full_barcode,
-                status: 'Unused'
+                status: 'Unused',
+                paperSize: req.body.paperSize || 'a4'
             });
         }
 
@@ -142,6 +135,58 @@ router.get('/missing', async (req, res) => {
         }
 
         res.json({ missing, count: missing.length });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Get barcode generation history
+router.get('/history', async (req, res) => {
+    try {
+        const history = await Barcode.aggregate([
+            {
+                $group: {
+                    _id: {
+                        year: "$year",
+                        size: "$size",
+                        createdAt: "$createdAt"
+                    },
+                    count: { $sum: 1 },
+                    minSeq: { $min: "$sequence" },
+                    maxSeq: { $max: "$sequence" },
+                    paperSize: { $first: "$paperSize" },
+                    barcodes: {
+                        $push: { full_barcode: "$full_barcode" }
+                    }
+                }
+            },
+            {
+                $sort: { "_id.createdAt": -1 }
+            },
+            {
+                $limit: 25
+            }
+        ]);
+
+        const formatted = history.map(h => ({
+            year: h._id.year,
+            size: h._id.size,
+            date: new Date(h._id.createdAt).toLocaleString('en-IN', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: true
+            }),
+            paperSize: h.paperSize,
+            count: h.count,
+            sequenceRange: `${String(h.minSeq).padStart(4, '0')} - ${String(h.maxSeq).padStart(4, '0')}`,
+            barcodes: h.barcodes
+        }));
+
+        res.json(formatted);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

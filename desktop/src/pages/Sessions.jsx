@@ -73,14 +73,14 @@ const Sessions = () => {
             // Auto-show report when session ends (ONLY if initiated from desktop)
             const isSessionEnd = data && data.action === 'ENDED' && data.sessionId;
             const isDesktopInitiator = data.initiator === 'desktop';
-            
-            console.log('🔍 CHECKING REPORT MODAL:', { 
-                isSessionEnd, 
-                initiator: data?.initiator, 
+
+            console.log('🔍 CHECKING REPORT MODAL:', {
+                isSessionEnd,
+                initiator: data?.initiator,
                 isDesktopInitiator,
                 shouldShow: isSessionEnd && isDesktopInitiator
             });
-            
+
             if (isSessionEnd && isDesktopInitiator) {
                 console.log('✅ SHOWING REPORT - Session ended by desktop');
                 try {
@@ -257,7 +257,13 @@ const Sessions = () => {
 
     const handleExport = (sessionId, type, size, reportType) => {
         const url = `${apiUrl}/api/sessions/${sessionId}/export/${reportType}`;
-        window.open(url, '_blank');
+        const a = document.createElement('a');
+        a.href = url;
+        a.style.display = 'none';
+        a.setAttribute('download', '');
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
     };
 
     const handleViewReport = async (sessionId) => {

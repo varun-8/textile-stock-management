@@ -123,7 +123,7 @@ const AppLayout = ({ children }) => {
                     </div>
                     <nav style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'center' }}>
                         <SidebarLink collapsed={isCollapsed} active={isActive('/employees')} onClick={() => handleNavigation('/employees')} icon={<IconUsers />} label="Employee Management" />
-                        <SidebarLink collapsed={isCollapsed} active={isActive('/configuration')} onClick={() => handleNavigation('/configuration')} icon={<IconSettings />} label="Article Sizes" />
+                        <SidebarLink collapsed={isCollapsed} active={isActive('/configuration')} onClick={() => handleNavigation('/configuration')} icon={<IconSettings />} label="Pic size" />
                         <SidebarLink collapsed={isCollapsed} active={isActive('/settings')} onClick={() => handleNavigation('/settings')} icon={<IconSettings />} label="System Settings" />
                     </nav>
                 </div>

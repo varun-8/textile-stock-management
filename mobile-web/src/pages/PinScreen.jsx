@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMobile } from '../context/MobileContext';
+import { useNotification } from '../context/NotificationContext';
 import { haptic } from '../utils/haptic';
 
 const PinScreen = () => {
     const { api, unpair } = useMobile();
+    const { showNotification } = useNotification();
     const navigate = useNavigate();
 
     // Steps: 'ID' -> 'PIN'
@@ -91,14 +93,14 @@ const PinScreen = () => {
                 }));
                 navigate('/', { replace: true });
             } else {
-                setError('Invalid credentials');
+                showNotification('Invalid credentials', 'error');
                 if (haptic.error) haptic.error();
                 setPin('');
             }
         } catch (err) {
             console.error(err);
             if (haptic.error) haptic.error();
-            setError(err.response?.data?.error || 'Authentication Failed');
+            showNotification(err.response?.data?.error || 'Authentication Failed', 'error');
             setPin('');
         } finally {
             setLoading(false);

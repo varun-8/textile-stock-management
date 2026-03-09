@@ -13,7 +13,7 @@ const DetailedStats = () => {
     const [filters, setFilters] = useState({
         startDate: '',
         endDate: '',
-        articleSize: ''
+        picSize: ''
     });
 
     // Fetch sizes on mount
@@ -38,7 +38,7 @@ const DetailedStats = () => {
                 const params = new URLSearchParams();
                 if (filters.startDate) params.append('startDate', filters.startDate);
                 if (filters.endDate) params.append('endDate', filters.endDate);
-                if (filters.articleSize) params.append('articleSize', filters.articleSize);
+                if (filters.picSize) params.append('articleSize', filters.picSize); // Keep query param as 'articleSize' to avoid backend changes if not needed, but update state rename. Actually let's check backend.
 
                 const queryString = params.toString();
                 if (queryString) {
@@ -237,8 +237,8 @@ const DetailedStats = () => {
                         <label style={{ fontSize: '0.8rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-secondary)', letterSpacing: '0.05em' }}>Size Filter:</label>
                         <div style={{ position: 'relative' }}>
                             <select
-                                value={filters.articleSize}
-                                onChange={e => setFilters({ ...filters, articleSize: e.target.value })}
+                                value={filters.picSize}
+                                onChange={e => setFilters({ ...filters, picSize: e.target.value })}
                                 style={{
                                     padding: '8px 12px 8px 12px', borderRadius: '8px', border: '1px solid var(--border-color)',
                                     background: 'var(--bg-primary)', color: 'var(--text-primary)', minWidth: '120px', fontSize: '0.9rem', fontWeight: '600'

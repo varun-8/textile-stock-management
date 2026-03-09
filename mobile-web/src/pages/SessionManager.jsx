@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMobile } from '../context/MobileContext';
+import { useNotification } from '../context/NotificationContext';
 
 const SessionManager = () => {
     const navigate = useNavigate();
     const { api, scannerId, logout, unpair, deferredPrompt, installApp } = useMobile();
+    const { showNotification } = useNotification();
     const [sessions, setSessions] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showCreate, setShowCreate] = useState(false);
@@ -28,7 +30,7 @@ const SessionManager = () => {
 
     // Create Form
     const [newType, setNewType] = useState('IN');
-    const [newSize, setNewSize] = useState('40');
+    const [newSize, setNewSize] = useState('');
     const [sizes, setSizes] = useState([]);
 
     const fetchSessions = async () => {
@@ -156,12 +158,18 @@ const SessionManager = () => {
                 navigate('/work');
             }
         } catch (err) {
-            alert('Failed to join session');
+            showNotification('Failed to join session', 'error');
         }
     };
 
     const handleCreate = async (e) => {
         e.preventDefault();
+
+        if (!newSize) {
+            showNotification('Please select a Target Pic Size first.', 'warning');
+            return;
+        }
+
         try {
             const res = await api.post('/api/sessions/create', {
                 type: newType,
@@ -175,7 +183,7 @@ const SessionManager = () => {
                 await handleJoin(data.session);
             }
         } catch (err) {
-            alert('Failed to create session');
+            showNotification('Failed to create session', 'error');
         }
     };
 
@@ -198,7 +206,7 @@ const SessionManager = () => {
             setShowEndSummary(true);
         } catch (err) {
             console.error(err);
-            alert('Failed to load session summary');
+            showNotification('Failed to load session summary', 'error');
         }
     };
 
@@ -221,7 +229,7 @@ const SessionManager = () => {
             fetchSessions();
         } catch (err) {
             console.error(err);
-            alert('Failed to end session');
+            showNotification('Failed to end session', 'error');
         } finally {
             setClosingSession(false);
         }
@@ -459,7 +467,7 @@ const SessionManager = () => {
                                                 </span>
                                             </div>
                                             <h2 style={{ fontSize: '32px', fontWeight: '900', color: 'white', margin: 0, letterSpacing: '-0.03em' }}>
-                                                Size <span style={{ color: THEME.accent }}>{session.targetSize}</span>
+                                                Pic Size <span style={{ color: THEME.accent }}>{session.targetSize}</span>
                                             </h2>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px' }}>
                                                 <div style={{ width: '16px', height: '16px', borderRadius: '4px', background: 'rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px' }}>👤</div>
@@ -539,7 +547,7 @@ const SessionManager = () => {
                 display: 'flex', justifyContent: 'center'
             }}>
                 <button
-                    onClick={() => setShowCreate(true)}
+                    onClick={() => { fetchSizes(); setShowCreate(true); }}
                     style={{
                         width: '100%', maxWidth: '400px', height: '58px',
                         background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
@@ -644,9 +652,9 @@ const SessionManager = () => {
                                         }}
                                     >
                                         {sizes.map(s => (
-                                            <option key={s._id} value={s.code} style={{ background: '#1e293b' }}>Size {s.code}</option>
+                                            <option key={s._id} value={s.code} style={{ background: '#1e293b' }}>Pic Size {s.code}</option>
                                         ))}
-                                        {sizes.length === 0 && <option value="40" style={{ background: '#1e293b' }}>Size 40</option>}
+                                        {sizes.length === 0 && <option value="" disabled style={{ background: '#1e293b' }}>No sizes available</option>}
                                     </select>
                                     <div style={{ position: 'absolute', right: '20px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: THEME.textMuted }}>
                                         ▼
@@ -762,7 +770,7 @@ const SessionManager = () => {
                             <div>
                                 <div style={{ fontSize: '18px', fontWeight: '900', color: 'white' }}>Session Summary</div>
                                 <div style={{ fontSize: '12px', color: THEME.textMuted, marginTop: '2px' }}>
-                                    {endSummarySession.type} | Size {endSummarySession.targetSize}
+                                    {endSummarySession.type} | Pic Size {endSummarySession.targetSize}
                                 </div>
                             </div>
                             <button

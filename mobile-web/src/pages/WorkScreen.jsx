@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMobile } from '../context/MobileContext';
+import { useNotification } from '../context/NotificationContext';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
 import { haptic } from '../utils/haptic';
 
@@ -25,8 +26,8 @@ const IconFlash = ({ size = 20, active = false, disabled = false }) => (
 );
 
 const WorkScreen = () => {
-    const navigate = useNavigate();
     const { api, serverIp, setServerIp, unpair, deferredPrompt, installApp, scannerId } = useMobile();
+    const { showNotification } = useNotification();
     const [scanned, setScanned] = useState(false);
 
 
@@ -71,9 +72,11 @@ const WorkScreen = () => {
         }
     }, [form.metre, form.weight]);
 
-    const [alertState, setAlertState] = useState({ show: false, message: '', type: 'info', title: '' });
-    const [isProcessing, setIsProcessing] = useState(false);
+    const showAlert = (message, type = 'info') => {
+        showNotification(message, type);
+    };
 
+    const [isProcessing, setIsProcessing] = useState(false);
     const html5QrCodeRef = useRef(null);
     const scanningRef = useRef(false);
 
@@ -124,16 +127,7 @@ const WorkScreen = () => {
         surface: 'rgba(30, 41, 59, 0.7)'
     };
 
-    const showAlert = (message, type = 'info', title = '') => {
-        setAlertState({ show: true, message, type, title });
-    };
-
-    const closeAlert = () => {
-        setAlertState((prev) => ({ ...prev, show: false }));
-        if (alertState.type === 'error') {
-            scanningRef.current = false;
-        }
-    };
+    const navigate = useNavigate();
 
     useEffect(() => {
         if (mode === 'SCAN' && !scanned) {
@@ -249,14 +243,7 @@ const WorkScreen = () => {
             formattedBarcode = `${formattedBarcode.substring(0, 2)}-${formattedBarcode.substring(2, 4)}-${formattedBarcode.substring(4)}`;
         }
 
-        // --- BULK OUT MODE LOGIC ---
-        if (sessionMode === 'OUT') {
-            // Instant Stock Out
-            handleQuickStockOut(formattedBarcode);
-            return;
-        }
-
-        // --- STANDARD IN MODE LOGIC (Existing) ---
+        // --- UNIFIED SCAN LOGIC (Now treats IN/OUT similarly to show details) ---
         try {
             const url = `/api/mobile/scan/${formattedBarcode}`;
             const res = await api.get(url, { headers: { 'x-session-id': sessionId } });
@@ -317,20 +304,17 @@ const WorkScreen = () => {
     };
 
     const handleQuickStockOut = async (barcode) => {
-        // Prevent concurrent processing for the SAME barcode, but allow fast subsequent scans
         if (isProcessing) return;
-
         setIsProcessing(true);
-        // Note: scanningRef is already true from the caller, we keep it true until we finish
 
         const employee = JSON.parse(localStorage.getItem('employee') || '{}');
 
         const payload = {
             barcode: barcode,
             type: 'OUT',
-            employeeId: employee.employeeId, // E001, E002, etc.
+            employeeId: employee.employeeId,
             employeeName: employee.name,
-            sessionId: sessionId // Include Session ID
+            sessionId: sessionId
         };
 
         try {
@@ -338,29 +322,18 @@ const WorkScreen = () => {
 
             if (res.data.error) {
                 haptic.error();
-                // Check if it's already out, might want a softer warning or just error
                 showAlert(res.data.error, 'error');
             } else {
                 haptic.success();
-                // Optional: Show a "Toast" instead of a full blocking alert for speed?
-                // For now, using the existing alert but maybe auto-dismiss it?
-                // Actually, let's just show a quick successful toast if possible, otherwise alert.
-                // The current showAlert blocks? No, it sets state.
-                showAlert(`✅ OUT: ${barcode}`, 'success');
-
-                // Trigger stats refresh in background
+                showAlert(`✅ STOCK OUT SUCCESSFUL!`, 'success');
                 fetchSessionStats();
+                reset(); // Back to scanner
             }
         } catch (err) {
             haptic.error();
             showAlert(err.response?.data?.error || err.message, 'error');
         } finally {
             setIsProcessing(false);
-            // Re-enable scanning after a short delay to prevent accidental double-scans of same barcode
-            setTimeout(() => {
-                setScanned(false);
-                scanningRef.current = false;
-            }, 1500); // 1.5s delay before next scan is allowed - good for pace
         }
     };
 
@@ -681,7 +654,7 @@ const WorkScreen = () => {
                         boxShadow: `0 0 8px ${sessionMode === 'IN' ? THEME.success : THEME.error}`
                     }} />
                     <span style={{ color: 'white', fontWeight: '800', fontSize: '11px', letterSpacing: '0.02em', opacity: 0.9 }}>
-                        SIZE {sessionSize || '--'}
+                        PIC SIZE {sessionSize || '--'}
                     </span>
                 </div>
 
@@ -812,6 +785,31 @@ const WorkScreen = () => {
                                     )}
 
                                     {/* Barcode Info */}
+                                    {scanData?.data && (
+                                        <div style={{
+                                            background: 'rgba(255,255,255,0.03)',
+                                            borderRadius: '20px',
+                                            padding: '20px',
+                                            marginBottom: '8px',
+                                            border: '1px solid rgba(255,255,255,0.05)',
+                                            display: 'grid',
+                                            gridTemplateColumns: '1fr 1fr',
+                                            gap: '12px'
+                                        }}>
+                                            <div style={{ textAlign: 'left' }}>
+                                                <div style={{ fontSize: '10px', color: THEME.textMuted, fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Metre</div>
+                                                <div style={{ color: 'white', fontSize: '20px', fontWeight: '800' }}>{scanData.data.metre} m</div>
+                                            </div>
+                                            <div style={{ textAlign: 'right' }}>
+                                                <div style={{ fontSize: '10px', color: THEME.textMuted, fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Weight</div>
+                                                <div style={{ color: 'white', fontSize: '20px', fontWeight: '800' }}>{scanData.data.weight} kg</div>
+                                            </div>
+                                            <div style={{ textAlign: 'left', gridColumn: 'span 2', background: 'rgba(99, 102, 241, 0.1)', padding: '12px 15px', borderRadius: '12px', marginTop: '4px' }}>
+                                                <div style={{ fontSize: '10px', color: THEME.accent, fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Quality Percentage</div>
+                                                <div style={{ color: THEME.accent, fontSize: '18px', fontWeight: '800' }}>{scanData.data.percentage}%</div>
+                                            </div>
+                                        </div>
+                                    )}
 
                                     {/* Simplified Actions based on Session Mode */}
                                     {sessionMode === 'IN' && (

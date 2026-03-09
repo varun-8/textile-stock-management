@@ -18,79 +18,82 @@ const ProtectedRoute = ({ children }) => {
 };
 
 import { ConfigProvider } from './context/ConfigContext';
+import { NotificationProvider } from './context/NotificationContext';
 
 import AppLayout from './components/AppLayout';
 
 function App() {
   return (
     <ConfigProvider>
-      <Router>
-        <Routes>
-          <Route path="/" element={<Login />} />
-          <Route path="/dashboard" element={
-            <ProtectedRoute>
-              <AppLayout>
-                <Dashboard />
-              </AppLayout>
-            </ProtectedRoute>
-          } />
-          <Route path="/dashboard/:type" element={
-            <ProtectedRoute>
-              <AppLayout>
-                <DetailedStats />
-              </AppLayout>
-            </ProtectedRoute>
-          } />
+      <NotificationProvider>
+        <Router>
+          <Routes>
+            <Route path="/" element={<Login />} />
+            <Route path="/dashboard" element={
+              <ProtectedRoute>
+                <AppLayout>
+                  <Dashboard />
+                </AppLayout>
+              </ProtectedRoute>
+            } />
+            <Route path="/dashboard/:type" element={
+              <ProtectedRoute>
+                <AppLayout>
+                  <DetailedStats />
+                </AppLayout>
+              </ProtectedRoute>
+            } />
 
-          <Route path="/barcode" element={
-            <ProtectedRoute>
-              <AppLayout>
-                <BarcodeGenerator />
-              </AppLayout>
-            </ProtectedRoute>
-          } />
-          <Route path="/mobile" element={
-            <ProtectedRoute>
-              <MobileScanner />
-            </ProtectedRoute>
-          } />
-          <Route path="/scanners" element={
-            <ProtectedRoute>
-              <AppLayout>
-                <Scanners />
-              </AppLayout>
-            </ProtectedRoute>
-          } />
-          <Route path="/configuration" element={
-            <ProtectedRoute>
-              <AppLayout>
-                <Configuration />
-              </AppLayout>
-            </ProtectedRoute>
-          } />
-          <Route path="/employees" element={
-            <ProtectedRoute>
-              <AppLayout>
-                <Employees />
-              </AppLayout>
-            </ProtectedRoute>
-          } />
-          <Route path="/sessions" element={
-            <ProtectedRoute>
-              <AppLayout>
-                <Sessions />
-              </AppLayout>
-            </ProtectedRoute>
-          } />
-          <Route path="/settings" element={
-            <ProtectedRoute>
-              <AppLayout>
-                <Settings />
-              </AppLayout>
-            </ProtectedRoute>
-          } />
-        </Routes>
-      </Router>
+            <Route path="/barcode" element={
+              <ProtectedRoute>
+                <AppLayout>
+                  <BarcodeGenerator />
+                </AppLayout>
+              </ProtectedRoute>
+            } />
+            <Route path="/mobile" element={
+              <ProtectedRoute>
+                <MobileScanner />
+              </ProtectedRoute>
+            } />
+            <Route path="/scanners" element={
+              <ProtectedRoute>
+                <AppLayout>
+                  <Scanners />
+                </AppLayout>
+              </ProtectedRoute>
+            } />
+            <Route path="/configuration" element={
+              <ProtectedRoute>
+                <AppLayout>
+                  <Configuration />
+                </AppLayout>
+              </ProtectedRoute>
+            } />
+            <Route path="/employees" element={
+              <ProtectedRoute>
+                <AppLayout>
+                  <Employees />
+                </AppLayout>
+              </ProtectedRoute>
+            } />
+            <Route path="/sessions" element={
+              <ProtectedRoute>
+                <AppLayout>
+                  <Sessions />
+                </AppLayout>
+              </ProtectedRoute>
+            } />
+            <Route path="/settings" element={
+              <ProtectedRoute>
+                <AppLayout>
+                  <Settings />
+                </AppLayout>
+              </ProtectedRoute>
+            } />
+          </Routes>
+        </Router>
+      </NotificationProvider>
     </ConfigProvider>
   );
 }

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, memo } from 'react';
 import { useConfig } from '../context/ConfigContext';
 import { IconSettings, IconTrash, IconCloud } from '../components/Icons';
+import { useNotification } from '../context/NotificationContext';
 
 // Styled Components / Variables
 const thStyle = {
@@ -112,6 +113,7 @@ const Configuration = () => {
     const [loading, setLoading] = useState(true);
     const [adding, setAdding] = useState(false);
     const [error, setError] = useState('');
+    const { showNotification } = useNotification();
 
     const fetchSizes = useCallback(async () => {
         setLoading(true);
@@ -162,11 +164,41 @@ const Configuration = () => {
 
         try {
             await fetch(`${apiUrl}/api/sizes/${id}`, { method: 'DELETE' });
+            showNotification('Pic Size deleted successfully', 'success');
             fetchSizes();
         } catch (err) {
-            alert('Failed to delete size');
+            showNotification('Failed to delete size', 'error');
         }
-    }, [apiUrl, fetchSizes]);
+    }, [apiUrl, fetchSizes, showNotification]);
+
+    const handleWipe = async () => {
+        const password = window.prompt('⚠️ CRITICAL WARNING: This operation will PERMANENTLY delete all stock, barcodes, sessions, and configurations. Enter the System Wipe Password to proceed:');
+        if (!password) return;
+
+        if (!window.confirm('FINAL CONFIRMATION: Are you absolutely sure you want to wipe the system? This action is IRREVERSIBLE.')) return;
+
+        try {
+            const token = localStorage.getItem('adminToken');
+            const res = await fetch(`${apiUrl}/api/admin/system/wipe`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ password })
+            });
+
+            const data = await res.json();
+            if (res.ok) {
+                showNotification(data.message, 'success');
+                setTimeout(() => window.location.reload(), 2000);
+            } else {
+                showNotification(data.error || 'System wipe failed.', 'error');
+            }
+        } catch (err) {
+            showNotification('Communication failure during wipe operation.', 'error');
+        }
+    };
 
     return (
         <div style={{ padding: '0', height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--bg-primary)' }} className="animate-fade-in">
@@ -205,7 +237,7 @@ const Configuration = () => {
                             display: 'flex', justifyContent: 'space-between', alignItems: 'center'
                         }}>
                             <div>
-                                <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text-primary)' }}>Defined Article Sizes</h3>
+                                <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text-primary)' }}>Defined Pic Sizes</h3>
                                 <p style={{ margin: '0.3rem 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                                     Configure dimensions used for barcode generation and sorting.
                                 </p>
@@ -284,6 +316,40 @@ const Configuration = () => {
                         </div>
                     </div>
 
+                    {/* SYSTEM WIPE - Danger Zone */}
+                    <div className="panel" style={{
+                        marginTop: '0rem',
+                        background: 'rgba(239, 68, 68, 0.03)',
+                        borderRadius: '12px',
+                        border: '1px solid rgba(239, 68, 68, 0.2)',
+                        overflow: 'hidden'
+                    }}>
+                        <div style={{ padding: '1.5rem', borderBottom: '1px solid rgba(239, 68, 68, 0.1)', background: 'var(--bg-secondary)' }}>
+                            <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--error-color)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <span>⚠️</span> Danger Zone
+                            </h3>
+                            <p style={{ margin: '0.5rem 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                System-wide data reset.
+                            </p>
+                        </div>
+                        <div style={{ padding: '1.5rem' }}>
+                            <button
+                                onClick={handleWipe}
+                                className="btn"
+                                style={{
+                                    width: '100%', justifyContent: 'center', padding: '1rem',
+                                    background: 'var(--error-color)', color: '#fff', border: 'none',
+                                    fontWeight: '800', borderRadius: '8px', cursor: 'pointer',
+                                    fontSize: '0.85rem', letterSpacing: '0.05em'
+                                }}
+                            >
+                                WIPE ALL SYSTEM DATA
+                            </button>
+                            <p style={{ marginTop: '1rem', fontSize: '0.7rem', color: 'var(--text-secondary)', textAlign: 'center', fontStyle: 'italic' }}>
+                                This will reset inventory, logs, and sessions.
+                            </p>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
