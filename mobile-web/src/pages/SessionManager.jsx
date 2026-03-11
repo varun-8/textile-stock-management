@@ -166,7 +166,7 @@ const SessionManager = () => {
         e.preventDefault();
 
         if (!newSize) {
-            showNotification('Please select a Target Pic Size first.', 'warning');
+            showNotification('Please select a Pick Density (PPI) first.', 'warning');
             return;
         }
 
@@ -467,7 +467,7 @@ const SessionManager = () => {
                                                 </span>
                                             </div>
                                             <h2 style={{ fontSize: '32px', fontWeight: '900', color: 'white', margin: 0, letterSpacing: '-0.03em' }}>
-                                                Pic Size <span style={{ color: THEME.accent }}>{session.targetSize}</span>
+                                                Pick Density (PPI) <span style={{ color: THEME.accent }}>{session.targetSize}</span>
                                             </h2>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px' }}>
                                                 <div style={{ width: '16px', height: '16px', borderRadius: '4px', background: 'rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px' }}>👤</div>
@@ -652,9 +652,9 @@ const SessionManager = () => {
                                         }}
                                     >
                                         {sizes.map(s => (
-                                            <option key={s._id} value={s.code} style={{ background: '#1e293b' }}>Pic Size {s.code}</option>
+                                            <option key={s._id} value={s.code} style={{ background: '#1e293b' }}>PPI {s.code}</option>
                                         ))}
-                                        {sizes.length === 0 && <option value="" disabled style={{ background: '#1e293b' }}>No sizes available</option>}
+                                        {sizes.length === 0 && <option value="" disabled style={{ background: '#1e293b' }}>No PPI values available</option>}
                                     </select>
                                     <div style={{ position: 'absolute', right: '20px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: THEME.textMuted }}>
                                         ▼
@@ -770,7 +770,7 @@ const SessionManager = () => {
                             <div>
                                 <div style={{ fontSize: '18px', fontWeight: '900', color: 'white' }}>Session Summary</div>
                                 <div style={{ fontSize: '12px', color: THEME.textMuted, marginTop: '2px' }}>
-                                    {endSummarySession.type} | Pic Size {endSummarySession.targetSize}
+                                    {endSummarySession.type} | Pick Density (PPI) {endSummarySession.targetSize}
                                 </div>
                             </div>
                             <button

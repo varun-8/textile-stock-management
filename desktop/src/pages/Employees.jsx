@@ -1,3 +1,5 @@
+import React, { useEffect, useRef, useState } from 'react';
+import { useConfig } from '../context/ConfigContext';
 import { IconUsers, IconTrash, IconEye, IconEyeOff, IconEdit } from '../components/Icons';
 import { useNotification } from '../context/NotificationContext';
 
@@ -123,7 +125,7 @@ const Employees = () => {
             } else {
                 showNotification('Failed to terminate access', 'error');
             }
-        } catch (err) {
+        } catch {
             showNotification('Network error during termination', 'error');
         } finally {
             setDeletingId(null);

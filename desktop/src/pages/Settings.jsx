@@ -5,7 +5,7 @@ import { useNotification } from '../context/NotificationContext';
 
 const Settings = () => {
     const { apiUrl, updateApiUrl, theme, toggleTheme } = useConfig();
-    const { showNotification } = useNotification();
+    const { showNotification, showConfirm } = useNotification();
     const [activeTab, setActiveTab] = useState('general');
     const [backupPath, setBackupPath] = useState('');
     const [backups, setBackups] = useState([]);
@@ -85,7 +85,7 @@ const Settings = () => {
                 body: JSON.stringify({ path: backupPath })
             });
             alert('Backup path updated successfully');
-        } catch (err) { alert('Failed to update path'); }
+        } catch { alert('Failed to update path'); }
     };
 
     const handleCreateBackup = async () => {
@@ -103,7 +103,7 @@ const Settings = () => {
             } else {
                 setBackupMsg(`Error: ${data.error}`);
             }
-        } catch (err) { setBackupMsg('Failed to create backup'); }
+        } catch { setBackupMsg('Failed to create backup'); }
     };
 
     const handleImportBackup = async (e) => {
@@ -138,7 +138,7 @@ const Settings = () => {
                     alert(`Restore failed: ${data.error}`);
                     setBackupMsg('');
                 }
-            } catch (err) {
+            } catch {
                 alert('Invalid backup file format');
                 setBackupMsg('');
             }
@@ -236,7 +236,7 @@ const Settings = () => {
             } else {
                 showNotification(data.error || 'System wipe failed.', 'error');
             }
-        } catch (err) {
+        } catch {
             showNotification('Communication failure during wipe operation.', 'error');
         }
     };

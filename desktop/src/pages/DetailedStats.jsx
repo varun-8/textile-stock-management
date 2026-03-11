@@ -234,7 +234,7 @@ const DetailedStats = () => {
                     <div style={{ width: '1px', height: '24px', background: 'var(--border-color)' }}></div>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                        <label style={{ fontSize: '0.8rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-secondary)', letterSpacing: '0.05em' }}>Size Filter:</label>
+                        <label style={{ fontSize: '0.8rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-secondary)', letterSpacing: '0.05em' }}>Pick Density (PPI):</label>
                         <div style={{ position: 'relative' }}>
                             <select
                                 value={filters.picSize}
@@ -244,7 +244,7 @@ const DetailedStats = () => {
                                     background: 'var(--bg-primary)', color: 'var(--text-primary)', minWidth: '120px', fontSize: '0.9rem', fontWeight: '600'
                                 }}
                             >
-                                <option value="">All Sizes</option>
+                                <option value="">All PPI Values</option>
                                 {sizes.map(s => <option key={s._id} value={s.code}>{s.code}</option>)}
                             </select>
                         </div>

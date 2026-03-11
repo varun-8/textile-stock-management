@@ -1,12 +1,13 @@
 const express = require('express');
 const router = express.Router();
+const crypto = require('crypto');
 const Barcode = require('../models/Barcode');
 
 // Get next sequence for UI
 router.get('/sequence', async (req, res) => {
     try {
         const { year, size } = req.query;
-        if (!year || !size) return res.status(400).json({ error: 'Year and Size required' });
+        if (!year || !size) return res.status(400).json({ error: 'Year and Pick Density (PPI) are required' });
 
         const lastBarcode = await Barcode.findOne({ year, size }).sort({ sequence: -1 });
         const lastSequence = lastBarcode ? lastBarcode.sequence : 0;
@@ -27,11 +28,12 @@ router.post('/generate', async (req, res) => {
 
         // Basic validation
         if (!year || !size || !quantity) {
-            return res.status(400).json({ error: 'Missing required fields' });
+            return res.status(400).json({ error: 'Year, Pick Density (PPI), and quantity are required' });
         }
 
         const qty = parseInt(quantity);
         if (qty <= 0) return res.status(400).json({ error: 'Quantity must be positive' });
+        const batchId = crypto.randomUUID();
 
         // Find last sequence
         // We do this inside the request. Note: Race condition possible here but caught by Unique Index.
@@ -52,7 +54,8 @@ router.post('/generate', async (req, res) => {
                 sequence: seq,
                 full_barcode,
                 status: 'Unused',
-                paperSize: req.body.paperSize || 'a4'
+                paperSize: req.body.paperSize || 'a4',
+                batchId
             });
         }
 
@@ -110,7 +113,7 @@ router.post('/generate', async (req, res) => {
 router.get('/missing', async (req, res) => {
     try {
         const { year, size } = req.query;
-        if (!year || !size) return res.status(400).json({ error: 'Year and Size required' });
+        if (!year || !size) return res.status(400).json({ error: 'Year and Pick Density (PPI) are required' });
 
         // Get all sequences, sorted
         const barcodes = await Barcode.find({ year, size }, { sequence: 1 }).sort({ sequence: 1 });
@@ -145,23 +148,42 @@ router.get('/history', async (req, res) => {
     try {
         const history = await Barcode.aggregate([
             {
+                $addFields: {
+                    historyBatchId: {
+                        $ifNull: [
+                            '$batchId',
+                            {
+                                $concat: [
+                                    { $toString: '$year' },
+                                    '-',
+                                    '$size',
+                                    '-',
+                                    { $dateToString: { format: '%Y-%m-%dT%H:%M:%S', date: '$createdAt' } }
+                                ]
+                            }
+                        ]
+                    }
+                }
+            },
+            {
                 $group: {
                     _id: {
+                        batchId: "$historyBatchId",
                         year: "$year",
-                        size: "$size",
-                        createdAt: "$createdAt"
+                        size: "$size"
                     },
                     count: { $sum: 1 },
                     minSeq: { $min: "$sequence" },
                     maxSeq: { $max: "$sequence" },
                     paperSize: { $first: "$paperSize" },
+                    createdAt: { $min: "$createdAt" },
                     barcodes: {
                         $push: { full_barcode: "$full_barcode" }
                     }
                 }
             },
             {
-                $sort: { "_id.createdAt": -1 }
+                $sort: { createdAt: -1 }
             },
             {
                 $limit: 25
@@ -171,7 +193,7 @@ router.get('/history', async (req, res) => {
         const formatted = history.map(h => ({
             year: h._id.year,
             size: h._id.size,
-            date: new Date(h._id.createdAt).toLocaleString('en-IN', {
+            date: new Date(h.createdAt).toLocaleString('en-IN', {
                 year: 'numeric',
                 month: '2-digit',
                 day: '2-digit',

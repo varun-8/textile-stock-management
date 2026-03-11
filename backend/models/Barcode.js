@@ -28,6 +28,11 @@ const barcodeSchema = new mongoose.Schema({
         enum: ['a4', 'a3'],
         default: 'a4'
     },
+    batchId: {
+        type: String,
+        default: null,
+        index: true
+    },
     createdAt: {
         type: Date,
         default: Date.now

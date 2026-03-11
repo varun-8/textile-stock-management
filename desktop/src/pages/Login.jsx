@@ -148,12 +148,6 @@ const loginPanelStyle = {
     width: '420px', padding: '3rem', textAlign: 'center', position: 'relative', zIndex: 1
 };
 
-const logoCircleStyle = {
-    width: '48px', height: '48px', background: 'var(--accent-color)', color: 'white',
-    borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-    margin: '0 auto 1.5rem', fontSize: '1.5rem', fontWeight: '800'
-};
-
 const inputGroupStyle = { textAlign: 'left', display: 'flex', flexDirection: 'column', gap: '0.5rem' };
 const labelStyle = { fontSize: '0.7rem', fontWeight: '700', textTransform: 'uppercase', opacity: 0.5, letterSpacing: '0.05em' };
 const errorStyle = { background: 'var(--error-bg)', color: 'var(--error-color)', padding: '0.75rem', borderRadius: '8px', fontSize: '0.8rem', marginBottom: '1.5rem', fontWeight: '600' };

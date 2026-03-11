@@ -44,7 +44,7 @@ router.get('/scan/:barcode', async (req, res) => {
                     if (scannedSize !== session.targetSize) {
                         return res.json({
                             status: 'WRONG_SIZE',
-                            message: `Wrong Size! Expected ${session.targetSize}, Scanned ${scannedSize}`,
+                            message: `Wrong Pick Density (PPI)! Expected ${session.targetSize}, Scanned ${scannedSize}`,
                             expected: session.targetSize,
                             actual: scannedSize
                         });

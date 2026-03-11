@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import jsPDF from 'jspdf';
 import JsBarcode from 'jsbarcode';
-import { useNavigate } from 'react-router-dom';
 import { io } from "socket.io-client";
 import { useConfig } from '../context/ConfigContext';
 import { useNotification } from '../context/NotificationContext';
@@ -9,10 +8,9 @@ import { IconBox } from '../components/Icons';
 
 const BarcodeGenerator = () => {
     const { apiUrl } = useConfig();
-    const navigate = useNavigate();
     const { showNotification } = useNotification();
     const token = localStorage.getItem('ADMIN_TOKEN');
-    const [year, setYear] = useState(new Date().getFullYear());
+    const year = new Date().getFullYear();
     // Auto-format year to 2-digits if needed, but usually full year is stored, displayed as 2-digit
     const displayYear = String(year).slice(-2);
 
@@ -22,8 +20,6 @@ const BarcodeGenerator = () => {
     const [missingBarcodes, setMissingBarcodes] = useState([]);
     const [loading, setLoading] = useState(false);
     const [seqLoading, setSeqLoading] = useState(false);
-    const [error, setError] = useState('');
-    const [successMsg, setSuccessMsg] = useState('');
     const [history, setHistory] = useState([]);
     const [historyLoading, setHistoryLoading] = useState(false);
 
@@ -244,7 +240,7 @@ const BarcodeGenerator = () => {
                                 </div>
 
                                 <div>
-                                    <label style={labelStyle}>Pic Size Code</label>
+                                    <label style={labelStyle}>Pick Density (PPI)</label>
                                     <div style={{ position: 'relative' }}>
                                         <select
                                             value={size}
@@ -365,7 +361,7 @@ const BarcodeGenerator = () => {
                                 <thead style={{ background: 'var(--bg-tertiary)', borderBottom: '1px solid var(--border-color)' }}>
                                     <tr>
                                         <th style={{ padding: '1rem 1.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Date & Time</th>
-                                        <th style={{ padding: '1rem 1.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Pic Size</th>
+                                        <th style={{ padding: '1rem 1.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Pick Density (PPI)</th>
                                         <th style={{ padding: '1rem 1.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Sheet</th>
                                         <th style={{ padding: '1rem 1.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Sequence Range</th>
                                         <th style={{ padding: '1rem 1.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Qty</th>

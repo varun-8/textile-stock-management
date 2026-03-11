@@ -88,7 +88,7 @@ router.post('/create', async (req, res) => {
         const { type, targetSize, createdBy } = req.body;
 
         if (!type || !targetSize) {
-            return res.status(400).json({ error: 'Type and Target Size are required' });
+            return res.status(400).json({ error: 'Type and Pick Density (PPI) are required' });
         }
 
         if (!['IN', 'OUT'].includes(type)) {
@@ -395,7 +395,7 @@ router.get('/:id/export/summary', async (req, res) => {
         // Session Info Header
         worksheet.addRow(['Session ID', session._id.toString()]);
         worksheet.addRow(['Type', session.type]);
-        worksheet.addRow(['Target Size', session.targetSize]);
+        worksheet.addRow(['Pick Density (PPI)', session.targetSize]);
         worksheet.addRow(['Start Time', session.createdAt.toLocaleString()]);
         worksheet.addRow(['End Time', session.endedAt ? session.endedAt.toLocaleString() : 'Active']);
         worksheet.addRow([]); // Spacer

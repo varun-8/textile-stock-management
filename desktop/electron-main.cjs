@@ -1,6 +1,7 @@
 const { app, BrowserWindow, screen, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const net = require('net');
 const { spawn } = require('child_process');
 
 let mongoProcess = null;
@@ -14,12 +15,78 @@ app.on('certificate-error', (event, webContents, url, error, certificate, callba
     callback(true);
 });
 
-function startServices() {
-    const isPackaged = app.isPackaged;
+function collectMongoCandidates(isPackaged) {
+    const candidates = [];
+    const addCandidate = (candidatePath) => {
+        if (!candidatePath || candidates.includes(candidatePath)) return;
+        candidates.push(candidatePath);
+    };
 
-    const mongoPath = isPackaged
-        ? path.join(process.resourcesPath, 'resources', 'mongo', 'mongod.exe')
-        : path.join(__dirname, 'resources', 'mongo', 'mongod.exe');
+    addCandidate(process.env.MONGOD_PATH);
+
+    if (isPackaged) {
+        addCandidate(path.join(process.resourcesPath, 'resources', 'mongo', 'mongod.exe'));
+        addCandidate(path.join(process.resourcesPath, 'mongo', 'mongod.exe'));
+    } else {
+        addCandidate(path.join(__dirname, 'resources', 'mongo', 'mongod.exe'));
+        addCandidate(path.join(__dirname, '..', 'resources', 'mongo', 'mongod.exe'));
+    }
+
+    const programFilesRoots = [
+        process.env['ProgramFiles'],
+        process.env['ProgramFiles(x86)']
+    ].filter(Boolean);
+
+    for (const root of programFilesRoots) {
+        const serverRoot = path.join(root, 'MongoDB', 'Server');
+        if (!fs.existsSync(serverRoot)) continue;
+
+        try {
+            const versions = fs.readdirSync(serverRoot, { withFileTypes: true })
+                .filter((entry) => entry.isDirectory())
+                .map((entry) => entry.name)
+                .sort((a, b) => b.localeCompare(a, undefined, { numeric: true, sensitivity: 'base' }));
+
+            for (const version of versions) {
+                addCandidate(path.join(serverRoot, version, 'bin', 'mongod.exe'));
+            }
+        } catch (err) {
+            console.error('Failed to inspect MongoDB installation directory:', err);
+        }
+    }
+
+    return candidates;
+}
+
+function resolveMongoBinary(isPackaged) {
+    const candidates = collectMongoCandidates(isPackaged);
+    const binaryPath = candidates.find((candidate) => fs.existsSync(candidate));
+    return { binaryPath, candidates };
+}
+
+function isPortInUse(port, host = '127.0.0.1') {
+    return new Promise((resolve, reject) => {
+        const server = net.createServer();
+
+        server.once('error', (err) => {
+            if (err.code === 'EADDRINUSE') {
+                resolve(true);
+                return;
+            }
+            reject(err);
+        });
+
+        server.once('listening', () => {
+            server.close(() => resolve(false));
+        });
+
+        server.listen(port, host);
+    });
+}
+
+async function startServices() {
+    const isPackaged = app.isPackaged;
+    const { binaryPath: mongoPath, candidates: mongoCandidates } = resolveMongoBinary(isPackaged);
 
     const backendDir = isPackaged
         ? path.join(process.resourcesPath, 'backend')
@@ -27,44 +94,60 @@ function startServices() {
 
     const backendScript = path.join(backendDir, 'server.js');
     const dbPath = path.join(app.getPath('userData'), 'database');
+    const tlsKeyPath = path.join(backendDir, 'stock-system.local-key.pem');
+    const tlsCertPath = path.join(backendDir, 'stock-system.local.pem');
 
     if (!fs.existsSync(dbPath)) fs.mkdirSync(dbPath, { recursive: true });
 
     // 1. Start MongoDB
-    if (fs.existsSync(mongoPath)) {
+    if (mongoPath) {
         try {
-            console.log('Starting MongoDB embedded logic...');
-            mongoProcess = spawn(mongoPath, ['--dbpath', dbPath, '--port', '27017'], {
-                stdio: 'ignore'
-            });
-            mongoProcess.on('error', (err) => console.error('Mongo Error:', err));
+            if (await isPortInUse(27017)) {
+                console.log('MongoDB port 27017 already in use. Reusing existing MongoDB instance.');
+            } else {
+                console.log('Starting MongoDB embedded logic...');
+                mongoProcess = spawn(mongoPath, ['--dbpath', dbPath, '--port', '27017'], {
+                    stdio: 'ignore'
+                });
+                mongoProcess.on('error', (err) => console.error('Mongo Error:', err));
+            }
         } catch (e) {
             console.error('Failed to start MongoDB:', e);
         }
     } else {
-        console.error('MongoDB executable not found at:', mongoPath);
-        dialog.showErrorBox('Initialization Error', `MongoDB binary not found at:\n${mongoPath}`);
+        const searchedPaths = mongoCandidates.length > 0 ? mongoCandidates.join('\n') : '(no candidates)';
+        console.error('MongoDB executable not found. Searched paths:\n', searchedPaths);
+        dialog.showErrorBox(
+            'Initialization Error',
+            `MongoDB binary not found.\n\nSearched:\n${searchedPaths}\n\nSet MONGOD_PATH or install MongoDB Server.`
+        );
     }
 
     // 2. Start Backend using Electron's built-in node
     if (fs.existsSync(backendScript)) {
         try {
-            console.log('Starting Backend Node Server...');
-            // In packaged app, process.env gets stripped of many things. We must pass required items carefully.
-            backendProcess = spawn(process.execPath, [backendScript], {
-                cwd: backendDir,
-                env: {
-                    ...process.env,
-                    ELECTRON_RUN_AS_NODE: '1',
-                    MONGODB_URI: 'mongodb://127.0.0.1:27017/prodexa',
-                    PORT: '5000'
-                }
-            });
+            if (await isPortInUse(5000)) {
+                console.log('Backend port 5000 already in use. Reusing existing backend instance.');
+            } else {
+                console.log('Starting Backend Node Server...');
+                // In packaged app, process.env gets stripped of many things. We must pass required items carefully.
+                backendProcess = spawn(process.execPath, [backendScript], {
+                    cwd: backendDir,
+                    env: {
+                        ...process.env,
+                        ELECTRON_RUN_AS_NODE: '1',
+                        MONGODB_URI: process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/textile-stock-management',
+                        TLS_KEY_PATH: process.env.TLS_KEY_PATH || tlsKeyPath,
+                        TLS_CERT_PATH: process.env.TLS_CERT_PATH || tlsCertPath,
+                        PORT: '5000'
+                    }
+                });
 
-            // Helpful debugging if server crashes
-            backendProcess.stdout.on('data', data => console.log(`Backend: ${data}`));
-            backendProcess.stderr.on('data', data => console.error(`Backend Error: ${data}`));
-            backendProcess.on('error', (err) => console.error('Backend spawn error:', err));
+                // Helpful debugging if server crashes
+                backendProcess.stdout.on('data', data => console.log(`Backend: ${data}`));
+                backendProcess.stderr.on('data', data => console.error(`Backend Error: ${data}`));
+                backendProcess.on('error', (err) => console.error('Backend spawn error:', err));
+            }
         } catch (e) {
             console.error('Failed to start Backend:', e);
             dialog.showErrorBox('Initialization Error', `Backend startup failed:\n${e.message}`);
@@ -111,7 +194,7 @@ function createWindow() {
     }, 1500);
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
     ipcMain.handle('dialog:selectDirectory', async () => {
         const { canceled, filePaths } = await dialog.showOpenDialog({
             properties: ['openDirectory', 'createDirectory']
@@ -130,7 +213,7 @@ app.whenReady().then(() => {
         return true;
     });
 
-    startServices();
+    await startServices();
     createWindow();
 
     app.on('activate', () => {

@@ -3,6 +3,8 @@ import { IconBroadcast, IconPlus, IconTrash } from '../components/Icons';
 import { io } from "socket.io-client";
 import { useConfig } from '../context/ConfigContext';
 
+/* eslint-disable react-hooks/immutability */
+
 const Sessions = () => {
     const { apiUrl } = useConfig();
     const token = localStorage.getItem('ADMIN_TOKEN');
@@ -133,7 +135,7 @@ const Sessions = () => {
         }
     };
 
-    const fetchSessions = async () => {
+    async function fetchSessions() {
         try {
             const res = await fetch(`${apiUrl}/api/sessions/active`, {
                 headers: { 'Authorization': `Bearer ${token}` }
@@ -145,9 +147,9 @@ const Sessions = () => {
             console.error('Failed to fetch sessions', err);
             setIsLoading(false);
         }
-    };
+    }
 
-    const fetchSizes = async () => {
+    async function fetchSizes() {
         try {
 
             const resSizes = await fetch(`${apiUrl}/api/sizes`, {
@@ -161,7 +163,7 @@ const Sessions = () => {
         }
     }
 
-    const fetchHistory = async () => {
+    async function fetchHistory() {
         try {
             let url = `${apiUrl}/api/sessions/history`;
             const params = new URLSearchParams();
@@ -179,7 +181,7 @@ const Sessions = () => {
         } catch (err) {
             console.error('Failed to fetch history', err);
         }
-    };
+    }
 
     useEffect(() => {
         fetchHistory();
@@ -388,7 +390,7 @@ const Sessions = () => {
 
                                     {/* Main Content */}
                                     <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-                                        <div style={{ fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>TARGET SIZE</div>
+                                        <div style={{ fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>TARGET PICK DENSITY (PPI)</div>
                                         <div style={{ fontSize: '3.5rem', fontWeight: '800', lineHeight: 1, color: 'var(--text-primary)' }}>
                                             {session.targetSize}
                                         </div>
@@ -498,7 +500,7 @@ const Sessions = () => {
                                 <tr>
                                     <th style={{ padding: '1rem 1.5rem', textAlign: 'left', fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', width: '25%' }}>Date & Time</th>
                                     <th style={{ padding: '1rem 1.5rem', textAlign: 'left', fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', width: '15%' }}>Type</th>
-                                    <th style={{ padding: '1rem 1.5rem', textAlign: 'center', fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', width: '15%' }}>Target Size</th>
+                                    <th style={{ padding: '1rem 1.5rem', textAlign: 'center', fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', width: '15%' }}>Pick Density (PPI)</th>
                                     <th style={{ padding: '1rem 1.5rem', textAlign: 'right', fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', width: '15%' }}>Items Scanned</th>
                                     <th style={{ padding: '1rem 1.5rem', textAlign: 'right', fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', width: '30%' }}>Actions</th>
                                 </tr>
@@ -583,7 +585,7 @@ const Sessions = () => {
                                 <div style={{ height: '20px', width: '1px', background: 'var(--border-color)' }}></div>
                                 <div>
                                     <h2 style={{ fontSize: '1.2rem', margin: 0 }}>Session Monitor</h2>
-                                    <div style={{ fontSize: '0.8rem', opacity: 0.6 }}>target size {liveSession.targetSize} • {liveSession.type} Flow</div>
+                                    <div style={{ fontSize: '0.8rem', opacity: 0.6 }}>Pick Density (PPI) {liveSession.targetSize} • {liveSession.type} Flow</div>
                                 </div>
                             </div>
                             <button onClick={() => setShowLiveView(false)} className="btn" style={{ padding: '8px 16px', border: '1px solid var(--border-color)', background: 'transparent' }}>CLOSE MONITOR</button>
@@ -759,7 +761,7 @@ const Sessions = () => {
                                 <div>
                                     <h2 style={{ fontSize: '1.25rem', margin: 0 }}>Session Report</h2>
                                     <div style={{ fontSize: '0.8rem', opacity: 0.6, marginTop: '4px' }}>
-                                        ID: {reportData.session._id} | Size: {reportData.session.targetSize} | {new Date(reportData.session.createdAt).toLocaleDateString()}
+                                        ID: {reportData.session._id} | Pick Density (PPI): {reportData.session.targetSize} | {new Date(reportData.session.createdAt).toLocaleDateString()}
                                     </div>
                                 </div>
                                 <button onClick={() => setShowReportModal(false)} style={{ background: 'none', border: 'none', fontSize: '1.5rem', cursor: 'pointer', color: 'var(--text-secondary)' }}>×</button>
@@ -893,7 +895,7 @@ const Sessions = () => {
                                 </div>
 
                                 <div style={{ marginBottom: '2rem' }}>
-                                    <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.75rem', fontWeight: '700', opacity: 0.7 }}>TARGET SIZE</label>
+                                    <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.75rem', fontWeight: '700', opacity: 0.7 }}>TARGET PICK DENSITY (PPI)</label>
                                     <select
                                         value={targetSize}
                                         onChange={(e) => setTargetSize(e.target.value)}

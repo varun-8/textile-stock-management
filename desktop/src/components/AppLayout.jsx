@@ -11,7 +11,7 @@ import AppLogo from '../assets/logo.svg';
 const AppLayout = ({ children }) => {
     const navigate = useNavigate();
     const location = useLocation();
-    const { apiUrl, updateApiUrl, theme, toggleTheme } = useConfig();
+    const { apiUrl } = useConfig();
     const [isCollapsed, setIsCollapsed] = useState(false);
 
     const isActive = (path) => location.pathname === path;
@@ -123,7 +123,7 @@ const AppLayout = ({ children }) => {
                     </div>
                     <nav style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'center' }}>
                         <SidebarLink collapsed={isCollapsed} active={isActive('/employees')} onClick={() => handleNavigation('/employees')} icon={<IconUsers />} label="Employee Management" />
-                        <SidebarLink collapsed={isCollapsed} active={isActive('/configuration')} onClick={() => handleNavigation('/configuration')} icon={<IconSettings />} label="Pic size" />
+                        <SidebarLink collapsed={isCollapsed} active={isActive('/configuration')} onClick={() => handleNavigation('/configuration')} icon={<IconSettings />} label="Pick Density (PPI)" />
                         <SidebarLink collapsed={isCollapsed} active={isActive('/settings')} onClick={() => handleNavigation('/settings')} icon={<IconSettings />} label="System Settings" />
                     </nav>
                 </div>
@@ -218,8 +218,5 @@ const SidebarLink = ({ icon, label, active, onClick, collapsed }) => (
         {active && !collapsed && <div style={{ marginLeft: 'auto', width: '6px', height: '6px', borderRadius: '50%', background: 'var(--accent-color)' }}></div>}
     </button>
 );
-
-const modalOverlayStyle = { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'var(--modal-overlay)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 };
-const labelStyle = { display: 'block', marginBottom: '0.4rem', fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.6 };
 
 export default AppLayout;

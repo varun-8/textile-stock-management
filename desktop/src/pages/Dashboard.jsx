@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useConfig } from '../context/ConfigContext';
 import { io } from "socket.io-client";
 
+/* eslint-disable react-hooks/set-state-in-effect */
+
 
 // --- Icons ---
 const IconBox = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" /><path d="m3.3 7 8.7 5 8.7-5" /><path d="M12 22V12" /></svg>;
@@ -17,9 +19,7 @@ const IconSignal = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="n
 
 const Dashboard = () => {
     const navigate = useNavigate();
-    const { apiUrl, updateApiUrl, theme, toggleTheme } = useConfig();
-    const [showSettings, setShowSettings] = useState(false);
-    const [tempIp, setTempIp] = useState(apiUrl);
+    const { apiUrl } = useConfig();
 
     const [stats, setStats] = useState([
         { label: 'Total Inventory', value: '0', change: 'System Total', key: 'totalRolls', color: 'var(--text-secondary)', icon: '📦' },
@@ -29,7 +29,7 @@ const Dashboard = () => {
     ]);
 
     const [recentLogs, setRecentLogs] = useState([]);
-    const [activeTab, setActiveTab] = useState('LIVE');
+    const activeTab = 'LIVE';
 
     // Filters for "Recent Logs" only (Live view)
     const [searchTerm, setSearchTerm] = useState('');
@@ -137,23 +137,6 @@ const Dashboard = () => {
         navigate(`/dashboard/${key}`);
     };
 
-    const handleDelete = async (barcode) => {
-        if (!window.confirm("Move this roll back to Missing items?")) return;
-        try {
-            const res = await fetch(`${apiUrl}/api/mobile/inventory/delete/${barcode}`, { method: 'DELETE' });
-            if (res.ok) { fetchRecentLogs(); fetchStats(); }
-        } catch (err) { console.error(err); }
-    };
-
-    const handleMarkDamaged = async (barcode) => {
-        if (!window.confirm("Mark this barcode as DAMAGED? It will be removed from the missing list and ignored by the system.")) return;
-        try {
-            const res = await fetch(`${apiUrl}/api/mobile/missing/damaged/${barcode}`, { method: 'PATCH' });
-            if (res.ok) { fetchRecentLogs(); fetchStats(); }
-            else { alert("Operation failed."); }
-        } catch (err) { console.error(err); }
-    };
-
     const handleSaveEdit = async () => {
         if (!editItem) return;
         try {
@@ -206,20 +189,9 @@ const Dashboard = () => {
     })();
 
     // Totals for the *visible* list (Recent Logs)
-    const totals = React.useMemo(() => {
-        if (!displayList.length) return { metre: 0, weight: 0 };
-        return displayList.reduce((acc, item) => {
-            if (item.details) {
-                acc.metre += parseFloat(item.details.metre || 0);
-                acc.weight += parseFloat(item.details.weight || 0);
-            }
-            return acc;
-        }, { metre: 0, weight: 0 });
-    }, [displayList]);
-
     const downloadCSV = () => {
         if (!displayList.length) return showModal('warning', 'Export Empty', "There is no data to export right now.");
-        generateAndDownloadCSV(displayList, `inventory_${activeTab}_${Date.now()}.csv`);
+        generateAndDownloadCSV(displayList, `inventory_${activeTab}.csv`);
     };
 
     const generateAndDownloadCSV = (data, filename) => {
@@ -242,7 +214,7 @@ const Dashboard = () => {
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
-        } catch (e) {
+        } catch {
             showModal('error', 'Export Failed', 'An error occurred while generating the CSV file.');
         }
     };

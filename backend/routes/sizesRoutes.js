@@ -57,10 +57,10 @@ router.get('/', async (req, res) => {
 router.post('/add', requireAdminAuth, async (req, res) => {
     try {
         const { code } = req.body;
-        if (!code) return res.status(400).json({ error: 'Size Code is required' });
+        if (!code) return res.status(400).json({ error: 'Pick Density (PPI) is required' });
 
         const existing = await Size.findOne({ code });
-        if (existing) return res.status(400).json({ error: 'Size Code already exists' });
+        if (existing) return res.status(400).json({ error: 'Pick Density (PPI) already exists' });
 
         const newSize = new Size({ code });
         await newSize.save();
@@ -103,7 +103,7 @@ router.delete('/:id', requireAdminAuth, async (req, res) => {
         }
 
         await Size.findByIdAndDelete(id);
-        res.json({ message: 'Size deleted successfully' });
+        res.json({ message: 'Pick Density (PPI) deleted successfully' });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

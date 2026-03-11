@@ -1,3 +1,7 @@
+import React, { useEffect, useState } from 'react';
+import axios from 'axios';
+import QRCode from 'react-qr-code';
+import { useConfig } from '../context/ConfigContext';
 import { IconBroadcast, IconTrash, IconScan, IconX } from '../components/Icons';
 import { useNotification } from '../context/NotificationContext';
 
@@ -9,7 +13,6 @@ const Scanners = () => {
     const [serverIp, setServerIp] = useState('');
     const [loading, setLoading] = useState(false);
     const [deleteConfirm, setDeleteConfirm] = useState(null);
-    const [deleting, setDeleting] = useState(false);
     const { showNotification } = useNotification();
 
     useEffect(() => {
@@ -79,7 +82,6 @@ const Scanners = () => {
 
     const removeScannerDevice = async (scannerId) => {
         try {
-            setDeleting(true);
             const res = await axios.delete(`${apiUrl}/api/admin/scanners/${scannerId}`, { headers: authHeaders() });
             if (res.status === 200) {
                 setScanners(prev => prev.filter(s => s.scannerId !== scannerId));
@@ -87,8 +89,6 @@ const Scanners = () => {
             }
         } catch (err) {
             showNotification(`Error: ${err.response?.data?.error || 'Failed to remove scanner'}`, 'error');
-        } finally {
-            setDeleting(false);
         }
     };
 
