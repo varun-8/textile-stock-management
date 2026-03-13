@@ -1,6 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
 import { useConfig } from '../context/ConfigContext';
 import AppLogo from '../assets/logo.svg';
 
@@ -13,30 +12,37 @@ const Login = () => {
     const navigate = useNavigate();
 
     // Sync temp API URL with Context
-    React.useEffect(() => {
+    useEffect(() => {
         setTempIp(apiUrl);
     }, [apiUrl]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+        setError('');
         try {
-            const res = await axios.post(`${apiUrl}/api/login`, credentials);
-            if (res.data.success && res.data.token) {
-                localStorage.setItem('ADMIN_TOKEN', res.data.token);
+            const res = await fetch(`${apiUrl}/api/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(credentials)
+            });
+            
+            const data = await res.json();
+            
+            if (res.ok && data.success && data.token) {
+                localStorage.setItem('ADMIN_TOKEN', data.token);
                 localStorage.setItem('isAuthenticated', 'true');
                 navigate('/dashboard');
+            } else if (res.status === 401) {
+                setError('Invalid Credentials');
+            } else {
+                setError(`Server Error: ${data.message || 'Unknown error'}`);
             }
         } catch (err) {
             console.error('Login Error:', err);
-            if (!err.response) {
-                setError('Network Error: Check Server URL or Cert');
-            } else if (err.response.status === 401) {
-                setError('Invalid Credentials');
-            } else {
-                setError(`Server Error: ${err.message}`);
-            }
+            setError('Network Error: Check Server URL or Cert');
         }
     };
+
 
     return (
         <div style={containerStyle}>
@@ -50,6 +56,8 @@ const Login = () => {
                 <h1 style={{ fontSize: '1.75rem', marginBottom: '0.25rem', fontWeight: '800', letterSpacing: '-0.03em' }}>Prodexa</h1>
                 <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0.5rem', fontWeight: '500' }}>Warehouse Operations Software</p>
                 <div style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--accent-color)', marginBottom: '2.5rem', opacity: 0.8 }}>For Sri Lakshmi Textiles</div>
+
+                {/* Removed server readiness indicator as it's handled globally */}
 
                 {error && (
                     <div style={errorStyle}>
@@ -87,7 +95,11 @@ const Login = () => {
                             style={{ width: '100%', padding: '0.8rem 1rem' }}
                         />
                     </div>
-                    <button type="submit" className="btn btn-primary" style={{ marginTop: '0.5rem', padding: '1rem' }}>
+                    <button
+                        type="submit"
+                        className="btn btn-primary"
+                        style={{ marginTop: '0.5rem', padding: '1rem', cursor: 'pointer' }}
+                    >
                         AUTHENTICATE & ENTER
                     </button>
                 </form>

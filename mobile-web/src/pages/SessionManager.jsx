@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMobile } from '../context/MobileContext';
 import { useNotification } from '../context/NotificationContext';
+import { DENSITY_NAME } from '../constants';
 
 const SessionManager = () => {
     const navigate = useNavigate();
@@ -166,7 +167,7 @@ const SessionManager = () => {
         e.preventDefault();
 
         if (!newSize) {
-            showNotification('Please select a Pick Density (PPI) first.', 'warning');
+            showNotification(`Please select a ${DENSITY_NAME} first.`, 'warning');
             return;
         }
 
@@ -191,7 +192,7 @@ const SessionManager = () => {
         try {
             const res = await api.get(`/api/sessions/${session._id}/preview`);
             if (!res.data?.success) {
-                alert(res.data?.error || 'Failed to load session summary');
+                showNotification(res.data?.error || 'Failed to load session summary', 'error');
                 return;
             }
 
@@ -219,7 +220,7 @@ const SessionManager = () => {
                 source: 'mobile'
             });
             if (!res.data?.success) {
-                alert(res.data?.error || 'Failed to end session');
+                showNotification(res.data?.error || 'Failed to end session', 'error');
                 return;
             }
             setShowEndSummary(false);
@@ -467,7 +468,7 @@ const SessionManager = () => {
                                                 </span>
                                             </div>
                                             <h2 style={{ fontSize: '32px', fontWeight: '900', color: 'white', margin: 0, letterSpacing: '-0.03em' }}>
-                                                Pick Density (PPI) <span style={{ color: THEME.accent }}>{session.targetSize}</span>
+                                                {DENSITY_NAME} <span style={{ color: THEME.accent }}>{session.targetSize}</span>
                                             </h2>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px' }}>
                                                 <div style={{ width: '16px', height: '16px', borderRadius: '4px', background: 'rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px' }}>👤</div>
@@ -770,7 +771,7 @@ const SessionManager = () => {
                             <div>
                                 <div style={{ fontSize: '18px', fontWeight: '900', color: 'white' }}>Session Summary</div>
                                 <div style={{ fontSize: '12px', color: THEME.textMuted, marginTop: '2px' }}>
-                                    {endSummarySession.type} | Pick Density (PPI) {endSummarySession.targetSize}
+                                    {endSummarySession.type} | {DENSITY_NAME} {endSummarySession.targetSize}
                                 </div>
                             </div>
                             <button

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useMobile } from '../context/MobileContext';
+import { useNotification } from '../context/NotificationContext';
 
 const THEME = {
     dark: {
@@ -30,6 +31,7 @@ const THEME = {
 
 const MissingScans = () => {
     const { api } = useMobile();
+    const { showNotification } = useNotification();
     const theme = THEME.dark;
     const [missing, setMissing] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -70,14 +72,14 @@ const MissingScans = () => {
             await api.patch(`/api/mobile/missing/damaged/${barcode}`);
             await fetchMissing(); // Immediate refresh
         } catch (err) {
-            alert(`Operation Failed: ${err.response?.data?.error || err.message}`);
+            showNotification(`Operation Failed: ${err.response?.data?.error || err.message}`, 'error');
         } finally {
             setProcessingId(null);
         }
     };
 
     const handleEdit = (barcode) => {
-        alert(`To register Roll #${barcode}, please close this menu and use the "Manual Input" feature on the main screen.`);
+        showNotification(`To register Roll #${barcode}, please close this menu and use the "Manual Input" feature on the main screen.`, 'info');
     };
 
     if (loading && missing.length === 0 && !error) {

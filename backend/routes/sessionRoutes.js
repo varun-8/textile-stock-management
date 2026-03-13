@@ -479,4 +479,76 @@ router.get('/:id/summary', async (req, res) => {
     }
 });
 
+// Export Download DC Report
+router.get('/:id/export/dc', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const percentageStr = req.query.percentage;
+        const dcNumber = req.query.dcNumber || `dc_report_${id}`;
+        
+        const parsedPercentage = parseFloat(percentageStr);
+        const percentage = isNaN(parsedPercentage) ? 0 : parsedPercentage;
+
+        const session = await Session.findById(id);
+        if (!session) return res.status(404).send('Session not found');
+
+        const items = await ClothRoll.find({
+            "transactionHistory.sessionId": session._id
+        });
+
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet('Download DC');
+
+        worksheet.columns = [
+            { header: 'Barcode', key: 'barcode', width: 20 },
+            { header: 'Original Metre', key: 'original_metre', width: 15 },
+            { header: 'Percentage Applied', key: 'percentage_applied', width: 20 },
+            { header: 'Additional Metre', key: 'additional_metre', width: 20 },
+            { header: 'Final Metre', key: 'final_metre', width: 15 },
+        ];
+
+        let totalFinalMetre = 0;
+
+        items.forEach(item => {
+            const txs = item.transactionHistory.filter(t => String(t.sessionId) === String(session._id));
+            if (txs.length > 0) {
+                const originalMetre = parseFloat(item.metre) || 0;
+                const additionalMetre = originalMetre * (percentage / 100);
+                const finalMetre = originalMetre + additionalMetre;
+
+                totalFinalMetre += finalMetre;
+
+                worksheet.addRow({
+                    barcode: item.barcode,
+                    original_metre: originalMetre.toFixed(2),
+                    percentage_applied: percentage + '%',
+                    additional_metre: additionalMetre.toFixed(2),
+                    final_metre: finalMetre.toFixed(2)
+                });
+            }
+        });
+
+        // Add blank row
+        worksheet.addRow([]);
+        // Add total row
+        worksheet.addRow({
+            barcode: 'Total Metre',
+            original_metre: '',
+            percentage_applied: '',
+            additional_metre: '',
+            final_metre: totalFinalMetre.toFixed(2)
+        }).font = { bold: true };
+
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename=${dcNumber}.xlsx`);
+
+        await workbook.xlsx.write(res);
+        res.end();
+
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Error generating DC report');
+    }
+});
+
 module.exports = router;

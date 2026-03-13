@@ -9,12 +9,11 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "electron:dev": "concurrently \"vite\" \"wait-on tcp:5173 && cross-env ELECTRON_START_URL=http://localhost:5173 electron .\"",
-    "dist": "vite build && electron-builder"
+    "electron:build": "vite build && electron-builder --win --x64"
   },
   "dependencies": {
     "axios": "^1.13.2",
     "html5-qrcode": "^2.3.8",
-    "install": "^0.13.0",
     "jsbarcode": "^3.12.3",
     "jspdf": "^4.0.0",
     "jspdf-autotable": "^5.0.7",
@@ -36,6 +35,7 @@
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
+    "fs-extra": "^11.3.4",
     "globals": "^16.5.0",
     "vite": "^5.0.0",
     "wait-on": "^9.0.3"
@@ -44,11 +44,18 @@
   "build": {
     "appId": "com.srilakshmitextiles.inventory",
     "productName": "Prodexa",
+    "afterPack": "scripts/afterPack.cjs",
+    "asar": true,
+    "asarUnpack": [
+      "icon.png",
+      "icon.ico"
+    ],
     "files": [
       "dist/**/*",
       "electron-main.cjs",
       "preload.cjs",
       "icon.png",
+      "icon.ico",
       "package.json"
     ],
     "extraResources": [
@@ -63,31 +70,40 @@
         "from": "../backend",
         "to": "backend",
         "filter": [
-          "**/*"
-        ]
-      },
-      {
-        "from": "../backend/node_modules",
-        "to": "backend/node_modules",
-        "filter": [
-          "**/*"
+          "**/*",
+          "node_modules/**/*",
+          "!node_modules/.cache/**",
+          "!**/*.test.js",
+          "!backups/**"
         ]
       }
     ],
     "directories": {
       "output": "setup_release"
     },
+    "compression": "maximum",
     "win": {
       "target": [
-        "nsis"
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
-      "icon": "icon.png",
-      "forceCodeSigning": false
+      "icon": "icon.ico",
+      "forceCodeSigning": false,
+      "requestedExecutionLevel": "requireAdministrator"
     },
     "nsis": {
       "oneClick": false,
       "perMachine": true,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Prodexa",
+      "installerIcon": "icon.ico",
+      "uninstallerIcon": "icon.ico"
     }
   }
 }

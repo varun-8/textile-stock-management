@@ -5,6 +5,7 @@ import { io } from "socket.io-client";
 import { useConfig } from '../context/ConfigContext';
 import { useNotification } from '../context/NotificationContext';
 import { IconBox } from '../components/Icons';
+import { DENSITY_NAME } from '../constants';
 
 const BarcodeGenerator = () => {
     const { apiUrl } = useConfig();
@@ -240,7 +241,7 @@ const BarcodeGenerator = () => {
                                 </div>
 
                                 <div>
-                                    <label style={labelStyle}>Pick Density (PPI)</label>
+                                    <label style={labelStyle}>{DENSITY_NAME}</label>
                                     <div style={{ position: 'relative' }}>
                                         <select
                                             value={size}
@@ -361,7 +362,7 @@ const BarcodeGenerator = () => {
                                 <thead style={{ background: 'var(--bg-tertiary)', borderBottom: '1px solid var(--border-color)' }}>
                                     <tr>
                                         <th style={{ padding: '1rem 1.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Date & Time</th>
-                                        <th style={{ padding: '1rem 1.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Pick Density (PPI)</th>
+                                        <th style={{ padding: '1rem 1.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{DENSITY_NAME}</th>
                                         <th style={{ padding: '1rem 1.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Sheet</th>
                                         <th style={{ padding: '1rem 1.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Sequence Range</th>
                                         <th style={{ padding: '1rem 1.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Qty</th>

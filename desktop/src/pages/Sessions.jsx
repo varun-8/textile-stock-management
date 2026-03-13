@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { IconBroadcast, IconPlus, IconTrash } from '../components/Icons';
 import { io } from "socket.io-client";
 import { useConfig } from '../context/ConfigContext';
+import { DENSITY_NAME } from '../constants';
 
 /* eslint-disable react-hooks/immutability */
 
@@ -27,6 +28,12 @@ const Sessions = () => {
     // Report Preview State
     const [showReportModal, setShowReportModal] = useState(false);
     const [reportData, setReportData] = useState(null);
+
+    // DC Export State
+    const [showDcModal, setShowDcModal] = useState(false);
+    const [dcPercentage, setDcPercentage] = useState('');
+    const [dcNumber, setDcNumber] = useState('');
+    const [dcSessionId, setDcSessionId] = useState(null);
 
     // Filters
     const [filterDate, setFilterDate] = useState('');
@@ -277,7 +284,40 @@ const Sessions = () => {
     }
 
     const handleExport = (sessionId, type, size, reportType) => {
+        if (reportType === 'dc') {
+            setDcSessionId(sessionId);
+            setDcPercentage('');
+            setShowDcModal(true);
+            return;
+        }
+
         const url = `${apiUrl}/api/sessions/${sessionId}/export/${reportType}?token=${token}`;
+        const a = document.createElement('a');
+        a.href = url;
+        a.style.display = 'none';
+        a.setAttribute('download', '');
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    };
+
+    const confirmDcExport = (e) => {
+        e.preventDefault();
+        const pct = parseFloat(dcPercentage);
+        if (isNaN(pct) || pct < 0) {
+            alert("Please enter a valid positive number for the percentage.");
+            return;
+        }
+
+        if (!dcNumber.trim()) {
+            alert("Please enter a valid DC Number.");
+            return;
+        }
+        
+        setShowDcModal(false);
+        const encodedDcNumber = encodeURIComponent(dcNumber.trim());
+        const url = `${apiUrl}/api/sessions/${dcSessionId}/export/dc?token=${token}&percentage=${pct}&dcNumber=${encodedDcNumber}`;
+        
         const a = document.createElement('a');
         a.href = url;
         a.style.display = 'none';
@@ -390,7 +430,7 @@ const Sessions = () => {
 
                                     {/* Main Content */}
                                     <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-                                        <div style={{ fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>TARGET PICK DENSITY (PPI)</div>
+                                        <div style={{ fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>TARGET {DENSITY_NAME}</div>
                                         <div style={{ fontSize: '3.5rem', fontWeight: '800', lineHeight: 1, color: 'var(--text-primary)' }}>
                                             {session.targetSize}
                                         </div>
@@ -500,7 +540,7 @@ const Sessions = () => {
                                 <tr>
                                     <th style={{ padding: '1rem 1.5rem', textAlign: 'left', fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', width: '25%' }}>Date & Time</th>
                                     <th style={{ padding: '1rem 1.5rem', textAlign: 'left', fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', width: '15%' }}>Type</th>
-                                    <th style={{ padding: '1rem 1.5rem', textAlign: 'center', fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', width: '15%' }}>Pick Density (PPI)</th>
+                                    <th style={{ padding: '1rem 1.5rem', textAlign: 'center', fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', width: '15%' }}>{DENSITY_NAME}</th>
                                     <th style={{ padding: '1rem 1.5rem', textAlign: 'right', fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', width: '15%' }}>Items Scanned</th>
                                     <th style={{ padding: '1rem 1.5rem', textAlign: 'right', fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', width: '30%' }}>Actions</th>
                                 </tr>
@@ -542,6 +582,14 @@ const Sessions = () => {
 
                                             <td style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>
                                                 <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                                                    <button
+                                                        onClick={() => handleExport(s._id, s.type, s.targetSize, 'dc')}
+                                                        className="btn"
+                                                        style={{ padding: '6px 12px', fontSize: '0.8rem', background: 'var(--bg-primary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                                                        title="Download DC Excel with Percentage"
+                                                    >
+                                                        📄 Download DC
+                                                    </button>
                                                     <button
                                                         onClick={() => handleExport(s._id, s.type, s.targetSize, 'summary')}
                                                         className="btn"
@@ -585,7 +633,7 @@ const Sessions = () => {
                                 <div style={{ height: '20px', width: '1px', background: 'var(--border-color)' }}></div>
                                 <div>
                                     <h2 style={{ fontSize: '1.2rem', margin: 0 }}>Session Monitor</h2>
-                                    <div style={{ fontSize: '0.8rem', opacity: 0.6 }}>Pick Density (PPI) {liveSession.targetSize} • {liveSession.type} Flow</div>
+                                    <div style={{ fontSize: '0.8rem', opacity: 0.6 }}>{DENSITY_NAME} {liveSession.targetSize} • {liveSession.type} Flow</div>
                                 </div>
                             </div>
                             <button onClick={() => setShowLiveView(false)} className="btn" style={{ padding: '8px 16px', border: '1px solid var(--border-color)', background: 'transparent' }}>CLOSE MONITOR</button>
@@ -761,7 +809,7 @@ const Sessions = () => {
                                 <div>
                                     <h2 style={{ fontSize: '1.25rem', margin: 0 }}>Session Report</h2>
                                     <div style={{ fontSize: '0.8rem', opacity: 0.6, marginTop: '4px' }}>
-                                        ID: {reportData.session._id} | Pick Density (PPI): {reportData.session.targetSize} | {new Date(reportData.session.createdAt).toLocaleDateString()}
+                                        ID: {reportData.session._id} | {DENSITY_NAME}: {reportData.session.targetSize} | {new Date(reportData.session.createdAt).toLocaleDateString()}
                                     </div>
                                 </div>
                                 <button onClick={() => setShowReportModal(false)} style={{ background: 'none', border: 'none', fontSize: '1.5rem', cursor: 'pointer', color: 'var(--text-secondary)' }}>×</button>
@@ -895,7 +943,7 @@ const Sessions = () => {
                                 </div>
 
                                 <div style={{ marginBottom: '2rem' }}>
-                                    <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.75rem', fontWeight: '700', opacity: 0.7 }}>TARGET PICK DENSITY (PPI)</label>
+                                    <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.75rem', fontWeight: '700', opacity: 0.7 }}>TARGET {DENSITY_NAME}</label>
                                     <select
                                         value={targetSize}
                                         onChange={(e) => setTargetSize(e.target.value)}
@@ -926,6 +974,80 @@ const Sessions = () => {
                                         style={{ flex: 2 }}
                                     >
                                         Start Session
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                )
+            }
+
+            {/* DC MODAL */}
+            {
+                showDcModal && (
+                    <div style={{
+                        position: 'fixed', inset: 0, zIndex: 1050,
+                        background: 'var(--modal-overlay)', backdropFilter: 'blur(5px)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center'
+                    }}>
+                        <div className="panel animate-scale-up" style={{ width: '400px', padding: '2.5rem', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                                <h3 style={{ margin: 0, fontSize: '1.4rem' }}>Download DC</h3>
+                                <button onClick={() => setShowDcModal(false)} className="btn" style={{ padding: '8px', background: 'transparent', border: 'none' }}><IconTrash size="18" /></button>
+                            </div>
+                            
+                            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '1.5rem', lineHeight: '1.4' }}>
+                                Please enter the DC name and percentage to apply. This will calculate the equivalent additional metre for each roll directly onto the Excel sheet.
+                            </p>
+
+                            <form onSubmit={confirmDcExport}>
+                                <div style={{ marginBottom: '1.2rem' }}>
+                                    <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.75rem', fontWeight: '700', opacity: 0.7 }}>DC NAME (e.g. DC01)</label>
+                                    <input 
+                                        type="text" 
+                                        value={dcNumber} 
+                                        onChange={e => setDcNumber(e.target.value)}
+                                        placeholder="DC01"
+                                        style={{
+                                            width: '100%', padding: '1rem', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)',
+                                            borderRadius: '12px', color: 'var(--text-primary)', fontSize: '1.1rem', fontWeight: '600', outline: 'none'
+                                        }}
+                                        autoFocus
+                                        required
+                                    />
+                                </div>
+                                
+                                <div style={{ marginBottom: '2rem' }}>
+                                    <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.75rem', fontWeight: '700', opacity: 0.7 }}>APPLIED PERCENTAGE (%)</label>
+                                    <input 
+                                        type="number" 
+                                        step="0.01"
+                                        value={dcPercentage} 
+                                        onChange={e => setDcPercentage(e.target.value)}
+                                        placeholder="e.g. 5"
+                                        style={{
+                                            width: '100%', padding: '1rem', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)',
+                                            borderRadius: '12px', color: 'var(--text-primary)', fontSize: '1.1rem', fontWeight: '600', outline: 'none'
+                                        }}
+                                        autoFocus
+                                    />
+                                </div>
+
+                                <div style={{ display: 'flex', gap: '1rem' }}>
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowDcModal(false)}
+                                        className="btn"
+                                        style={{ flex: 1, background: 'transparent', border: '1px solid var(--border-color)' }}
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        className="btn btn-primary"
+                                        style={{ flex: 2, background: 'var(--accent-color)', color: 'white', border: 'none' }}
+                                    >
+                                        Export DC
                                     </button>
                                 </div>
                             </form>

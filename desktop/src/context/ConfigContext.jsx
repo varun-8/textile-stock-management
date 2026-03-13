@@ -3,9 +3,24 @@ import React, { createContext, useState, useContext, useEffect } from 'react';
 
 const ConfigContext = createContext();
 
+// Sanitize a stored URL: strip any protocol, force https://, ensure :5000 port
+const sanitizeUrl = (raw) => {
+    if (!raw) return 'https://localhost:5000';
+    let cleaned = raw.trim().replace(/^https?:\/\//, '');
+    cleaned = cleaned.replace(/\/{2,}/g, '/');
+    if (!cleaned.includes(':')) cleaned = `${cleaned}:5000`;
+    return `https://${cleaned}`;
+};
+
 export const ConfigProvider = ({ children }) => {
-    // Default to localhost for better reliability out-of-the-box
-    const [apiUrl, setApiUrl] = useState(localStorage.getItem('API_URL') || 'https://localhost:5000');
+    // Sanitize on startup so stale http:// values don't cause ERR_CONNECTION_REFUSED
+    const [apiUrl, setApiUrl] = useState(() => {
+        const stored = localStorage.getItem('API_URL');
+        const safe = sanitizeUrl(stored);
+        // Persist the sanitized value back so it's correct for future loads
+        if (stored !== safe) localStorage.setItem('API_URL', safe);
+        return safe;
+    });
 
     const updateApiUrl = (newUrl) => {
         // Strip existing protocol and whitespace

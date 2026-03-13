@@ -14,8 +14,8 @@ window.fetch = (input, init = {}) => {
     if (response.status === 401) {
       localStorage.removeItem('ADMIN_TOKEN');
       localStorage.removeItem('isAuthenticated');
-      if (window.location.hash !== '#/' && window.location.pathname !== '/') {
-        window.location.href = '/';
+      if (window.location.hash !== '#/' && window.location.hash !== '') {
+        window.location.hash = '#/';
       }
     }
     return response;

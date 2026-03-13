@@ -1,8 +1,20 @@
-const { app, BrowserWindow, screen, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, screen, ipcMain, dialog, session } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const net = require('net');
 const { spawn } = require('child_process');
+
+// Load environment variables for the backend process
+try {
+    const isPackaged = __dirname.includes('app.asar') || process.defaultApp === false;
+    const envPath = isPackaged 
+        ? path.join(process.resourcesPath, 'backend', '.env')
+        : path.join(__dirname, '..', 'backend', '.env');
+        
+    require('dotenv').config({ path: envPath });
+} catch (e) {
+    console.log('dotenv not loaded', e.message);
+}
 
 let mongoProcess = null;
 let backendProcess = null;
@@ -69,7 +81,7 @@ function isPortInUse(port, host = '127.0.0.1') {
         const server = net.createServer();
 
         server.once('error', (err) => {
-            if (err.code === 'EADDRINUSE') {
+            if (err.code === 'EADDRINUSE' || err.code === 'EACCES') {
                 resolve(true);
                 return;
             }
@@ -139,7 +151,9 @@ async function startServices() {
                         MONGODB_URI: process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/textile-stock-management',
                         TLS_KEY_PATH: process.env.TLS_KEY_PATH || tlsKeyPath,
                         TLS_CERT_PATH: process.env.TLS_CERT_PATH || tlsCertPath,
-                        PORT: '5000'
+                        PORT: '5000',
+                        APP_USERNAME: process.env.APP_USERNAME || 'admin',
+                        APP_PASSWORD: process.env.APP_PASSWORD || 'password'
                     }
                 });
 
@@ -172,16 +186,23 @@ function killServices() {
 function createWindow() {
     const { width, height } = screen.getPrimaryDisplay().workAreaSize;
 
+    // In packaged mode with asarUnpack, the icon lives in app.asar.unpacked
+    const iconPath = app.isPackaged
+        ? path.join(process.resourcesPath, 'app.asar.unpacked', 'icon.png')
+        : path.join(__dirname, 'icon.png');
+
     const mainWindow = new BrowserWindow({
         width: width,
         height: height,
-        icon: path.join(__dirname, 'icon.png'),
+        icon: iconPath,
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
             preload: path.join(__dirname, 'preload.cjs')
         }
     });
+
+    // mainWindow.webContents.openDevTools();
 
     mainWindow.setMenuBarVisibility(false);
 
@@ -195,6 +216,12 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
+    // Bypass self-signed certificate errors for ALL renderer-process requests
+    // (axios, fetch, XHR). The BrowserWindow handler above only covers page loads.
+    session.defaultSession.setCertificateVerifyProc((request, callback) => {
+        callback(0); // 0 = OK, trust all certs
+    });
+
     ipcMain.handle('dialog:selectDirectory', async () => {
         const { canceled, filePaths } = await dialog.showOpenDialog({
             properties: ['openDirectory', 'createDirectory']

@@ -11,11 +11,11 @@ try {
 }
 
 const hashPin = async (pin) => {
-    if (!bcrypt) return pin;
-    return bcrypt.hash(pin, 10);
+    return pin; // As requested, store unencrypted
 };
 const comparePin = async (plain, stored) => {
     if (!stored) return false;
+    // Keep backwards compatibility for any already hashed pins if needed
     if (stored.startsWith('$2') && bcrypt) return bcrypt.compare(plain, stored);
     return plain === stored;
 };

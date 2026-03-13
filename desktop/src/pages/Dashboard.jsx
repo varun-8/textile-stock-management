@@ -55,12 +55,13 @@ const Dashboard = () => {
 
     const fetchStats = async () => {
         try {
+            const token = localStorage.getItem('ADMIN_TOKEN');
             let url = `${apiUrl}/api/stats/dashboard`;
             if (isTodayOnly) {
                 const { startDate, endDate } = getTodayRange();
                 url += `?startDate=${startDate}&endDate=${endDate}`;
             }
-            const res = await fetch(url);
+            const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
             const data = await res.json();
             setStats([
                 { label: 'Total Inventory', value: data.totalRolls, change: isTodayOnly ? "Today's Total" : 'All-time Registered', key: 'totalRolls', color: 'var(--text-secondary)', icon: '📦' },
@@ -73,6 +74,7 @@ const Dashboard = () => {
 
     const fetchRecentLogs = async () => {
         try {
+            const token = localStorage.getItem('ADMIN_TOKEN');
             let url = `${apiUrl}/api/stats/list/recent?limit=50`;
 
             if (isTodayOnly) {
@@ -80,11 +82,18 @@ const Dashboard = () => {
                 url += `&startDate=${startDate}&endDate=${endDate}`;
             }
 
-            const res = await fetch(url);
+            const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
             const data = await res.json();
+            
+            if (!Array.isArray(data)) {
+                console.error('Expected array for recent logs, received:', data);
+                setRecentLogs([]);
+                return;
+            }
+            
             const normalized = data.map(item => ({
                 time: new Date(item.updatedAt || item.detectedAt || item.createdAt).toLocaleString(),
-                barcode: item.barcode,
+                barcode: item.barcode || 'UNKNOWN',
                 type: item.status || 'UNKNOWN',
                 details: { metre: item.metre, weight: item.weight, percentage: item.percentage },
                 employee: item.employeeName || item.userId || 'System'
@@ -95,7 +104,8 @@ const Dashboard = () => {
 
     const fetchActiveSessions = async () => {
         try {
-            const res = await fetch(`${apiUrl}/api/sessions/active`);
+            const token = localStorage.getItem('ADMIN_TOKEN');
+            const res = await fetch(`${apiUrl}/api/sessions/active`, { headers: { 'Authorization': `Bearer ${token}` } });
             const data = await res.json();
             setActiveSessionCount(Array.isArray(data) ? data.length : 0);
         } catch (err) { console.error(err); }
@@ -137,11 +147,30 @@ const Dashboard = () => {
         navigate(`/dashboard/${key}`);
     };
 
+    const handleEditChange = (field, value) => {
+        setEditItem(prev => {
+            if (!prev) return prev;
+            
+            const newDetails = { ...prev.details, [field]: value };
+            
+            // Auto-calculate percentage if metre or weight changes
+            if (field === 'metre' || field === 'weight') {
+                const m = parseFloat(newDetails.metre || 0);
+                const w = parseFloat(newDetails.weight || 0);
+                if (m > 0 && w > 0) {
+                    newDetails.percentage = ((w / m) * 1000).toFixed(2);
+                }
+            }
+            
+            return { ...prev, details: newDetails };
+        });
+    };
+
     const handleSaveEdit = async () => {
         if (!editItem) return;
         try {
             const isMissingResolve = activeTab === 'missingCount'; // Not really used in LIVE view but kept for safety if we reuse logic
-            const endpoint = isMissingResolve ? `${apiUrl}/api/mobile/transaction` : `${apiUrl}/api/mobile/inventory/update`;
+            const endpoint = isMissingResolve ? `${apiUrl}/api/mobile/transaction` : `${apiUrl}/api/admin/inventory/update`;
             const method = isMissingResolve ? 'POST' : 'PUT';
 
             // Standardize payloads
@@ -158,9 +187,13 @@ const Dashboard = () => {
                 return alert("Metric Error: Metre and Weight must be positive numbers.");
             }
 
+            const token = localStorage.getItem('ADMIN_TOKEN');
             const res = await fetch(endpoint, {
                 method: method,
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
                 body: JSON.stringify(payload)
             });
 
@@ -184,7 +217,7 @@ const Dashboard = () => {
         if (!Array.isArray(rawList)) return [];
         return rawList.filter(log => {
             const term = searchTerm.toLowerCase();
-            return log.barcode.toLowerCase().includes(term) || (log.type && log.type.toLowerCase().includes(term));
+            return (log.barcode || '').toLowerCase().includes(term) || (log.type || '').toLowerCase().includes(term);
         });
     })();
 
@@ -472,15 +505,15 @@ const Dashboard = () => {
                             <div style={{ display: 'grid', gap: '1.25rem' }}>
                                 <div>
                                     <label style={labelStyle}>Length (Metres)</label>
-                                    <input type="number" value={editItem.details.metre} onChange={e => setEditItem({ ...editItem, details: { ...editItem.details, metre: e.target.value } })} style={{ width: '100%' }} />
+                                    <input type="number" value={editItem.details.metre} onChange={e => handleEditChange('metre', e.target.value)} style={{ width: '100%' }} />
                                 </div>
                                 <div>
                                     <label style={labelStyle}>Weight (Kilograms)</label>
-                                    <input type="number" value={editItem.details.weight} onChange={e => setEditItem({ ...editItem, details: { ...editItem.details, weight: e.target.value } })} style={{ width: '100%' }} />
+                                    <input type="number" value={editItem.details.weight} onChange={e => handleEditChange('weight', e.target.value)} style={{ width: '100%' }} />
                                 </div>
                                 <div>
                                     <label style={labelStyle}>Quality Index (%)</label>
-                                    <input type="number" value={editItem.details.percentage} onChange={e => setEditItem({ ...editItem, details: { ...editItem.details, percentage: e.target.value } })} style={{ width: '100%' }} />
+                                    <input type="number" value={editItem.details.percentage} onChange={e => handleEditChange('percentage', e.target.value)} style={{ width: '100%' }} />
                                 </div>
                                 <div>
                                     <label style={labelStyle}>Flow Status</label>

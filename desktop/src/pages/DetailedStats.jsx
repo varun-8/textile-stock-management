@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useConfig } from '../context/ConfigContext';
+import { DENSITY_NAME } from '../constants';
 
 const DetailedStats = () => {
     const { type } = useParams();
@@ -234,7 +235,7 @@ const DetailedStats = () => {
                     <div style={{ width: '1px', height: '24px', background: 'var(--border-color)' }}></div>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                        <label style={{ fontSize: '0.8rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-secondary)', letterSpacing: '0.05em' }}>Pick Density (PPI):</label>
+                        <label style={{ fontSize: '0.8rem', fontWeight: '700', textTransform: 'uppercase', color: 'var(--text-secondary)', letterSpacing: '0.05em' }}>{DENSITY_NAME}:</label>
                         <div style={{ position: 'relative' }}>
                             <select
                                 value={filters.picSize}

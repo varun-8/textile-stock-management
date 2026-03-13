@@ -1,4 +1,8 @@
-require('dotenv').config();
+try {
+    require('dotenv').config();
+} catch (err) {
+    console.log('[Info] dotenv not found, assuming environment variables are provided by the host process.');
+}
 const express = require('express');
 const mongoose = require('mongoose');
 const https = require('https');
@@ -152,6 +156,10 @@ app.use('/api/employees', require('./routes/employeeRoutes'));
 // New Endpoint: Get Server IP (for Desktop to generate QR)
 // Auth Routes (Open for pairing/login)
 app.use('/api/auth', require('./routes/authRoutes'));
+
+app.get('/api/auth/ping', (req, res) => {
+    res.json({ success: true, message: 'pong' });
+});
 
 app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;

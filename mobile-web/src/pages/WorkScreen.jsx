@@ -899,20 +899,7 @@ const WorkScreen = () => {
                 )
             }
 
-            {
-                alertState.show && (
-                    <div style={modalBackdropStyle} onClick={closeAlert}>
-                        <div style={alertBoxStyle} onClick={e => e.stopPropagation()}>
-                            <div style={{ fontSize: '40px', marginBottom: '16px' }}>
-                                {alertState.type === 'error' ? '❌' : '✅'}
-                            </div>
-                            <h3 style={{ margin: '0 0 8px 0', color: 'white' }}>{alertState.title || (alertState.type === 'error' ? 'Error' : 'Success')}</h3>
-                            <p style={{ margin: '0 0 24px 0', color: THEME.textMuted, whiteSpace: 'pre-wrap' }}>{alertState.message}</p>
-                            <button onClick={closeAlert} style={btnPrimaryStyle}>OK</button>
-                        </div>
-                    </div>
-                )
-            }
+
 
             {
                 showManualInput && (

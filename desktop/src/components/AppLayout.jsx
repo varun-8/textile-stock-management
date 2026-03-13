@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useConfig } from '../context/ConfigContext';
 import { IconBox, IconScan, IconSettings, IconCloud, IconUsers, IconBroadcast } from './Icons';
 import AppLogo from '../assets/logo.svg';
+import { DENSITY_NAME } from '../constants';
 
 // Simple Chevron Icons if not imported (assuming they might not exist in Icons.js, defining inline or using simple text if needed, but trying to use standard approach. 
 // If Icons.js doesn't have them, I'll add SVGs directly).
@@ -123,7 +124,7 @@ const AppLayout = ({ children }) => {
                     </div>
                     <nav style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'center' }}>
                         <SidebarLink collapsed={isCollapsed} active={isActive('/employees')} onClick={() => handleNavigation('/employees')} icon={<IconUsers />} label="Employee Management" />
-                        <SidebarLink collapsed={isCollapsed} active={isActive('/configuration')} onClick={() => handleNavigation('/configuration')} icon={<IconSettings />} label="Pick Density (PPI)" />
+                        <SidebarLink collapsed={isCollapsed} active={isActive('/configuration')} onClick={() => handleNavigation('/configuration')} icon={<IconSettings />} label={DENSITY_NAME} />
                         <SidebarLink collapsed={isCollapsed} active={isActive('/settings')} onClick={() => handleNavigation('/settings')} icon={<IconSettings />} label="System Settings" />
                     </nav>
                 </div>

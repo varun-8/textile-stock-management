@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, memo } from 'react';
 import { useConfig } from '../context/ConfigContext';
 import { IconSettings, IconTrash, IconCloud } from '../components/Icons';
 import { useNotification } from '../context/NotificationContext';
+import { DENSITY_NAME } from '../constants';
 
 // Styled Components / Variables
 const thStyle = {
@@ -154,7 +155,7 @@ const Configuration = () => {
                 setNewSize('');
                 fetchSizes();
             } else {
-                setError(data.error || 'Failed to add Pick Density (PPI)');
+                setError(data.error || `Failed to add ${DENSITY_NAME}`);
             }
         } catch (err) {
             setError(err.message);
@@ -165,8 +166,8 @@ const Configuration = () => {
 
     const handleDelete = useCallback(async (id) => {
         const confirmed = await showConfirm(
-            'Delete Pick Density (PPI)',
-            'Are you sure you want to delete this Pick Density (PPI) configuration? This action cannot be undone if no items are using it.',
+            `Delete ${DENSITY_NAME}`,
+            `Are you sure you want to delete this ${DENSITY_NAME} configuration? This action cannot be undone if no items are using it.`,
             'danger'
         );
 
@@ -178,10 +179,10 @@ const Configuration = () => {
                 method: 'DELETE',
                 headers: { 'Authorization': `Bearer ${token}` }
             });
-            showNotification('Pick Density (PPI) deleted successfully', 'success');
+            showNotification(`${DENSITY_NAME} deleted successfully`, 'success');
             fetchSizes();
         } catch {
-            showNotification('Failed to delete Pick Density (PPI)', 'error');
+            showNotification(`Failed to delete ${DENSITY_NAME}`, 'error');
         }
     }, [apiUrl, fetchSizes, showNotification, showConfirm]);
 
@@ -207,7 +208,7 @@ const Configuration = () => {
                     <div>
                         <div style={{ color: 'var(--accent-color)', fontWeight: '700', fontSize: '0.75rem', letterSpacing: '0.1em', marginBottom: '0.2rem' }}>ADMINISTRATION</div>
                         <h1 style={{ fontSize: '1.5rem', fontWeight: '800', margin: 0, letterSpacing: '-0.02em', color: 'var(--text-primary)' }}>
-                            Pick Density (PPI) Configuration
+                            {DENSITY_NAME} Configuration
                         </h1>
                     </div>
                 </div>
@@ -223,7 +224,7 @@ const Configuration = () => {
                             display: 'flex', justifyContent: 'space-between', alignItems: 'center'
                         }}>
                             <div>
-                                <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text-primary)' }}>Defined Pick Density (PPI) Values</h3>
+                                <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text-primary)' }}>Defined {DENSITY_NAME} Values</h3>
                                 <p style={{ margin: '0.3rem 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                                     Configure dimensions used for barcode generation and sorting.
                                 </p>
@@ -248,7 +249,7 @@ const Configuration = () => {
                     {/* Right Panel: Add Form */}
                     <div className="panel" style={{ height: 'fit-content', position: 'sticky', top: 0, background: 'var(--bg-secondary)', borderRadius: '12px', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
                         <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-color)' }}>
-                            <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text-primary)' }}>Add Pick Density (PPI)</h3>
+                            <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text-primary)' }}>Add {DENSITY_NAME}</h3>
                             <p style={{ margin: '0.5rem 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                                 Define a new size code for inventory items.
                             </p>
@@ -257,7 +258,7 @@ const Configuration = () => {
                             <form onSubmit={handleAdd} style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem' }}>
                                 <div>
                                     <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                                        Pick Density (PPI)
+                                        {DENSITY_NAME}
                                     </label>
                                     <input
                                         type="text"
