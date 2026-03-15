@@ -11,6 +11,7 @@ const DetailedStats = () => {
     const [data, setData] = useState([]);
     const [loading, setLoading] = useState(false);
     const [sizes, setSizes] = useState([]);
+    const [pieceModal, setPieceModal] = useState(null);
     const [filters, setFilters] = useState({
         startDate: '',
         endDate: '',
@@ -90,6 +91,15 @@ const DetailedStats = () => {
         return totalMetre.toFixed(2);
     };
 
+    const formatPieceDetails = (pieces, totalMetre) => {
+        if (Array.isArray(pieces) && pieces.length > 1) {
+            return pieces.map((piece, index) => `Piece ${index + 1}: ${piece.length}`).join('\n');
+        }
+        return `Piece 1: ${Number(totalMetre).toFixed(2)}`;
+    };
+
+    const hasMultiplePieces = (pieces) => Array.isArray(pieces) && pieces.length > 1;
+
     const handleExport = () => {
         if (!data.length) return alert("No data to export");
 
@@ -129,7 +139,8 @@ const DetailedStats = () => {
 
     const pageTitle = type === 'totalRolls' ? 'Total Inventory Portfolio' :
         type === 'stockIn' ? 'Inbound Stock Analysis' :
-            type === 'stockOut' ? 'Outbound Dispatch Logs' : 'Detailed View';
+            type === 'stockOut' ? 'Outbound Dispatch Logs' :
+                type === 'missingCount' ? 'Missing Logs Review' : 'Detailed View';
 
     return (
         <div style={{ padding: '0', height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--bg-primary)' }} className="animate-fade-in">
@@ -192,6 +203,7 @@ const DetailedStats = () => {
             <div style={{ padding: '2rem 2.5rem', display: 'flex', flexDirection: 'column', gap: '2rem' }}>
 
                 {/* Top Row: Metrics Cards */}
+                {type !== 'missingCount' && (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1.5rem' }}>
                     <MetricCard
                         label="Total Rolls"
@@ -219,6 +231,7 @@ const DetailedStats = () => {
                         bg="rgba(99, 102, 241, 0.05)"
                     />
                 </div>
+                )}
 
                 {/* Filters */}
                 <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', gap: '2rem', padding: '1rem', background: 'var(--bg-secondary)', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
@@ -273,53 +286,84 @@ const DetailedStats = () => {
                         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
                     </div>
                 ) : (
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+                    <table
+                        style={{
+                            width: type === 'missingCount' ? 'auto' : '100%',
+                            minWidth: type === 'missingCount' ? '720px' : undefined,
+                            margin: type === 'missingCount' ? '0 auto' : 0,
+                            borderCollapse: 'collapse',
+                            fontSize: '0.9rem'
+                        }}
+                    >
                         <thead style={{ position: 'sticky', top: 0, background: 'var(--bg-primary)', zIndex: 10, boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
                             <tr>
-                                <th style={thStyle}>TIMESTAMP</th>
+                                {type !== 'missingCount' && <th style={thStyle}>TIMESTAMP</th>}
                                 <th style={thStyle}>BARCODE ID</th>
                                 <th style={thStyle}>SIZE</th>
                                 <th style={thStyle}>STATUS</th>
-                                <th style={thStyle}>OPERATOR</th>
-                                <th style={{ ...thStyle, textAlign: 'right' }}>LENGTH (M)</th>
-                                <th style={{ ...thStyle, textAlign: 'left' }}>PIECE LENGTHS</th>
-                                <th style={{ ...thStyle, textAlign: 'right' }}>PIECES</th>
-                                <th style={{ ...thStyle, textAlign: 'right', paddingRight: '2.5rem' }}>WEIGHT (KG)</th>
+                                {type !== 'missingCount' && <th style={thStyle}>OPERATOR</th>}
+                                {type !== 'missingCount' && <th style={{ ...thStyle, textAlign: 'right' }}>LENGTH (M)</th>}
+                                {type !== 'missingCount' && <th style={{ ...thStyle, textAlign: 'right' }}>PIECES</th>}
+                                {type !== 'missingCount' && <th style={{ ...thStyle, textAlign: 'right', paddingRight: '2.5rem' }}>WEIGHT (KG)</th>}
                             </tr>
                         </thead>
                         <tbody>
                             {data.length === 0 ? (
-                                <tr><td colSpan="9" style={{ padding: '5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                                <tr><td colSpan={type === 'missingCount' ? 3 : 8} style={{ padding: '5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
                                     <div style={{ fontSize: '2rem', marginBottom: '1rem' }}>📭</div>
                                     No records found for the selected criteria.
                                 </td></tr>
                             ) : data.map((row, i) => {
                                 const sizePart = row.barcode.split('-')[1] || '-';
                                 return (
-                                    <tr key={i} style={{
-                                        borderBottom: '1px solid var(--border-color)',
-                                        background: i % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.02)',
-                                        transition: 'background 0.2s'
-                                    }} className="table-row-hover">
-                                        <td style={tdStyle}><span style={{ opacity: 0.7, fontFamily: 'monospace' }}>{row.time}</span></td>
+                                    <tr
+                                        key={i}
+                                        onClick={hasMultiplePieces(row.details.pieces)
+                                            ? () => setPieceModal({
+                                                barcode: row.barcode,
+                                                message: formatPieceDetails(row.details.pieces, row.details.metre)
+                                            })
+                                            : undefined}
+                                        style={{
+                                            borderBottom: '1px solid var(--border-color)',
+                                            background: i % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.02)',
+                                            transition: 'background 0.2s',
+                                            cursor: hasMultiplePieces(row.details.pieces) ? 'pointer' : 'default'
+                                        }}
+                                        className="table-row-hover"
+                                    >
+                                        {type !== 'missingCount' && <td style={tdStyle}><span style={{ opacity: 0.7, fontFamily: 'monospace' }}>{row.time}</span></td>}
                                         <td style={tdStyle}><span style={{ fontFamily: 'monospace', fontWeight: '700', color: 'var(--text-primary)', fontSize: '1rem' }}>{row.barcode}</span></td>
                                         <td style={tdStyle}><span style={{ background: 'var(--bg-tertiary)', padding: '4px 10px', borderRadius: '6px', fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-secondary)' }}>{sizePart}</span></td>
                                         <td style={tdStyle}>
                                             <StatusChip type={row.type} />
                                         </td>
-                                        <td style={tdStyle}>
-                                            <span style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-secondary)' }}>
-                                                {row.employee || <span style={{ opacity: 0.5 }}>System</span>}
-                                            </span>
-                                        </td>
-                                        <td style={{ ...tdStyle, textAlign: 'right', fontFamily: 'monospace', fontSize: '1rem', fontWeight: '600', color: 'var(--success-color)' }}>{row.details.metre.toFixed(2)}</td>
-                                        <td style={{ ...tdStyle, textAlign: 'left', fontFamily: 'monospace', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>{formatPieceLengths(row.details.pieces, row.details.metre)}</td>
-                                        <td style={{ ...tdStyle, textAlign: 'right', fontFamily: 'monospace', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-                                            {Array.isArray(row.details.pieces) && row.details.pieces.length > 0
-                                                ? row.details.pieces.length
-                                                : 1}
-                                        </td>
-                                        <td style={{ ...tdStyle, textAlign: 'right', paddingRight: '2.5rem', fontFamily: 'monospace', fontSize: '1rem', fontWeight: '600', color: 'var(--accent-color)' }}>{row.details.weight.toFixed(2)}</td>
+                                        {type !== 'missingCount' && (
+                                            <td style={tdStyle}>
+                                                <span style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-secondary)' }}>
+                                                    {row.employee || <span style={{ opacity: 0.5 }}>System</span>}
+                                                </span>
+                                            </td>
+                                        )}
+                                        {type !== 'missingCount' && <td style={{ ...tdStyle, textAlign: 'right', fontFamily: 'monospace', fontSize: '1rem', fontWeight: '600', color: 'var(--success-color)' }}>{row.details.metre.toFixed(2)}</td>}
+                                        {type !== 'missingCount' && (
+                                            <td
+                                                style={{
+                                                    ...tdStyle,
+                                                    textAlign: 'right',
+                                                    fontFamily: 'monospace',
+                                                    fontSize: '0.9rem',
+                                                    color: hasMultiplePieces(row.details.pieces) ? 'var(--accent-color)' : 'var(--text-secondary)',
+                                                    fontWeight: hasMultiplePieces(row.details.pieces) ? '700' : '500'
+                                                }}
+                                                title={hasMultiplePieces(row.details.pieces) ? 'Click row to view piece lengths' : undefined}
+                                            >
+                                                {Array.isArray(row.details.pieces) && row.details.pieces.length > 0
+                                                    ? row.details.pieces.length
+                                                    : 1}
+                                            </td>
+                                        )}
+                                        {type !== 'missingCount' && <td style={{ ...tdStyle, textAlign: 'right', paddingRight: '2.5rem', fontFamily: 'monospace', fontSize: '1rem', fontWeight: '600', color: 'var(--accent-color)' }}>{row.details.weight.toFixed(2)}</td>}
                                     </tr>
                                 );
                             })}
@@ -327,6 +371,22 @@ const DetailedStats = () => {
                     </table>
                 )}
             </div>
+            {pieceModal && (
+                <div style={{ position: 'fixed', inset: 0, background: 'var(--modal-overlay)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+                    <div className="panel animate-fade-in" style={{ width: '100%', maxWidth: '420px' }}>
+                        <h3 style={{ marginTop: 0, marginBottom: '0.5rem' }}>Piece Lengths</h3>
+                        <p style={{ fontSize: '0.8rem', color: 'var(--accent-color)', marginBottom: '1rem', fontWeight: '700' }}>
+                            ROLL ID: {pieceModal.barcode}
+                        </p>
+                        <p style={{ margin: 0, whiteSpace: 'pre-line', lineHeight: '1.6', color: 'var(--text-secondary)' }}>
+                            {pieceModal.message}
+                        </p>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.5rem' }}>
+                            <button className="btn btn-secondary" onClick={() => setPieceModal(null)}>Close</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

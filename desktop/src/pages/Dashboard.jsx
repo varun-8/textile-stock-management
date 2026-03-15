@@ -366,6 +366,17 @@ const Dashboard = () => {
         return totalMetre;
     };
 
+    const formatPieceDetails = (pieces, totalMetre) => {
+        if (Array.isArray(pieces) && pieces.length > 1) {
+            return pieces
+                .map((piece, index) => `Piece ${index + 1}: ${piece.length}`)
+                .join('\n');
+        }
+        return `Piece 1: ${totalMetre}`;
+    };
+
+    const hasMultiplePieces = (pieces) => Array.isArray(pieces) && pieces.length > 1;
+
     return (
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
 
@@ -547,7 +558,17 @@ const Dashboard = () => {
                                     <tr><td colSpan="6" style={{ padding: '4rem', textAlign: 'center', color: 'var(--text-secondary)' }}>No transactions recorded in this period.</td></tr>
                                 ) : displayList.map((log, i) => {
                                     return (
-                                        <tr key={i} style={{ borderBottom: '1px solid var(--border-color)', background: i % 2 === 0 ? 'var(--row-alt-bg)' : 'transparent' }}>
+                                        <tr
+                                            key={i}
+                                            onClick={hasMultiplePieces(log.details.pieces)
+                                                ? () => showModal('info', `Piece Lengths - ${log.barcode}`, formatPieceDetails(log.details.pieces, log.details.metre))
+                                                : undefined}
+                                            style={{
+                                                borderBottom: '1px solid var(--border-color)',
+                                                background: i % 2 === 0 ? 'var(--row-alt-bg)' : 'transparent',
+                                                cursor: hasMultiplePieces(log.details.pieces) ? 'pointer' : 'default'
+                                            }}
+                                        >
                                             <td style={tdStyle}><span style={{ opacity: 0.8, fontWeight: '500' }}>{log.time}</span></td>
                                             <td style={{ ...tdStyle, fontSize: '1.25rem', fontWeight: '800', color: 'var(--accent-color)', fontFamily: 'monospace' }}>{log.barcode}</td>
                                             <td style={tdStyle}>
@@ -557,9 +578,11 @@ const Dashboard = () => {
                                                 {log.details?.metre ? (
                                                     <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'stretch' }}>
                                                         <Metric label="M" value={log.details.metre} />
-                                                        <Metric label="LENGTHS" value={formatPieceLengths(log.details.pieces, log.details.metre)} wide />
                                                         <Metric label="KG" value={log.details.weight} />
-                                                        <Metric label="PCS" value={Array.isArray(log.details.pieces) && log.details.pieces.length > 0 ? log.details.pieces.length : 1} />
+                                                        <Metric
+                                                            label="PCS"
+                                                            value={Array.isArray(log.details.pieces) && log.details.pieces.length > 0 ? log.details.pieces.length : 1}
+                                                        />
                                                         <Metric label="Q" value={Number(log.details.percentage).toFixed(2) + '%'} color={Number(log.details.percentage) < 80 ? 'var(--warning-color)' : 'var(--text-secondary)'} />
                                                     </div>
                                                 ) : <span style={{ opacity: 0.4 }}>PENDING REGISTRATION</span>}
@@ -571,7 +594,9 @@ const Dashboard = () => {
                                             </td>
                                             <td style={{ ...tdStyle, textAlign: 'right' }}>
                                                 <button
-                                                    onClick={() => {
+                                                    type="button"
+                                                    onClick={(event) => {
+                                                        event.stopPropagation();
                                                         const isInvalidType = log.type === 'MISSING' || log.type === 'PENDING' || !log.type;
                                                         setEditItem({
                                                             ...log,
@@ -712,7 +737,7 @@ const Dashboard = () => {
                                 </div>
                                 <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: '700' }}>{modalConfig.title}</h3>
                             </div>
-                            <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', lineHeight: '1.5', margin: 0 }}>
+                            <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', lineHeight: '1.5', margin: 0, whiteSpace: 'pre-line' }}>
                                 {modalConfig.message}
                             </p>
                             <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1rem', justifyContent: 'flex-end' }}>
@@ -751,8 +776,22 @@ const StatusBadge = ({ type }) => {
     );
 };
 
-const Metric = ({ label, value, color, wide = false }) => (
-    <div style={{ display: 'flex', alignItems: 'flex-start', flexDirection: 'column', gap: '2px', background: 'var(--bg-primary)', padding: '0.4rem 0.6rem', borderRadius: '8px', border: '1px solid var(--border-color)', minWidth: wide ? '140px' : '70px' }}>
+const Metric = ({ label, value, color, wide = false, onClick }) => (
+    <div
+        onClick={onClick}
+        style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            flexDirection: 'column',
+            gap: '2px',
+            background: 'var(--bg-primary)',
+            padding: '0.4rem 0.6rem',
+            borderRadius: '8px',
+            border: '1px solid var(--border-color)',
+            minWidth: wide ? '140px' : '70px',
+            cursor: onClick ? 'pointer' : 'default'
+        }}
+    >
         <span style={{ fontSize: '0.7rem', fontWeight: '800', opacity: 0.5, letterSpacing: '0.05em' }}>{label}</span>
         <span style={{ fontSize: '1.2rem', fontWeight: '800', color: color || 'inherit', fontFamily: 'monospace' }}>{value}</span>
     </div>
