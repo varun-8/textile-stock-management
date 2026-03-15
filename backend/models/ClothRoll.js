@@ -18,6 +18,18 @@ const transactionSchema = new mongoose.Schema({
     sessionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Session' } // Link to Session
 });
 
+const pieceSchema = new mongoose.Schema({
+    length: {
+        type: Number,
+        required: true,
+        min: 0
+    },
+    label: {
+        type: String,
+        trim: true
+    }
+}, { _id: false });
+
 const clothRollSchema = new mongoose.Schema({
     barcode: {
         type: String,
@@ -44,6 +56,10 @@ const clothRollSchema = new mongoose.Schema({
     percentage: {
         type: Number,
         min: 0
+    },
+    pieces: {
+        type: [pieceSchema],
+        default: undefined
     },
     transactionHistory: [transactionSchema]
 }, {

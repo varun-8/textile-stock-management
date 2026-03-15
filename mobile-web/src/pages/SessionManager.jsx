@@ -192,7 +192,7 @@ const SessionManager = () => {
         try {
             const res = await api.get(`/api/sessions/${session._id}/preview`);
             if (!res.data?.success) {
-                showNotification(res.data?.error || 'Failed to load session summary', 'error');
+                showNotification(res.data?.error || 'Failed to load batch summary', 'error');
                 return;
             }
 
@@ -207,7 +207,7 @@ const SessionManager = () => {
             setShowEndSummary(true);
         } catch (err) {
             console.error(err);
-            showNotification('Failed to load session summary', 'error');
+            showNotification('Failed to load batch summary', 'error');
         }
     };
 
@@ -420,9 +420,9 @@ const SessionManager = () => {
                                     padding: '60px 20px', textAlign: 'center', opacity: 0.7
                                 }}>
                                     <div style={{ fontSize: '48px', marginBottom: '16px' }}>📭</div>
-                                    <h3 style={{ color: 'white', margin: '0 0 8px 0' }}>No Active Sessions</h3>
+                                    <h3 style={{ color: 'white', margin: '0 0 8px 0' }}>No Active Batches</h3>
                                     <p style={{ color: THEME.textMuted, fontSize: '14px', margin: 0 }}>
-                                        Start a new session to begin scanning.
+                                        Start a new batch to begin scanning.
                                     </p>
                                 </div>
                             )}
@@ -594,7 +594,7 @@ const SessionManager = () => {
                             }}>
                                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
                             </div>
-                            <h2 style={{ fontSize: '24px', fontWeight: '900', color: 'white', margin: 0, letterSpacing: '-0.02em' }}>New Session</h2>
+                            <h2 style={{ fontSize: '24px', fontWeight: '900', color: 'white', margin: 0, letterSpacing: '-0.02em' }}>New Batch</h2>
                             <p style={{ color: THEME.textMuted, fontSize: '14px', marginTop: '6px', fontWeight: '500' }}>Define your operation parameters</p>
                         </div>
 
@@ -769,7 +769,7 @@ const SessionManager = () => {
                             alignItems: 'center'
                         }}>
                             <div>
-                                <div style={{ fontSize: '18px', fontWeight: '900', color: 'white' }}>Session Summary</div>
+                                <div style={{ fontSize: '18px', fontWeight: '900', color: 'white' }}>Batch Summary</div>
                                 <div style={{ fontSize: '12px', color: THEME.textMuted, marginTop: '2px' }}>
                                     {endSummarySession.type} | {DENSITY_NAME} {endSummarySession.targetSize}
                                 </div>
@@ -820,7 +820,7 @@ const SessionManager = () => {
                                         {endSummaryItems.length === 0 ? (
                                             <tr>
                                                 <td colSpan="4" style={{ padding: '18px', textAlign: 'center', color: THEME.textMuted }}>
-                                                    No scanned items in this session
+                                                    No scanned items in this batch
                                                 </td>
                                             </tr>
                                         ) : (
@@ -880,7 +880,7 @@ const SessionManager = () => {
                                     cursor: closingSession ? 'not-allowed' : 'pointer'
                                 }}
                             >
-                                {closingSession ? 'Closing...' : 'Confirm & End Session'}
+                                {closingSession ? 'Closing...' : 'Confirm & End Batch'}
                             </button>
                         </div>
                     </div>

@@ -102,7 +102,7 @@ const AppLayout = ({ children }) => {
                     </div>
                     <nav style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'center' }}>
                         <SidebarLink collapsed={isCollapsed} active={isActive('/dashboard')} onClick={() => handleNavigation('/dashboard')} icon={<IconCloud />} label="Operations Dashboard" />
-                        <SidebarLink collapsed={isCollapsed} active={isActive('/sessions')} onClick={() => handleNavigation('/sessions')} icon={<IconBroadcast />} label="Active Sessions" />
+                        <SidebarLink collapsed={isCollapsed} active={isActive('/sessions')} onClick={() => handleNavigation('/sessions')} icon={<IconBroadcast />} label="Active Batches" />
 
                         <SidebarLink collapsed={isCollapsed} active={isActive('/barcode')} onClick={() => handleNavigation('/barcode')} icon={<IconScan />} label="Barcode Generator" />
                         <SidebarLink collapsed={isCollapsed} active={isActive('/scanners')} onClick={() => handleNavigation('/scanners')} icon={<IconSettings />} label="Scanner Devices" />

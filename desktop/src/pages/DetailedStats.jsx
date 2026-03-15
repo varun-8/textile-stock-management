@@ -58,7 +58,8 @@ const DetailedStats = () => {
                     details: {
                         metre: parseFloat(item.metre || 0),
                         weight: parseFloat(item.weight || 0),
-                        percentage: item.percentage
+                        percentage: item.percentage,
+                        pieces: item.pieces || []
                     },
                     employee: item.employeeName || item.userId
                 }));
@@ -82,16 +83,25 @@ const DetailedStats = () => {
         }), { totalCount: 0, totalMetre: 0, totalWeight: 0 });
     }, [data]);
 
+    const formatPieceLengths = (pieces, totalMetre) => {
+        if (Array.isArray(pieces) && pieces.length > 1) {
+            return pieces.map(piece => piece.length).join(' + ');
+        }
+        return totalMetre.toFixed(2);
+    };
+
     const handleExport = () => {
         if (!data.length) return alert("No data to export");
 
         try {
-            const headers = ["Timestamp", "Barcode", "Status", "Metre", "Weight", "Quality %"];
+            const headers = ["Timestamp", "Barcode", "Status", "Metre", "Pieces", "Piece Lengths", "Weight", "Quality %"];
             const rows = data.map(item => [
                 `"${item.time}"`,
                 item.barcode,
                 item.type,
                 item.details.metre,
+                Array.isArray(item.details.pieces) && item.details.pieces.length > 0 ? item.details.pieces.length : 1,
+                `"${formatPieceLengths(item.details.pieces, item.details.metre)}"`,
                 item.details.weight,
                 item.details.percentage || ''
             ]);
@@ -272,12 +282,14 @@ const DetailedStats = () => {
                                 <th style={thStyle}>STATUS</th>
                                 <th style={thStyle}>OPERATOR</th>
                                 <th style={{ ...thStyle, textAlign: 'right' }}>LENGTH (M)</th>
+                                <th style={{ ...thStyle, textAlign: 'left' }}>PIECE LENGTHS</th>
+                                <th style={{ ...thStyle, textAlign: 'right' }}>PIECES</th>
                                 <th style={{ ...thStyle, textAlign: 'right', paddingRight: '2.5rem' }}>WEIGHT (KG)</th>
                             </tr>
                         </thead>
                         <tbody>
                             {data.length === 0 ? (
-                                <tr><td colSpan="7" style={{ padding: '5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                                <tr><td colSpan="9" style={{ padding: '5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
                                     <div style={{ fontSize: '2rem', marginBottom: '1rem' }}>📭</div>
                                     No records found for the selected criteria.
                                 </td></tr>
@@ -301,6 +313,12 @@ const DetailedStats = () => {
                                             </span>
                                         </td>
                                         <td style={{ ...tdStyle, textAlign: 'right', fontFamily: 'monospace', fontSize: '1rem', fontWeight: '600', color: 'var(--success-color)' }}>{row.details.metre.toFixed(2)}</td>
+                                        <td style={{ ...tdStyle, textAlign: 'left', fontFamily: 'monospace', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>{formatPieceLengths(row.details.pieces, row.details.metre)}</td>
+                                        <td style={{ ...tdStyle, textAlign: 'right', fontFamily: 'monospace', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                                            {Array.isArray(row.details.pieces) && row.details.pieces.length > 0
+                                                ? row.details.pieces.length
+                                                : 1}
+                                        </td>
                                         <td style={{ ...tdStyle, textAlign: 'right', paddingRight: '2.5rem', fontFamily: 'monospace', fontSize: '1rem', fontWeight: '600', color: 'var(--accent-color)' }}>{row.details.weight.toFixed(2)}</td>
                                     </tr>
                                 );

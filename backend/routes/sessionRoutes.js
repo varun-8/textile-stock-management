@@ -58,8 +58,12 @@ router.get('/active', async (req, res) => {
 // Get Session History with Date Filter
 router.get('/history', async (req, res) => {
     try {
-        const { date } = req.query;
+        const { date, type } = req.query;
         let query = { status: 'COMPLETED' };
+
+        if (type && ['IN', 'OUT'].includes(type)) {
+            query.type = type;
+        }
 
         if (date) {
             const start = new Date(date);
@@ -129,11 +133,11 @@ router.post('/join', async (req, res) => {
 
         const session = await Session.findById(sessionId);
         if (!session) {
-            return res.status(404).json({ error: 'Session not found' });
+            return res.status(404).json({ error: 'Batch not found' });
         }
 
         if (session.status !== 'ACTIVE') {
-            return res.status(400).json({ error: 'Session is not active' });
+            return res.status(400).json({ error: 'Batch is not active' });
         }
 
         if (effectiveScannerId) {
@@ -186,7 +190,7 @@ router.post('/:id/leave', async (req, res) => {
 
         const session = await Session.findById(id);
         if (!session) {
-            return res.status(404).json({ error: 'Session not found' });
+            return res.status(404).json({ error: 'Batch not found' });
         }
 
         // Remove scanner from active list
@@ -220,7 +224,7 @@ router.get('/:id/preview', async (req, res) => {
     try {
         const { id } = req.params;
         const session = await Session.findById(id);
-        if (!session) return res.status(404).json({ error: 'Session not found' });
+        if (!session) return res.status(404).json({ error: 'Batch not found' });
 
         // Aggregate stats based on sessionId in transactionHistory
         const stats = await ClothRoll.aggregate([
@@ -240,7 +244,7 @@ router.get('/:id/preview', async (req, res) => {
 
         // Fetch detailed items for this session
         const items = await ClothRoll.find({ "transactionHistory.sessionId": session._id })
-            .select('barcode metre weight percentage transactionHistory')
+            .select('barcode metre weight percentage pieces transactionHistory')
             .lean();
 
         // Process items to show relevant details (e.g. time of scan)
@@ -252,6 +256,7 @@ router.get('/:id/preview', async (req, res) => {
                 metre: item.metre,
                 weight: item.weight,
                 percentage: item.percentage,
+                pieces: item.pieces || [],
                 scannedAt: tx ? tx.date : null,
                 scannedBy: tx ? tx.employeeName : 'Unknown'
             };
@@ -274,7 +279,7 @@ router.post('/end', async (req, res) => {
 
         const session = await Session.findById(sessionId);
         if (!session) {
-            return res.status(404).json({ error: 'Session not found' });
+            return res.status(404).json({ error: 'Batch not found' });
         }
 
         // Calculate Final Stats
@@ -306,7 +311,7 @@ router.post('/end', async (req, res) => {
             req.io.emit('session_update', { action: 'ENDED', sessionId, initiator });
         }
 
-        res.json({ success: true, message: 'Session Ended', stats: result, initiator });
+        res.json({ success: true, message: 'Batch Ended', stats: result, initiator });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -317,7 +322,7 @@ router.get('/:id/export/details', async (req, res) => {
     try {
         const { id } = req.params;
         const session = await Session.findById(id);
-        if (!session) return res.status(404).send('Session not found');
+        if (!session) return res.status(404).send('Batch not found');
 
         // Fetch items linked to this session
         // Note: We need to match specific transactions to get the state AT THAT TIME ideally,
@@ -327,7 +332,7 @@ router.get('/:id/export/details', async (req, res) => {
         });
 
         const workbook = new ExcelJS.Workbook();
-        const worksheet = workbook.addWorksheet('Session Details');
+        const worksheet = workbook.addWorksheet('Batch Details');
 
         worksheet.columns = [
             { header: 'Barcode', key: 'barcode', width: 20 },
@@ -374,7 +379,7 @@ router.get('/:id/export/summary', async (req, res) => {
     try {
         const { id } = req.params;
         const session = await Session.findById(id);
-        if (!session) return res.status(404).send('Session not found');
+        if (!session) return res.status(404).send('Batch not found');
 
         const stats = await ClothRoll.aggregate([
             { $unwind: "$transactionHistory" },
@@ -390,10 +395,10 @@ router.get('/:id/export/summary', async (req, res) => {
         ]);
 
         const workbook = new ExcelJS.Workbook();
-        const worksheet = workbook.addWorksheet('Session Summary');
+        const worksheet = workbook.addWorksheet('Batch Summary');
 
         // Session Info Header
-        worksheet.addRow(['Session ID', session._id.toString()]);
+        worksheet.addRow(['Batch ID', session._id.toString()]);
         worksheet.addRow(['Type', session.type]);
         worksheet.addRow(['Pick Density (PPI)', session.targetSize]);
         worksheet.addRow(['Start Time', session.createdAt.toLocaleString()]);
@@ -438,7 +443,7 @@ router.get('/:id/summary', async (req, res) => {
     try {
         const { id } = req.params;
         const session = await Session.findById(id);
-        if (!session) return res.status(404).json({ error: 'Session not found' });
+        if (!session) return res.status(404).json({ error: 'Batch not found' });
 
         const stats = await ClothRoll.aggregate([
             { $unwind: "$transactionHistory" },
@@ -455,7 +460,7 @@ router.get('/:id/summary', async (req, res) => {
 
         // Fetch detailed items for this session
         const items = await ClothRoll.find({ "transactionHistory.sessionId": session._id })
-            .select('barcode metre weight percentage transactionHistory')
+            .select('barcode metre weight percentage pieces transactionHistory')
             .lean();
 
         // Process items to show relevant details
@@ -467,6 +472,7 @@ router.get('/:id/summary', async (req, res) => {
                 metre: item.metre,
                 weight: item.weight,
                 percentage: item.percentage,
+                pieces: item.pieces || [],
                 scannedAt: tx ? tx.date : null,
                 scannedBy: tx ? tx.employeeName : 'Unknown'
             };
@@ -490,7 +496,7 @@ router.get('/:id/export/dc', async (req, res) => {
         const percentage = isNaN(parsedPercentage) ? 0 : parsedPercentage;
 
         const session = await Session.findById(id);
-        if (!session) return res.status(404).send('Session not found');
+        if (!session) return res.status(404).send('Batch not found');
 
         const items = await ClothRoll.find({
             "transactionHistory.sessionId": session._id

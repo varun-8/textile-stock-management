@@ -11,6 +11,7 @@ const MissedScan = require('../models/MissedScan');
 const Size = require('../models/Size');
 const os = require('os');
 const { issuePairingToken } = require('../middleware/authMiddleware');
+const { normalizePieces, totalFromPieces } = require('../utils/rollPieces');
 
 // Get Audit Logs
 router.get('/audit-logs', async (req, res) => {
@@ -271,7 +272,7 @@ module.exports = router;
 // Update Roll Details
 router.put('/inventory/update', async (req, res) => {
     try {
-        const { barcode, metre, weight, percentage, status, type } = req.body;
+        const { barcode, metre, weight, percentage, pieces, pieceLengths, status, type } = req.body;
         const targetStatus = status || type;
 
         const clothRoll = await ClothRoll.findOne({ barcode });
@@ -279,9 +280,13 @@ router.put('/inventory/update', async (req, res) => {
             return res.status(404).json({ error: 'Roll not found in inventory' });
         }
 
-        clothRoll.metre = metre;
+        const normalizedPieces = normalizePieces(pieces ?? pieceLengths, metre);
+        const totalMetre = totalFromPieces(normalizedPieces);
+
+        clothRoll.metre = totalMetre;
         clothRoll.weight = weight;
         clothRoll.percentage = percentage;
+        clothRoll.pieces = normalizedPieces;
 
         // Ensure status is valid before assignment
         if (targetStatus && ['IN', 'OUT'].includes(targetStatus)) {
@@ -291,7 +296,7 @@ router.put('/inventory/update', async (req, res) => {
         // Log history - use valid status for enum or default to current
         clothRoll.transactionHistory.push({
             status: clothRoll.status,
-            details: `Desktop Edit: ${metre}m, ${weight}kg, ${percentage}%`,
+            details: `Desktop Edit: ${totalMetre}m, ${weight}kg, ${percentage}%`,
             date: new Date()
         });
 
@@ -300,7 +305,7 @@ router.put('/inventory/update', async (req, res) => {
         await AuditLog.create({
             action: 'INVENTORY_EDIT',
             user: 'Admin',
-            details: { barcode, metre, weight, percentage, status: clothRoll.status },
+            details: { barcode, metre: totalMetre, pieces: normalizedPieces, weight, percentage, status: clothRoll.status },
             ipAddress: req.ip
         });
 

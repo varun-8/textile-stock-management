@@ -37,6 +37,7 @@ const Sessions = () => {
 
     // Filters
     const [filterDate, setFilterDate] = useState('');
+    const [historyTypeFilter, setHistoryTypeFilter] = useState('ALL');
 
     // Live View State
     const [showLiveView, setShowLiveView] = useState(false);
@@ -131,7 +132,8 @@ const Sessions = () => {
                     user: item.scannedBy,
                     details: {
                         metre: item.metre,
-                        weight: item.weight
+                        weight: item.weight,
+                        pieces: item.pieces || []
                     },
                     sessionId: session._id
                 }));
@@ -175,6 +177,7 @@ const Sessions = () => {
             let url = `${apiUrl}/api/sessions/history`;
             const params = new URLSearchParams();
             if (filterDate) params.append('date', filterDate);
+            if (historyTypeFilter !== 'ALL') params.append('type', historyTypeFilter);
 
             if (params.toString()) {
                 url += `?${params.toString()}`;
@@ -192,7 +195,7 @@ const Sessions = () => {
 
     useEffect(() => {
         fetchHistory();
-    }, [filterDate]);
+    }, [filterDate, historyTypeFilter]);
 
     useEffect(() => {
         fetchSessions();
@@ -200,8 +203,7 @@ const Sessions = () => {
         fetchSizes();
         const interval = setInterval(() => {
             fetchSessions();
-            fetchHistory();
-        }, 2000); // Poll every 2 seconds for faster updates
+        }, 15000); // Socket events handle real-time updates; keep polling as a low-frequency fallback
         return () => clearInterval(interval);
     }, [apiUrl]);
 
@@ -211,6 +213,13 @@ const Sessions = () => {
             if (updated) setLiveSession(updated);
         }
     }, [sessions, showLiveView]);
+
+    const formatPieceLengths = (pieces, totalMetre) => {
+        if (Array.isArray(pieces) && pieces.length > 1) {
+            return pieces.map((piece) => piece.length).join(' + ');
+        }
+        return totalMetre ?? '-';
+    };
 
     const handleCreateSession = async (e) => {
         e.preventDefault();
@@ -345,6 +354,11 @@ const Sessions = () => {
         }
     };
 
+    const filteredHistory = history.filter((item) => {
+        if (historyTypeFilter === 'ALL') return true;
+        return item.type === historyTypeFilter;
+    });
+
     return (
         <div style={{ padding: '2rem', height: '100%', overflowY: 'auto' }}>
             <div className="animate-fade-in" style={{ maxWidth: '1200px', margin: '0 auto', paddingBottom: '3rem' }}>
@@ -353,8 +367,8 @@ const Sessions = () => {
                 <div style={{ marginBottom: '3rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <div>
                         <div style={{ color: 'var(--accent-color)', fontWeight: '700', fontSize: '0.75rem', letterSpacing: '0.1em', marginBottom: '0.5rem' }}>REAL-TIME OPERATIONS</div>
-                        <h1 style={{ fontSize: '1.75rem', margin: 0 }}>Active Sessions</h1>
-                        <p style={{ opacity: 0.6, fontSize: '0.9rem' }}>Manage ongoing stock entry and dispatch sessions.</p>
+                        <h1 style={{ fontSize: '1.75rem', margin: 0 }}>Active Batches</h1>
+                        <p style={{ opacity: 0.6, fontSize: '0.9rem' }}>Manage ongoing stock entry and dispatch batches.</p>
                     </div>
 
                     <button
@@ -363,20 +377,20 @@ const Sessions = () => {
                         style={{ padding: '0.8rem 1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}
                     >
                         <span style={{ fontSize: '1.2rem' }}><IconPlus /></span>
-                        <span>Start New Session</span>
+                        <span>Start New Batch</span>
                     </button>
                 </div>
 
                 {isLoading ? (
-                    <div style={{ textAlign: 'center', padding: '4rem', opacity: 0.5 }}>Loading active sessions...</div>
+                    <div style={{ textAlign: 'center', padding: '4rem', opacity: 0.5 }}>Loading active batches...</div>
                 ) : (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1.5rem' }}>
                         {sessions.length === 0 && (
                             <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '4rem 2rem', border: '2px dashed var(--border-color)', borderRadius: '16px', background: 'transparent' }}>
                                 <div style={{ fontSize: '3rem', marginBottom: '1rem', opacity: 0.3 }}>📡</div>
-                                <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1.1rem', color: 'var(--text-secondary)' }}>No Active Sessions</h3>
+                                <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1.1rem', color: 'var(--text-secondary)' }}>No Active Batches</h3>
                                 <p style={{ margin: 0, opacity: 0.6, fontSize: '0.9rem' }}>
-                                    Start a new session to begin scanning operations.
+                                    Start a new batch to begin scanning operations.
                                 </p>
                             </div>
                         )}
@@ -496,7 +510,7 @@ const Sessions = () => {
                                                 e.currentTarget.style.color = 'var(--error-color)';
                                             }}
                                         >
-                                            End Session
+                                            End Batch
                                         </button>
                                     </div>
                                 </div>
@@ -507,30 +521,56 @@ const Sessions = () => {
 
                 {/* HISTORY SECTION */}
                 <div style={{ marginTop: '4rem' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '2rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '2rem', gap: '1rem', flexWrap: 'wrap' }}>
                         <div>
-                            <h2 style={{ fontSize: '1.5rem', fontWeight: '800', margin: '0 0 0.5rem 0', color: 'var(--text-primary)' }}>Session History</h2>
+                            <h2 style={{ fontSize: '1.5rem', fontWeight: '800', margin: '0 0 0.5rem 0', color: 'var(--text-primary)' }}>Batch History</h2>
                             <p style={{ opacity: 0.6, fontSize: '0.9rem', margin: 0 }}>Review and export reports from previous operations.</p>
                         </div>
 
-                        {/* Date Filter */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--bg-tertiary)', padding: '6px 6px 6px 12px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
-                            <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>DATE:</label>
-                            <input
-                                type="date"
-                                value={filterDate}
-                                onChange={(e) => setFilterDate(e.target.value)}
-                                style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', fontSize: '0.9rem', fontWeight: '600', outline: 'none', padding: '4px' }}
-                            />
-                            {filterDate && (
-                                <button
-                                    onClick={() => setFilterDate('')}
-                                    style={{ background: 'rgba(0,0,0,0.1)', border: 'none', borderRadius: '6px', width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--text-secondary)' }}
-                                    title="Clear Date"
-                                >
-                                    ×
-                                </button>
-                            )}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                            <div style={{ display: 'flex', gap: '8px', background: 'var(--bg-tertiary)', padding: '6px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
+                                {[
+                                    { value: 'ALL', label: 'All' },
+                                    { value: 'IN', label: 'Stock In' },
+                                    { value: 'OUT', label: 'Stock Out' }
+                                ].map((option) => (
+                                    <button
+                                        key={option.value}
+                                        onClick={() => setHistoryTypeFilter(option.value)}
+                                        style={{
+                                            padding: '8px 12px',
+                                            borderRadius: '8px',
+                                            border: 'none',
+                                            cursor: 'pointer',
+                                            fontSize: '0.8rem',
+                                            fontWeight: '700',
+                                            background: historyTypeFilter === option.value ? 'var(--accent-color)' : 'transparent',
+                                            color: historyTypeFilter === option.value ? 'white' : 'var(--text-secondary)'
+                                        }}
+                                    >
+                                        {option.label}
+                                    </button>
+                                ))}
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--bg-tertiary)', padding: '6px 6px 6px 12px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
+                                <label style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>DATE:</label>
+                                <input
+                                    type="date"
+                                    value={filterDate}
+                                    onChange={(e) => setFilterDate(e.target.value)}
+                                    style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', fontSize: '0.9rem', fontWeight: '600', outline: 'none', padding: '4px' }}
+                                />
+                                {filterDate && (
+                                    <button
+                                        onClick={() => setFilterDate('')}
+                                        style={{ background: 'rgba(0,0,0,0.1)', border: 'none', borderRadius: '6px', width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--text-secondary)' }}
+                                        title="Clear Date"
+                                    >
+                                        ×
+                                    </button>
+                                )}
+                            </div>
                         </div>
                     </div>
 
@@ -546,15 +586,15 @@ const Sessions = () => {
                                 </tr>
                             </thead>
                             <tbody>
-                                {history.length === 0 ? (
+                                {filteredHistory.length === 0 ? (
                                     <tr>
                                         <td colSpan="6" style={{ padding: '4rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
                                             <div style={{ fontSize: '2rem', marginBottom: '1rem', opacity: 0.3 }}>📅</div>
-                                            No session history found for selected range.
+                                            No batch history found for selected range.
                                         </td>
                                     </tr>
                                 ) : (
-                                    history.map(s => (
+                                    filteredHistory.map(s => (
                                         <tr key={s._id} style={{ borderBottom: '1px solid var(--border-color)', transition: 'background 0.2s' }} className="hover:bg-white/5">
                                             <td style={{ padding: '1rem 1.5rem' }}>
                                                 <div style={{ fontWeight: '600', color: 'var(--text-primary)' }}>{new Date(s.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</div>
@@ -582,14 +622,16 @@ const Sessions = () => {
 
                                             <td style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>
                                                 <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                                                    <button
-                                                        onClick={() => handleExport(s._id, s.type, s.targetSize, 'dc')}
-                                                        className="btn"
-                                                        style={{ padding: '6px 12px', fontSize: '0.8rem', background: 'var(--bg-primary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
-                                                        title="Download DC Excel with Percentage"
-                                                    >
-                                                        📄 Download DC
-                                                    </button>
+                                                    {s.type === 'OUT' && (
+                                                        <button
+                                                            onClick={() => handleExport(s._id, s.type, s.targetSize, 'dc')}
+                                                            className="btn"
+                                                            style={{ padding: '6px 12px', fontSize: '0.8rem', background: 'var(--bg-primary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                                                            title="Download DC Excel with Percentage"
+                                                        >
+                                                            📄 Download DC
+                                                        </button>
+                                                    )}
                                                     <button
                                                         onClick={() => handleExport(s._id, s.type, s.targetSize, 'summary')}
                                                         className="btn"
@@ -632,7 +674,7 @@ const Sessions = () => {
                                 </div>
                                 <div style={{ height: '20px', width: '1px', background: 'var(--border-color)' }}></div>
                                 <div>
-                                    <h2 style={{ fontSize: '1.2rem', margin: 0 }}>Session Monitor</h2>
+                                    <h2 style={{ fontSize: '1.2rem', margin: 0 }}>Batch Monitor</h2>
                                     <div style={{ fontSize: '0.8rem', opacity: 0.6 }}>{DENSITY_NAME} {liveSession.targetSize} • {liveSession.type} Flow</div>
                                 </div>
                             </div>
@@ -673,7 +715,9 @@ const Sessions = () => {
                                                 <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '0.75rem', opacity: 0.6 }}>TIME</th>
                                                 <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '0.75rem', opacity: 0.6 }}>BARCODE</th>
                                                 <th style={{ padding: '12px 20px', textAlign: 'right', fontSize: '0.75rem', opacity: 0.6 }}>METRE</th>
+                                                <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: '0.75rem', opacity: 0.6 }}>PIECE LENGTHS</th>
                                                 <th style={{ padding: '12px 20px', textAlign: 'right', fontSize: '0.75rem', opacity: 0.6 }}>WEIGHT</th>
+                                                <th style={{ padding: '12px 20px', textAlign: 'right', fontSize: '0.75rem', opacity: 0.6 }}>PIECES</th>
                                                 <th style={{ padding: '12px 20px', textAlign: 'right', fontSize: '0.75rem', opacity: 0.6 }}>USER</th>
                                             </tr>
                                         </thead>
@@ -687,7 +731,13 @@ const Sessions = () => {
                                                         {scan.barcode}
                                                     </td>
                                                     <td style={{ padding: '12px 20px', textAlign: 'right' }}>{scan.details?.metre}</td>
+                                                    <td style={{ padding: '12px 20px', textAlign: 'left', opacity: 0.8 }}>{formatPieceLengths(scan.details?.pieces, scan.details?.metre)}</td>
                                                     <td style={{ padding: '12px 20px', textAlign: 'right' }}>{scan.details?.weight}</td>
+                                                    <td style={{ padding: '12px 20px', textAlign: 'right', opacity: 0.8 }}>
+                                                        {Array.isArray(scan.details?.pieces) && scan.details.pieces.length > 0
+                                                            ? scan.details.pieces.length
+                                                            : 1}
+                                                    </td>
                                                     <td style={{ padding: '12px 20px', textAlign: 'right', opacity: 0.8 }}>{scan.user || 'Unknown'}</td>
                                                 </tr>
                                             ))}
@@ -716,8 +766,8 @@ const Sessions = () => {
 
                         <div style={{ padding: '2rem', textAlign: 'center', borderBottom: '1px solid var(--border-color)' }}>
                             <div style={{ fontSize: '3rem', marginBottom: '0.5rem' }}>🏁</div>
-                            <h2 style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>End Session?</h2>
-                            <p style={{ opacity: 0.6 }}>Review the session summary before closing.</p>
+                            <h2 style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>End Batch?</h2>
+                            <p style={{ opacity: 0.6 }}>Review the batch summary before closing.</p>
                         </div>
 
                         <div style={{ padding: '2rem', overflowY: 'auto', flex: 1 }}>
@@ -741,14 +791,16 @@ const Sessions = () => {
                             <h3 style={{ fontSize: '1.1rem', marginBottom: '1rem', opacity: 0.8 }}>Item Details</h3>
                             <div style={{ border: '1px solid var(--border-color)', borderRadius: '12px', overflow: 'hidden' }}>
                                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
-                                    <thead style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)' }}>
-                                        <tr>
-                                            <th style={{ padding: '12px', textAlign: 'left', opacity: 0.7 }}>Barcode</th>
-                                            <th style={{ padding: '12px', textAlign: 'right', opacity: 0.7 }}>Metre</th>
-                                            <th style={{ padding: '12px', textAlign: 'right', opacity: 0.7 }}>Weight</th>
-                                            <th style={{ padding: '12px', textAlign: 'right', opacity: 0.7 }}>User</th>
-                                            <th style={{ padding: '12px', textAlign: 'right', opacity: 0.7 }}>Time</th>
-                                        </tr>
+                                        <thead style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)' }}>
+                                            <tr>
+                                                <th style={{ padding: '12px', textAlign: 'left', opacity: 0.7 }}>Barcode</th>
+                                                <th style={{ padding: '12px', textAlign: 'right', opacity: 0.7 }}>Metre</th>
+                                                <th style={{ padding: '12px', textAlign: 'left', opacity: 0.7 }}>Piece Lengths</th>
+                                                <th style={{ padding: '12px', textAlign: 'right', opacity: 0.7 }}>Weight</th>
+                                                <th style={{ padding: '12px', textAlign: 'right', opacity: 0.7 }}>Pieces</th>
+                                                <th style={{ padding: '12px', textAlign: 'right', opacity: 0.7 }}>User</th>
+                                                <th style={{ padding: '12px', textAlign: 'right', opacity: 0.7 }}>Time</th>
+                                            </tr>
                                     </thead>
                                     <tbody>
                                         {previewItems && previewItems.length > 0 ? (
@@ -756,7 +808,13 @@ const Sessions = () => {
                                                 <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)' }}>
                                                     <td style={{ padding: '10px 12px', fontFamily: 'monospace', fontWeight: 'bold' }}>{item.barcode}</td>
                                                     <td style={{ padding: '10px 12px', textAlign: 'right' }}>{item.metre}</td>
+                                                    <td style={{ padding: '10px 12px', textAlign: 'left', opacity: 0.8 }}>{formatPieceLengths(item.pieces, item.metre)}</td>
                                                     <td style={{ padding: '10px 12px', textAlign: 'right' }}>{item.weight}</td>
+                                                    <td style={{ padding: '10px 12px', textAlign: 'right', opacity: 0.8 }}>
+                                                        {Array.isArray(item.pieces) && item.pieces.length > 0
+                                                            ? item.pieces.length
+                                                            : 1}
+                                                    </td>
                                                     <td style={{ padding: '10px 12px', textAlign: 'right', opacity: 0.8 }}>{item.scannedBy}</td>
                                                     <td style={{ padding: '10px 12px', textAlign: 'right', opacity: 0.6, fontSize: '0.8rem' }}>
                                                         {item.scannedAt ? new Date(item.scannedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}
@@ -765,7 +823,7 @@ const Sessions = () => {
                                             ))
                                         ) : (
                                             <tr>
-                                                <td colSpan="5" style={{ padding: '2rem', textAlign: 'center', opacity: 0.5 }}>No items found</td>
+                                                <td colSpan="7" style={{ padding: '2rem', textAlign: 'center', opacity: 0.5 }}>No items found</td>
                                             </tr>
                                         )}
                                     </tbody>
@@ -807,7 +865,7 @@ const Sessions = () => {
                             {/* Header */}
                             <div style={{ padding: '1.5rem 2rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-secondary)' }}>
                                 <div>
-                                    <h2 style={{ fontSize: '1.25rem', margin: 0 }}>Session Report</h2>
+                                    <h2 style={{ fontSize: '1.25rem', margin: 0 }}>Batch Report</h2>
                                     <div style={{ fontSize: '0.8rem', opacity: 0.6, marginTop: '4px' }}>
                                         ID: {reportData.session._id} | {DENSITY_NAME}: {reportData.session.targetSize} | {new Date(reportData.session.createdAt).toLocaleDateString()}
                                     </div>
@@ -863,7 +921,9 @@ const Sessions = () => {
                                             <tr style={{ textAlign: 'left' }}>
                                                 <th style={{ padding: '12px', opacity: 0.7 }}>Barcode</th>
                                                 <th style={{ padding: '12px', textAlign: 'right', opacity: 0.7 }}>Metre</th>
+                                                <th style={{ padding: '12px', textAlign: 'left', opacity: 0.7 }}>Piece Lengths</th>
                                                 <th style={{ padding: '12px', textAlign: 'right', opacity: 0.7 }}>Weight</th>
+                                                <th style={{ padding: '12px', textAlign: 'right', opacity: 0.7 }}>Pieces</th>
                                                 <th style={{ padding: '12px', textAlign: 'right', opacity: 0.7 }}>User</th>
                                                 <th style={{ padding: '12px', textAlign: 'right', opacity: 0.7 }}>Time</th>
                                             </tr>
@@ -874,7 +934,13 @@ const Sessions = () => {
                                                     <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)' }}>
                                                         <td style={{ padding: '10px 12px', fontFamily: 'monospace', fontWeight: 'bold' }}>{item.barcode}</td>
                                                         <td style={{ padding: '10px 12px', textAlign: 'right' }}>{item.metre}</td>
+                                                        <td style={{ padding: '10px 12px', textAlign: 'left', opacity: 0.8 }}>{formatPieceLengths(item.pieces, item.metre)}</td>
                                                         <td style={{ padding: '10px 12px', textAlign: 'right' }}>{item.weight}</td>
+                                                        <td style={{ padding: '10px 12px', textAlign: 'right', opacity: 0.8 }}>
+                                                            {Array.isArray(item.pieces) && item.pieces.length > 0
+                                                                ? item.pieces.length
+                                                                : 1}
+                                                        </td>
                                                         <td style={{ padding: '10px 12px', textAlign: 'right', opacity: 0.8 }}>{item.scannedBy}</td>
                                                         <td style={{ padding: '10px 12px', textAlign: 'right', opacity: 0.6, fontSize: '0.8rem' }}>
                                                             {item.scannedAt ? new Date(item.scannedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}
@@ -883,7 +949,7 @@ const Sessions = () => {
                                                 ))
                                             ) : (
                                                 <tr>
-                                                    <td colSpan="5" style={{ padding: '2rem', textAlign: 'center', opacity: 0.5 }}>No items found</td>
+                                                    <td colSpan="7" style={{ padding: '2rem', textAlign: 'center', opacity: 0.5 }}>No items found</td>
                                                 </tr>
                                             )}
                                         </tbody>
@@ -909,7 +975,7 @@ const Sessions = () => {
                         display: 'flex', alignItems: 'center', justifyContent: 'center'
                     }}>
                         <div className="panel animate-fade-in" style={{ width: '100%', maxWidth: '420px', padding: '2.5rem', position: 'relative' }}>
-                            <h2 style={{ fontSize: '1.5rem', marginBottom: '2rem', textAlign: 'center' }}>Start New Session</h2>
+                            <h2 style={{ fontSize: '1.5rem', marginBottom: '2rem', textAlign: 'center' }}>Start New Batch</h2>
 
                             <form onSubmit={handleCreateSession}>
                                 <div style={{ marginBottom: '1.5rem' }}>
@@ -973,7 +1039,7 @@ const Sessions = () => {
                                         className="btn btn-primary"
                                         style={{ flex: 2 }}
                                     >
-                                        Start Session
+                                        Start Batch
                                     </button>
                                 </div>
                             </form>
@@ -1063,3 +1129,6 @@ const Sessions = () => {
 
 
 export default Sessions;
+
+
+

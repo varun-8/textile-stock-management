@@ -212,7 +212,7 @@ const Settings = () => {
 
         const confirmed = await showConfirm(
             'CRITICAL: System Wipe',
-            'Are you absolutely sure? This operation will PERMANENTLY delete all stock, barcodes, sessions, and configurations. This cannot be undone.',
+            'Are you absolutely sure? This operation will PERMANENTLY delete all stock, barcodes, batches, and configurations. This cannot be undone.',
             'danger'
         );
 
@@ -388,7 +388,7 @@ const Settings = () => {
                                 }}
                                 style={{ color: 'var(--error-color)', background: 'none', border: '1px solid var(--error-color)', padding: '0.8rem 1.5rem', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}
                             >
-                                Terminate Session & Logout
+                                Terminate Batch & Logout
                             </button>
                         </div>
                     )}
@@ -642,7 +642,7 @@ const Settings = () => {
                                             </div>
                                         )}
                                         <p style={{ marginTop: '1.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
-                                            Caution: This will reset inventory, logout all sessions, and clear all history logs.
+                                            Caution: This will reset inventory, logout all batches, and clear all history logs.
                                         </p>
                                     </div>
                                 </div>

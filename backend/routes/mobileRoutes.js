@@ -7,6 +7,7 @@ const MissedScan = require('../models/MissedScan');
 const Employee = require('../models/Employee');
 const Session = require('../models/Session');
 const Scanner = require('../models/Scanner');
+const { normalizePieces, totalFromPieces } = require('../utils/rollPieces');
 
 // Check barcode status (Scan Logic)
 router.get('/ping', async (req, res) => {
@@ -112,7 +113,7 @@ router.get('/scan/:barcode', async (req, res) => {
 // Handle Stock In / Stock Out
 router.post('/transaction', async (req, res) => {
     try {
-        let { barcode, type, details, metre, weight, percentage, employeeId, employeeName } = req.body;
+        let { barcode, type, details, metre, weight, percentage, pieces, pieceLengths, employeeId, employeeName } = req.body;
         const sessionId = req.headers['x-session-id'] || req.body.sessionId; // Capture Session ID
         let gapWarning = null;
 
@@ -129,13 +130,29 @@ router.post('/transaction', async (req, res) => {
 
         // --- STOCK IN WORKFLOW ---
         if (type === 'IN') {
+            const submittedPieces = pieces ?? pieceLengths ?? details?.pieces;
+            const normalizedPieces = normalizePieces(submittedPieces, metre);
+            const totalMetre = totalFromPieces(normalizedPieces);
+
+            console.log('STOCK_IN_PIECES_PAYLOAD', {
+                barcode,
+                metre,
+                pieces,
+                pieceLengths,
+                detailPieces: details?.pieces,
+                normalizedPieces,
+                totalMetre
+            });
+
             // Validation: Check Mandatory Fields (Block Invalid Numeric Values)
-            if (metre === undefined || isNaN(metre) || metre <= 0) {
+            if (!totalMetre || Number.isNaN(totalMetre) || totalMetre <= 0) {
                 return res.status(400).json({ error: 'Valid Metre required (Must be > 0)' });
             }
             if (weight === undefined || isNaN(weight) || weight <= 0) {
                 return res.status(400).json({ error: 'Valid Weight required (Must be > 0)' });
             }
+
+            metre = totalMetre;
             // Optional Percentage (Default to 100 if missing from mobile)
             if (percentage === undefined || percentage === null || percentage === '') {
                 percentage = 100;
@@ -197,6 +214,7 @@ router.post('/transaction', async (req, res) => {
                 clothRoll.metre = metre;
                 clothRoll.weight = weight;
                 clothRoll.percentage = percentage;
+                clothRoll.pieces = normalizedPieces;
                 // Update latest employee context
                 clothRoll.employeeId = employeeId;
                 clothRoll.employeeName = employeeName;
@@ -217,6 +235,7 @@ router.post('/transaction', async (req, res) => {
                     metre,
                     weight,
                     percentage,
+                    pieces: normalizedPieces,
                     employeeId,   // Save latest employee
                     employeeName, // Save latest employee
                     transactionHistory: [{
@@ -264,6 +283,14 @@ router.post('/transaction', async (req, res) => {
         }
 
         await clothRoll.save();
+
+        if (type === 'IN') {
+            console.log('STOCK_IN_PIECES_SAVED', {
+                barcode: clothRoll.barcode,
+                metre: clothRoll.metre,
+                pieces: clothRoll.pieces || []
+            });
+        }
 
         // --- ADD SCANNER TO SESSION ON FIRST SCAN ---
         if (sessionId && req.scanner) {
@@ -331,7 +358,7 @@ router.post('/transaction', async (req, res) => {
             req.io.emit('stock_update', {
                 type: type,
                 barcode: barcode,
-                details: { metre, weight, percentage }, // Emitting details
+                details: { metre, weight, percentage, pieces: clothRoll.pieces || [] }, // Emitting details
                 sessionId: sessionId, // Add Session ID for filtering
                 timestamp: new Date(),
                 user: employeeName

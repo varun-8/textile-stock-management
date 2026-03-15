@@ -16,6 +16,39 @@ const IconEdit = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="non
 const IconTrash = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>;
 const IconSignal = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 20h.01" /><path d="M7 20v-4" /><path d="M12 20v-8" /><path d="M17 20V8" /><path d="M22 20V4" /></svg>;
 
+const roundPieceLength = (value) => Math.round(value * 1000) / 1000;
+
+const normalizeEditPieces = (pieces, fallbackMetre) => {
+    if (Array.isArray(pieces) && pieces.length > 0) {
+        const normalized = pieces
+            .map((piece, index) => {
+                const length = Number(typeof piece === 'number' ? piece : piece?.length);
+                if (!Number.isFinite(length) || length <= 0) {
+                    return null;
+                }
+
+                return {
+                    length: roundPieceLength(length),
+                    label: typeof piece === 'number' ? `Piece ${index + 1}` : (piece?.label || `Piece ${index + 1}`)
+                };
+            })
+            .filter(Boolean);
+
+        if (normalized.length > 0) {
+            return normalized;
+        }
+    }
+
+    const metre = Number(fallbackMetre);
+    if (Number.isFinite(metre) && metre > 0) {
+        return [{ length: roundPieceLength(metre), label: 'Piece 1' }];
+    }
+
+    return [{ length: '', label: 'Piece 1' }];
+};
+
+const totalEditPieces = (pieces) => pieces.reduce((sum, piece) => sum + (Number(piece.length) || 0), 0);
+
 
 const Dashboard = () => {
     const navigate = useNavigate();
@@ -95,7 +128,7 @@ const Dashboard = () => {
                 time: new Date(item.updatedAt || item.detectedAt || item.createdAt).toLocaleString(),
                 barcode: item.barcode || 'UNKNOWN',
                 type: item.status || 'UNKNOWN',
-                details: { metre: item.metre, weight: item.weight, percentage: item.percentage },
+                details: { metre: item.metre, weight: item.weight, percentage: item.percentage, pieces: item.pieces || [] },
                 employee: item.employeeName || item.userId || 'System'
             }));
             setRecentLogs(normalized);
@@ -166,6 +199,79 @@ const Dashboard = () => {
         });
     };
 
+    const syncPiecesToDetails = (pieces, weight, percentage) => {
+        const validPieces = pieces.filter((piece) => Number(piece.length) > 0);
+        const totalMetre = totalEditPieces(validPieces);
+        const nextPercentage = totalMetre > 0 && Number(weight) > 0
+            ? ((Number(weight) / totalMetre) * 1000).toFixed(2)
+            : percentage;
+
+        return {
+            pieces,
+            metre: totalMetre > 0 ? roundPieceLength(totalMetre) : '',
+            percentage: nextPercentage
+        };
+    };
+
+    const handlePieceLengthChange = (index, value) => {
+        setEditItem((prev) => {
+            if (!prev) return prev;
+
+            const pieces = [...(prev.details.pieces || [])];
+            pieces[index] = {
+                ...pieces[index],
+                length: value
+            };
+
+            return {
+                ...prev,
+                details: {
+                    ...prev.details,
+                    ...syncPiecesToDetails(pieces, prev.details.weight, prev.details.percentage)
+                }
+            };
+        });
+    };
+
+    const addPieceRow = () => {
+        setEditItem((prev) => {
+            if (!prev) return prev;
+
+            const pieces = [...(prev.details.pieces || []), { length: '', label: `Piece ${(prev.details.pieces || []).length + 1}` }];
+
+            return {
+                ...prev,
+                details: {
+                    ...prev.details,
+                    pieces
+                }
+            };
+        });
+    };
+
+    const removePieceRow = (index) => {
+        setEditItem((prev) => {
+            if (!prev) return prev;
+
+            const remaining = (prev.details.pieces || [])
+                .filter((_, pieceIndex) => pieceIndex !== index)
+                .map((piece, pieceIndex) => ({
+                    ...piece,
+                    label: `Piece ${pieceIndex + 1}`
+                }));
+
+            const pieces = remaining.length > 0 ? remaining : [{ length: '', label: 'Piece 1' }];
+
+            return {
+                ...prev,
+                details: {
+                    ...prev.details,
+                    ...syncPiecesToDetails(pieces, prev.details.weight, prev.details.percentage)
+                }
+            };
+        });
+    };
+
     const handleSaveEdit = async () => {
         if (!editItem) return;
         try {
@@ -177,6 +283,7 @@ const Dashboard = () => {
             const payload = {
                 barcode: editItem.barcode,
                 metre: parseFloat(editItem.details.metre || 0),
+                pieces: Array.isArray(editItem.details.pieces) && editItem.details.pieces.length > 0 ? editItem.details.pieces : undefined,
                 weight: parseFloat(editItem.details.weight || 0),
                 percentage: parseFloat(editItem.details.percentage || 100),
                 type: editItem.type || 'IN',
@@ -250,6 +357,13 @@ const Dashboard = () => {
         } catch {
             showModal('error', 'Export Failed', 'An error occurred while generating the CSV file.');
         }
+    };
+
+    const formatPieceLengths = (pieces, totalMetre) => {
+        if (Array.isArray(pieces) && pieces.length > 1) {
+            return pieces.map((piece) => piece.length).join(' + ');
+        }
+        return totalMetre;
     };
 
     return (
@@ -337,7 +451,7 @@ const Dashboard = () => {
                             }}
                         >
                             <IconSignal />
-                            {activeSessionCount > 0 ? `${activeSessionCount} ACTIVE SESSIONS` : 'NO ACTIVE SESSIONS'}
+                            {activeSessionCount > 0 ? `${activeSessionCount} ACTIVE BATCHES` : 'NO ACTIVE BATCHES'}
                         </button>
                     </div>
                 </div>
@@ -441,9 +555,11 @@ const Dashboard = () => {
                                             </td>
                                             <td style={tdStyle}>
                                                 {log.details?.metre ? (
-                                                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'stretch' }}>
                                                         <Metric label="M" value={log.details.metre} />
+                                                        <Metric label="LENGTHS" value={formatPieceLengths(log.details.pieces, log.details.metre)} wide />
                                                         <Metric label="KG" value={log.details.weight} />
+                                                        <Metric label="PCS" value={Array.isArray(log.details.pieces) && log.details.pieces.length > 0 ? log.details.pieces.length : 1} />
                                                         <Metric label="Q" value={Number(log.details.percentage).toFixed(2) + '%'} color={Number(log.details.percentage) < 80 ? 'var(--warning-color)' : 'var(--text-secondary)'} />
                                                     </div>
                                                 ) : <span style={{ opacity: 0.4 }}>PENDING REGISTRATION</span>}
@@ -462,6 +578,7 @@ const Dashboard = () => {
                                                             type: isInvalidType ? 'IN' : (log.type === 'OUT' ? 'OUT' : 'IN'),
                                                             details: {
                                                                 metre: log.details.metre || '',
+                                                                pieces: normalizeEditPieces(log.details.pieces, log.details.metre),
                                                                 weight: log.details.weight || '',
                                                                 percentage: log.details.percentage || '100'
                                                             }
@@ -502,10 +619,55 @@ const Dashboard = () => {
                             <h3 style={{ marginBottom: '1rem' }}>Adjust Roll Parameters</h3>
                             <p style={{ fontSize: '0.8rem', color: 'var(--accent-color)', marginBottom: '1.5rem', fontWeight: '700' }}>ROLL ID: {editItem.barcode}</p>
 
-                            <div style={{ display: 'grid', gap: '1.25rem' }}>
+                            <div style={{ display: 'grid', gap: '1.25rem', maxHeight: '70vh', overflowY: 'auto', paddingRight: '0.25rem' }}>
                                 <div>
                                     <label style={labelStyle}>Length (Metres)</label>
-                                    <input type="number" value={editItem.details.metre} onChange={e => handleEditChange('metre', e.target.value)} style={{ width: '100%' }} />
+                                    <input type="number" value={editItem.details.metre} readOnly style={{ width: '100%', opacity: 0.75, cursor: 'not-allowed' }} />
+                                </div>
+                                <div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+                                        <label style={{ ...labelStyle, marginBottom: 0 }}>Piece Lengths</label>
+                                        <button
+                                            type="button"
+                                            onClick={addPieceRow}
+                                            className="btn"
+                                            style={{ padding: '6px 10px', fontSize: '0.75rem', fontWeight: '700' }}
+                                        >
+                                            + Add Piece
+                                        </button>
+                                    </div>
+                                    <div style={{ display: 'grid', gap: '0.6rem' }}>
+                                        {(editItem.details.pieces || []).map((piece, index) => (
+                                            <div key={piece.label || index} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '0.6rem', alignItems: 'center' }}>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    step="0.001"
+                                                    value={piece.length}
+                                                    placeholder={`Piece ${index + 1} length`}
+                                                    onChange={e => handlePieceLengthChange(index, e.target.value)}
+                                                    style={{ width: '100%' }}
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => removePieceRow(index)}
+                                                    className="btn"
+                                                    title={`Remove Piece ${index + 1}`}
+                                                    style={{
+                                                        padding: '8px',
+                                                        border: '1px solid var(--border-color)',
+                                                        background: 'var(--bg-primary)',
+                                                        minWidth: '40px',
+                                                        display: 'inline-flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center'
+                                                    }}
+                                                >
+                                                    <IconTrash />
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
                                 <div>
                                     <label style={labelStyle}>Weight (Kilograms)</label>
@@ -589,8 +751,8 @@ const StatusBadge = ({ type }) => {
     );
 };
 
-const Metric = ({ label, value, color }) => (
-    <div style={{ display: 'flex', alignItems: 'flex-start', flexDirection: 'column', gap: '2px', background: 'var(--bg-primary)', padding: '0.4rem 0.6rem', borderRadius: '8px', border: '1px solid var(--border-color)', minWidth: '70px' }}>
+const Metric = ({ label, value, color, wide = false }) => (
+    <div style={{ display: 'flex', alignItems: 'flex-start', flexDirection: 'column', gap: '2px', background: 'var(--bg-primary)', padding: '0.4rem 0.6rem', borderRadius: '8px', border: '1px solid var(--border-color)', minWidth: wide ? '140px' : '70px' }}>
         <span style={{ fontSize: '0.7rem', fontWeight: '800', opacity: 0.5, letterSpacing: '0.05em' }}>{label}</span>
         <span style={{ fontSize: '1.2rem', fontWeight: '800', color: color || 'inherit', fontFamily: 'monospace' }}>{value}</span>
     </div>

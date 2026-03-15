@@ -26,6 +26,28 @@ const IconFlash = ({ size = 20, active = false, disabled = false }) => (
 );
 
 const WorkScreen = () => {
+    const createDefaultForm = () => ({
+        metre: '',
+        weight: '',
+        percentage: '100',
+        pieceMode: 'single',
+        pieces: ['']
+    });
+
+    const normalizePieceInputs = (pieces = []) => pieces
+        .map(piece => String(piece ?? '').trim())
+        .filter(Boolean)
+        .map(piece => Number(piece))
+        .filter(piece => Number.isFinite(piece) && piece > 0);
+
+    const getEffectiveMetre = (currentForm) => {
+        if (currentForm.pieceMode === 'multiple') {
+            return normalizePieceInputs(currentForm.pieces).reduce((sum, piece) => sum + piece, 0);
+        }
+
+        return Number(currentForm.metre || 0);
+    };
+
     const { api, serverIp, setServerIp, unpair, deferredPrompt, installApp, scannerId } = useMobile();
     const { showNotification } = useNotification();
     const [scanned, setScanned] = useState(false);
@@ -48,7 +70,7 @@ const WorkScreen = () => {
     const [currentBarcode, setCurrentBarcode] = useState(null);
     const [mode, setMode] = useState('SCAN');
     const [scanData, setScanData] = useState(null);
-    const [form, setForm] = useState({ metre: '', weight: '', percentage: '100' });
+    const [form, setForm] = useState(createDefaultForm);
     const [previewItem, setPreviewItem] = useState(null);
 
     // Load Session from LocalStorage on Mount
@@ -64,13 +86,13 @@ const WorkScreen = () => {
 
     // Auto-calculate Percentage: (Weight / Metre) * 1000
     useEffect(() => {
-        const m = parseFloat(form.metre);
+        const m = getEffectiveMetre(form);
         const w = parseFloat(form.weight);
         if (m > 0 && w > 0) {
             const calc = ((w / m) * 1000).toFixed(2);
             setForm(prev => ({ ...prev, percentage: calc }));
         }
-    }, [form.metre, form.weight]);
+    }, [form.metre, form.weight, form.pieceMode, JSON.stringify(form.pieces)]);
 
     const showAlert = (message, type = 'info') => {
         showNotification(message, type);
@@ -260,7 +282,7 @@ const WorkScreen = () => {
 
             if (json.status === 'SESSION_ENDED') {
                 haptic.error();
-                showAlert('Session has ended. Redirecting...', 'error');
+                showAlert('Batch has ended. Redirecting...', 'error');
                 setTimeout(() => {
                     localStorage.removeItem('active_session_id');
                     window.location.reload();
@@ -280,13 +302,18 @@ const WorkScreen = () => {
             setScanData({ ...json, barcode: formattedBarcode });
 
             if (json.status === 'EXISTING' && json.data) {
+                const existingPieces = Array.isArray(json.data.pieces) && json.data.pieces.length > 0
+                    ? json.data.pieces.map(piece => String(piece.length ?? ''))
+                    : [json.data.metre ? String(json.data.metre) : ''];
                 setForm({
                     metre: json.data.metre ? String(json.data.metre) : '',
                     weight: json.data.weight ? String(json.data.weight) : '',
-                    percentage: json.data.percentage ? String(json.data.percentage) : '100'
+                    percentage: json.data.percentage ? String(json.data.percentage) : '100',
+                    pieceMode: existingPieces.length > 1 ? 'multiple' : 'single',
+                    pieces: existingPieces
                 });
             } else {
-                setForm({ metre: '', weight: '', percentage: '100' });
+                setForm(createDefaultForm());
             }
 
             if (sessionMode === 'IN' && json.data?.status !== 'IN') {
@@ -346,7 +373,12 @@ const WorkScreen = () => {
         const payload = {
             barcode: scanData.barcode,
             type, // Always IN for this mode, but kept flexible
-            metre: parseFloat(form.metre || 0),
+            metre: getEffectiveMetre(form),
+            pieces: normalizePieceInputs(form.pieces).map((length, index) => ({
+                length,
+                label: `Piece ${index + 1}`
+            })),
+            pieceLengths: normalizePieceInputs(form.pieces),
             weight: parseFloat(form.weight || 0),
             percentage: parseFloat(form.percentage || 100),
             employeeId: employee.employeeId, // E001, E002, etc.
@@ -382,7 +414,7 @@ const WorkScreen = () => {
         setScanned(false);
         setScanData(null);
         setMode('SCAN');
-        setForm({ metre: '', weight: '', percentage: '100' });
+        setForm(createDefaultForm());
         setCurrentBarcode(null);
     };
 
@@ -440,7 +472,7 @@ const WorkScreen = () => {
                 setShowFinishPreview(true);
                 setShowMenu(false);
             } else {
-                showAlert(res.data.error || 'Failed to get session stats', 'error');
+                showAlert(res.data.error || 'Failed to get batch stats', 'error');
             }
         } catch (err) {
             console.error(err);
@@ -513,8 +545,8 @@ const WorkScreen = () => {
             }}>
                 <div style={{ textAlign: 'center', marginBottom: '40px', animation: 'slideUp 0.6s ease-out' }}>
                     <div style={{ fontSize: '80px', marginBottom: '20px', animation: 'bounce 0.8s ease-in-out' }}>✅</div>
-                    <h1 style={{ color: 'white', fontSize: '28px', margin: 0, fontWeight: '800' }}>Session Complete!</h1>
-                    <p style={{ color: THEME.textMuted, marginTop: '12px', fontSize: '14px' }}>Your session has been successfully saved.</p>
+                    <h1 style={{ color: 'white', fontSize: '28px', margin: 0, fontWeight: '800' }}>Batch Complete!</h1>
+                    <p style={{ color: THEME.textMuted, marginTop: '12px', fontSize: '14px' }}>Your batch has been successfully saved.</p>
                 </div>
 
                 <div style={{ width: '80%', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '40px' }}>
@@ -569,8 +601,8 @@ const WorkScreen = () => {
             }}>
                 <div style={{ textAlign: 'center', marginBottom: '40px' }}>
                     <div style={{ fontSize: '60px', marginBottom: '20px' }}>🏁</div>
-                    <h1 style={{ color: 'white', fontSize: '24px', margin: 0 }}>Finish Session?</h1>
-                    <p style={{ color: THEME.textMuted, marginTop: '8px' }}>Review session summary before closing.</p>
+                    <h1 style={{ color: 'white', fontSize: '24px', margin: 0 }}>Finish Batch?</h1>
+                    <p style={{ color: THEME.textMuted, marginTop: '8px' }}>Review batch summary before closing.</p>
                 </div>
 
                 <div style={{ width: '80%', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '40px' }}>
@@ -808,6 +840,12 @@ const WorkScreen = () => {
                                                 <div style={{ fontSize: '10px', color: THEME.accent, fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Quality Percentage</div>
                                                 <div style={{ color: THEME.accent, fontSize: '18px', fontWeight: '800' }}>{scanData.data.percentage}%</div>
                                             </div>
+                                            <div style={{ textAlign: 'left', gridColumn: 'span 2' }}>
+                                                <div style={{ fontSize: '10px', color: THEME.textMuted, fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Pieces</div>
+                                                <div style={{ color: 'white', fontSize: '18px', fontWeight: '800' }}>
+                                                    {Array.isArray(scanData.data.pieces) && scanData.data.pieces.length > 0 ? scanData.data.pieces.length : 1}
+                                                </div>
+                                            </div>
                                         </div>
                                     )}
 
@@ -848,7 +886,99 @@ const WorkScreen = () => {
                                         {mode === 'IN_FORM' ? '📥 Details' : '📤 Details'}
                                     </h2>
 
-                                    <InputGroup label="METRE" value={form.metre} onChange={v => setForm({ ...form, metre: v })} />
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                                        <button
+                                            onClick={() => setForm(prev => ({ ...prev, pieceMode: 'single', pieces: prev.pieces.length ? prev.pieces : [''] }))}
+                                            style={{
+                                                padding: '14px',
+                                                borderRadius: '14px',
+                                                border: form.pieceMode === 'single' ? `2px solid ${THEME.success}` : '1px solid #334155',
+                                                background: form.pieceMode === 'single' ? 'rgba(16, 185, 129, 0.12)' : '#1e293b',
+                                                color: 'white',
+                                                fontWeight: '700'
+                                            }}
+                                        >
+                                            Single Piece
+                                        </button>
+                                        <button
+                                            onClick={() => setForm(prev => ({ ...prev, pieceMode: 'multiple', pieces: prev.pieces.length ? prev.pieces : ['', ''] }))}
+                                            style={{
+                                                padding: '14px',
+                                                borderRadius: '14px',
+                                                border: form.pieceMode === 'multiple' ? `2px solid ${THEME.accent}` : '1px solid #334155',
+                                                background: form.pieceMode === 'multiple' ? 'rgba(99, 102, 241, 0.12)' : '#1e293b',
+                                                color: 'white',
+                                                fontWeight: '700'
+                                            }}
+                                        >
+                                            Multiple Pieces
+                                        </button>
+                                    </div>
+
+                                    {form.pieceMode === 'single' ? (
+                                        <InputGroup label="TOTAL METRE" value={form.metre} onChange={v => setForm({ ...form, metre: v, pieces: [v] })} />
+                                    ) : (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                            {form.pieces.map((piece, index) => (
+                                                <div key={index} style={{ display: 'flex', gap: '10px', alignItems: 'end' }}>
+                                                    <div style={{ flex: 1 }}>
+                                                        <InputGroup
+                                                            label={`PIECE ${index + 1} LENGTH`}
+                                                            value={piece}
+                                                            onChange={v => setForm(prev => ({
+                                                                ...prev,
+                                                                pieces: prev.pieces.map((current, currentIndex) => currentIndex === index ? v : current)
+                                                            }))}
+                                                        />
+                                                    </div>
+                                                    {form.pieces.length > 1 && (
+                                                        <button
+                                                            onClick={() => setForm(prev => ({
+                                                                ...prev,
+                                                                pieces: prev.pieces.filter((_, currentIndex) => currentIndex !== index)
+                                                            }))}
+                                                            style={{
+                                                                height: '54px',
+                                                                minWidth: '54px',
+                                                                borderRadius: '14px',
+                                                                border: '1px solid rgba(239, 68, 68, 0.35)',
+                                                                background: 'rgba(239, 68, 68, 0.12)',
+                                                                color: THEME.error,
+                                                                fontWeight: '900',
+                                                                fontSize: '20px'
+                                                            }}
+                                                        >
+                                                            -
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            ))}
+                                            <button
+                                                onClick={() => setForm(prev => ({ ...prev, pieces: [...prev.pieces, ''] }))}
+                                                style={{
+                                                    padding: '14px',
+                                                    borderRadius: '14px',
+                                                    border: '1px dashed #475569',
+                                                    background: 'rgba(255,255,255,0.03)',
+                                                    color: 'white',
+                                                    fontWeight: '700'
+                                                }}
+                                            >
+                                                + Add Piece
+                                            </button>
+                                            <div style={{
+                                                background: 'rgba(99, 102, 241, 0.1)',
+                                                border: '1px solid rgba(99, 102, 241, 0.2)',
+                                                borderRadius: '16px',
+                                                padding: '14px 16px'
+                                            }}>
+                                                <div style={{ fontSize: '11px', fontWeight: '800', color: THEME.accent, letterSpacing: '1px' }}>TOTAL METRE</div>
+                                                <div style={{ color: 'white', fontSize: '24px', fontWeight: '800' }}>
+                                                    {getEffectiveMetre(form).toFixed(2)} m
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
                                     <InputGroup label="WEIGHT (KG)" value={form.weight} onChange={v => setForm({ ...form, weight: v })} />
                                     <div style={{ opacity: 0.7 }}>
                                         <InputGroup
@@ -937,14 +1067,14 @@ const WorkScreen = () => {
                         <div style={{ display: 'grid', gap: '8px' }}>
                             <MenuItem
                                 icon="🏁"
-                                label="Finish Session"
+                                label="Finish Batch"
                                 sub="Generate report & close"
                                 onClick={handleFinishSession}
                             />
 
                             <MenuItem
                                 icon="🚪"
-                                label="Exit Session"
+                                label="Exit Batch"
                                 sub="Leave without closing"
                                 color={THEME.error}
                                 onClick={handleExitSession}
