@@ -9,6 +9,11 @@ function escapeRegex(value) {
     return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+function formatDeliveryMetre(value) {
+    const numericValue = Number(value) || 0;
+    return numericValue.toFixed(2).replace('.', '-');
+}
+
 // Get Active Sessions
 router.get('/active', async (req, res) => {
     try {
@@ -534,46 +539,134 @@ router.get('/:id/export/dc', async (req, res) => {
 
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet('Download DC');
+        const exportedRolls = items
+            .filter(item => item.transactionHistory.some(t => String(t.sessionId) === String(session._id)))
+            .map(item => {
+                const validPieces = Array.isArray(item.pieces) && item.pieces.length > 0
+                    ? item.pieces
+                        .map((piece) => Number(typeof piece === 'number' ? piece : piece?.length))
+                        .filter(length => Number.isFinite(length) && length > 0)
+                    : [];
 
-        worksheet.columns = [
-            { header: 'Barcode', key: 'barcode', width: 20 },
-            { header: 'Original Metre', key: 'original_metre', width: 15 },
-            { header: 'Percentage Applied', key: 'percentage_applied', width: 20 },
-            { header: 'Additional Metre', key: 'additional_metre', width: 20 },
-            { header: 'Final Metre', key: 'final_metre', width: 15 },
-        ];
+                const sourcePieces = validPieces.length > 0 ? validPieces : [Number(item.metre) || 0];
+                const adjustedPieces = sourcePieces.map(pieceLength => pieceLength * (1 + (percentage / 100)));
+                const totalMetre = adjustedPieces.reduce((sum, pieceLength) => sum + pieceLength, 0);
 
-        let totalFinalMetre = 0;
-
-        items.forEach(item => {
-            const txs = item.transactionHistory.filter(t => String(t.sessionId) === String(session._id));
-            if (txs.length > 0) {
-                const originalMetre = parseFloat(item.metre) || 0;
-                const additionalMetre = originalMetre * (percentage / 100);
-                const finalMetre = originalMetre + additionalMetre;
-
-                totalFinalMetre += finalMetre;
-
-                worksheet.addRow({
+                return {
                     barcode: item.barcode,
-                    original_metre: originalMetre.toFixed(2),
-                    percentage_applied: percentage + '%',
-                    additional_metre: additionalMetre.toFixed(2),
-                    final_metre: finalMetre.toFixed(2)
+                    pieces: adjustedPieces,
+                    totalMetre
+                };
+            });
+
+        const totalPieces = exportedRolls.reduce((sum, roll) => sum + roll.pieces.length, 0);
+        const totalRolls = exportedRolls.length;
+        const grandTotalMetre = exportedRolls.reduce((sum, roll) => sum + roll.totalMetre, 0);
+        const rollsPerBlock = Math.max(1, Math.min(6, exportedRolls.length || 1));
+
+        const setBoxBorder = (rowNumber, colNumber) => {
+            const cell = worksheet.getCell(rowNumber, colNumber);
+            cell.border = {
+                top: { style: 'thin', color: { argb: 'FF000000' } },
+                left: { style: 'thin', color: { argb: 'FF000000' } },
+                bottom: { style: 'thin', color: { argb: 'FF000000' } },
+                right: { style: 'thin', color: { argb: 'FF000000' } }
+            };
+            return cell;
+        };
+
+        worksheet.getColumn(1).width = 8;
+        for (let col = 2; col <= rollsPerBlock + 1; col++) {
+            worksheet.getColumn(col).width = 14;
+        }
+        worksheet.getColumn(rollsPerBlock + 2).width = 14;
+
+        worksheet.mergeCells(1, 1, 1, rollsPerBlock + 2);
+        const titleCell = worksheet.getCell(1, 1);
+        titleCell.value = 'DELIVERY NOTE';
+        titleCell.font = { bold: true, size: 16 };
+        titleCell.alignment = { horizontal: 'center' };
+
+        worksheet.getCell('A2').value = 'DC No.';
+        worksheet.getCell('B2').value = dcNumber;
+        worksheet.getCell(2, rollsPerBlock + 1).value = 'Date';
+        worksheet.getCell(2, rollsPerBlock + 2).value = new Date().toLocaleDateString('en-GB');
+
+        worksheet.getCell('A3').value = 'Batch ID';
+        worksheet.getCell('B3').value = session._id.toString();
+        worksheet.getCell(3, rollsPerBlock + 1).value = 'Type';
+        worksheet.getCell(3, rollsPerBlock + 2).value = session.type;
+
+        worksheet.getCell('A4').value = 'Pick Density';
+        worksheet.getCell('B4').value = session.targetSize;
+        worksheet.getCell(4, rollsPerBlock + 1).value = 'Applied %';
+        worksheet.getCell(4, rollsPerBlock + 2).value = `${percentage}%`;
+
+        worksheet.getRow(6).values = ['S.No'];
+        for (let col = 2; col <= rollsPerBlock + 1; col++) {
+            worksheet.getCell(6, col).value = '';
+        }
+        worksheet.getCell(6, rollsPerBlock + 2).value = 'TOTAL';
+
+        let currentRow = 7;
+        let rollCounter = 1;
+
+        for (let startIndex = 0; startIndex < exportedRolls.length; startIndex += rollsPerBlock) {
+            const block = exportedRolls.slice(startIndex, startIndex + rollsPerBlock);
+            const maxPieces = Math.max(...block.map(roll => roll.pieces.length), 1);
+            const blockBodyRows = Math.max(maxPieces, block.length);
+
+            block.forEach((roll, index) => {
+                worksheet.getCell(currentRow, index + 2).value = roll.barcode;
+            });
+            worksheet.getCell(currentRow, rollsPerBlock + 2).value = 'TOTAL';
+
+            for (let pieceIndex = 0; pieceIndex < maxPieces; pieceIndex++) {
+                const rowNumber = currentRow + 1 + pieceIndex;
+                worksheet.getCell(rowNumber, 1).value = `${pieceIndex + 1}.`;
+
+                block.forEach((roll, index) => {
+                    const pieceValue = roll.pieces[pieceIndex];
+                    worksheet.getCell(rowNumber, index + 2).value = pieceValue ? formatDeliveryMetre(pieceValue) : '';
                 });
             }
-        });
 
-        // Add blank row
-        worksheet.addRow([]);
-        // Add total row
-        worksheet.addRow({
-            barcode: 'Total Metre',
-            original_metre: '',
-            percentage_applied: '',
-            additional_metre: '',
-            final_metre: totalFinalMetre.toFixed(2)
-        }).font = { bold: true };
+            const totalRowNumber = currentRow + 1 + blockBodyRows;
+            worksheet.getCell(totalRowNumber, 1).value = '';
+            block.forEach((roll, index) => {
+                worksheet.getCell(totalRowNumber, index + 2).value = formatDeliveryMetre(roll.totalMetre);
+            });
+
+            block.forEach((roll, index) => {
+                worksheet.getCell(currentRow + index + 1, rollsPerBlock + 2).value = `${rollCounter} ${formatDeliveryMetre(roll.totalMetre)}`;
+                rollCounter += 1;
+            });
+
+            for (let row = currentRow; row <= totalRowNumber; row++) {
+                for (let col = 1; col <= rollsPerBlock + 2; col++) {
+                    setBoxBorder(row, col);
+                    worksheet.getCell(row, col).alignment = { horizontal: 'center', vertical: 'middle' };
+                    worksheet.getCell(row, col).font = { size: 11 };
+                }
+            }
+
+            currentRow = totalRowNumber + 2;
+        }
+
+        worksheet.getCell(currentRow, 1).value = 'Total Metres';
+        worksheet.getCell(currentRow, 2).value = formatDeliveryMetre(grandTotalMetre);
+        worksheet.getCell(currentRow + 1, 1).value = 'Total Pieces';
+        worksheet.getCell(currentRow + 1, 2).value = totalPieces;
+        worksheet.getCell(currentRow + 2, 1).value = 'Total Roll';
+        worksheet.getCell(currentRow + 2, 2).value = totalRolls;
+        worksheet.getCell(currentRow, rollsPerBlock + 2).value = formatDeliveryMetre(grandTotalMetre);
+
+        for (let row = currentRow; row <= currentRow + 2; row++) {
+            for (let col = 1; col <= 2; col++) {
+                setBoxBorder(row, col);
+            }
+        }
+        setBoxBorder(currentRow, rollsPerBlock + 2);
 
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.setHeader('Content-Disposition', `attachment; filename=${dcNumber}.xlsx`);

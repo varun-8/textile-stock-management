@@ -60,12 +60,12 @@ const WorkScreen = () => {
     const [hasTorch, setHasTorch] = useState(false);
     const [cameraError, setCameraError] = useState(null);
 
-    const [sessionMode, setSessionMode] = useState('IN');
+    const [sessionMode, setSessionMode] = useState(() => localStorage.getItem('active_session_type') || 'IN');
     const [showMenu, setShowMenu] = useState(false);
 
     // Session Info State
-    const [sessionSize, setSessionSize] = useState(null);
-    const [sessionId, setSessionId] = useState(null);
+    const [sessionSize, setSessionSize] = useState(() => localStorage.getItem('active_session_size'));
+    const [sessionId, setSessionId] = useState(() => localStorage.getItem('active_session_id'));
 
     const [currentBarcode, setCurrentBarcode] = useState(null);
     const [mode, setMode] = useState('SCAN');
@@ -258,6 +258,7 @@ const WorkScreen = () => {
 
     const handleBarCodeScanned = async (data) => {
         setScanned(true);
+        const activeSessionMode = localStorage.getItem('active_session_type') || sessionMode;
 
         let formattedBarcode = data.replace(/\s+/g, '').replace(/[^\d-]/g, '').trim();
 
@@ -300,6 +301,7 @@ const WorkScreen = () => {
 
             setCurrentBarcode(formattedBarcode);
             setScanData({ ...json, barcode: formattedBarcode });
+            setSessionMode(activeSessionMode);
 
             if (json.status === 'EXISTING' && json.data) {
                 const existingPieces = Array.isArray(json.data.pieces) && json.data.pieces.length > 0
@@ -316,7 +318,7 @@ const WorkScreen = () => {
                 setForm(createDefaultForm());
             }
 
-            if (sessionMode === 'IN' && json.data?.status !== 'IN') {
+            if (activeSessionMode === 'IN' && json.data?.status !== 'IN') {
                 setTimeout(() => setMode('IN_FORM'), 300);
             } else {
                 setTimeout(() => setMode('ACTION'), 300);
