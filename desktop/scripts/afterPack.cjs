@@ -15,14 +15,28 @@ exports.default = async function(context) {
     }
 
     if (fs.existsSync(destBackend)) {
-        console.log(`Installing production dependencies in ${destBackend}`);
+        console.log(`[AfterPack] Found backend at: ${destBackend}`);
+        console.log(`[AfterPack] Installing production dependencies...`);
         try {
-            execSync('npm install --omit=dev', { cwd: destBackend, stdio: 'inherit' });
-            console.log('Successfully installed backend dependencies!');
+            // Check if npm is available
+            execSync('npm --version', { stdio: 'ignore' });
+            
+            // Run npm install
+            execSync('npm install --omit=dev', { 
+                cwd: destBackend, 
+                stdio: 'inherit',
+                env: { ...process.env, NODE_ENV: 'production' }
+            });
+            console.log('[AfterPack] Successfully installed backend dependencies!');
         } catch (error) {
-            console.error('Failed to install backend dependencies:', error);
+            console.error('[AfterPack] Error during backend dependency installation:');
+            console.error(error.message);
+            // We don't necessarily want to kill the whole build if it's a minor warning,
+            // but for a production installer, missing dependencies is a fatal error.
+            throw new Error(`Critical: Failed to install backend dependencies in ${destBackend}`);
         }
     } else {
-        console.warn(`WARNING: Backend directory not found at ${destBackend}`);
+        console.error(`[AfterPack] CRITICAL ERROR: Backend directory not found at ${destBackend}`);
+        throw new Error('Backend directory missing during packaging');
     }
 };

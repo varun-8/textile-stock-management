@@ -3,6 +3,8 @@ import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
 
+const isElectron = process.env.ELECTRON_BUILD === 'true';
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
@@ -10,9 +12,9 @@ export default defineConfig({
     host: true,
     port: 5173
   },
-  // Build to backend public folder so it's served by the server
+  // Build to backend public folder for web, or local dist for Electron
   build: {
-    outDir: '../backend/public/pwa',
+    outDir: isElectron ? 'dist' : '../backend/public/pwa',
     emptyOutDir: true,
     chunkSizeWarningLimit: 1000,
     rollupOptions: {
@@ -24,5 +26,5 @@ export default defineConfig({
       }
     }
   },
-  base: '/pwa/'
+  base: isElectron ? './' : '/pwa/'
 })

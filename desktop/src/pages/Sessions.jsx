@@ -4,7 +4,7 @@ import { io } from "socket.io-client";
 import { useConfig } from '../context/ConfigContext';
 import { DENSITY_NAME } from '../constants';
 
-/* eslint-disable react-hooks/immutability */
+ 
 
 const Sessions = () => {
     const { apiUrl } = useConfig();
