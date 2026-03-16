@@ -2,7 +2,12 @@ const express = require('express');
 const router = express.Router();
 const Session = require('../models/Session');
 const ClothRoll = require('../models/ClothRoll');
+const Barcode = require('../models/Barcode');
 const ExcelJS = require('exceljs');
+
+function escapeRegex(value) {
+    return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 // Get Active Sessions
 router.get('/active', async (req, res) => {
@@ -90,13 +95,38 @@ router.get('/history', async (req, res) => {
 router.post('/create', async (req, res) => {
     try {
         const { type, targetSize, createdBy } = req.body;
+        const normalizedTargetSize = String(targetSize || '').trim();
 
-        if (!type || !targetSize) {
+        if (!type || !normalizedTargetSize) {
             return res.status(400).json({ error: 'Type and Pick Density (PPI) are required' });
         }
 
         if (!['IN', 'OUT'].includes(type)) {
             return res.status(400).json({ error: 'Invalid Session Type' });
+        }
+
+        if (type === 'IN') {
+            const generatedBarcodeCount = await Barcode.countDocuments({ size: normalizedTargetSize });
+
+            if (generatedBarcodeCount === 0) {
+                return res.status(400).json({
+                    error: `Cannot start Stock In for Pick Density ${normalizedTargetSize}. Generate barcodes for this pick density first.`
+                });
+            }
+        }
+
+        if (type === 'OUT') {
+            const sizeRegex = new RegExp(`-${escapeRegex(normalizedTargetSize)}-`);
+            const inStockCount = await ClothRoll.countDocuments({
+                barcode: { $regex: sizeRegex },
+                status: 'IN'
+            });
+
+            if (inStockCount === 0) {
+                return res.status(400).json({
+                    error: `Cannot start Stock Out for Pick Density ${normalizedTargetSize}. No in-stock rolls are available for this pick density.`
+                });
+            }
         }
 
         // Check if there is already an active session for this size/type?
@@ -105,7 +135,7 @@ router.post('/create', async (req, res) => {
 
         const session = new Session({
             type,
-            targetSize,
+            targetSize: normalizedTargetSize,
             createdBy: createdBy || 'Admin',
             status: 'ACTIVE',
             activeScanners: [] // Initialize as empty - scanners join explicitly

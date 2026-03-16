@@ -184,7 +184,7 @@ const SessionManager = () => {
                 await handleJoin(data.session);
             }
         } catch (err) {
-            showNotification('Failed to create session', 'error');
+            showNotification(err.response?.data?.error || 'Failed to create session', 'error');
         }
     };
 

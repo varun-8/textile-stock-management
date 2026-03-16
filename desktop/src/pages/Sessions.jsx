@@ -15,7 +15,7 @@ const Sessions = () => {
 
     // New Session Form State
     const [sessionType, setSessionType] = useState('IN');
-    const [targetSize, setTargetSize] = useState('40');
+    const [targetSize, setTargetSize] = useState('');
     const [sizes, setSizes] = useState([]);
 
     // History State
@@ -166,7 +166,16 @@ const Sessions = () => {
             });
             const data = await resSizes.json();
             setSizes(data);
-            if (data.length > 0 && !targetSize) setTargetSize(data[0].code);
+            setTargetSize((currentTargetSize) => {
+                if (!Array.isArray(data) || data.length === 0) {
+                    return '';
+                }
+
+                const normalizedCurrent = String(currentTargetSize || '');
+                const hasCurrentOption = data.some(size => String(size.code) === normalizedCurrent);
+
+                return hasCurrentOption ? normalizedCurrent : String(data[0].code);
+            });
         } catch (err) {
             console.error("Failed to fetch sizes", err);
         }
@@ -223,6 +232,12 @@ const Sessions = () => {
 
     const handleCreateSession = async (e) => {
         e.preventDefault();
+
+        if (!targetSize) {
+            alert(`Please select a target ${DENSITY_NAME}.`);
+            return;
+        }
+
         try {
             const res = await fetch(`${apiUrl}/api/sessions/create`, {
                 method: 'POST',
@@ -237,12 +252,16 @@ const Sessions = () => {
                 })
             });
             const data = await res.json();
+            if (!res.ok) {
+                throw new Error(data.error || 'Failed to create batch');
+            }
             if (data.success) {
                 setShowCreateModal(false);
                 fetchSessions();
             }
         } catch (err) {
             console.error('Failed to create session', err);
+            alert(err.message || 'Failed to create batch');
         }
     };
 
@@ -1021,7 +1040,9 @@ const Sessions = () => {
                                         {sizes.map(s => (
                                             <option key={s._id} value={s.code}>{s.code}</option>
                                         ))}
-                                        {sizes.length === 0 && <option value="40">40</option>}
+                                        {sizes.length === 0 && (
+                                            <option value="" disabled>No {DENSITY_NAME} values available</option>
+                                        )}
                                     </select>
                                 </div>
 
