@@ -56,8 +56,9 @@ const Dashboard = () => {
 
     const [stats, setStats] = useState([
         { label: 'Total Inventory', value: '0', change: 'System Total', key: 'totalRolls', color: 'var(--text-secondary)', icon: '📦' },
-        { label: 'Current Stock', value: '0', change: 'Live Units', key: 'stockIn', color: 'var(--success-color)', icon: '🏭' },
-        { label: 'Dispatched', value: '0', change: 'Outbound', key: 'stockOut', color: 'var(--accent-color)', icon: '🚛' },
+        { label: 'In Stock', value: '0', change: 'Available (IN)', key: 'stockIn', color: 'var(--success-color)', icon: '🏭' },
+        { label: 'Ready to Dispatch', value: '0', change: 'Reserved (RESERVED)', key: 'readyToDispatch', color: 'var(--accent-color)', icon: '📋' },
+        { label: 'Out Stock', value: '0', change: 'Dispatched (OUT)', key: 'stockOut', color: 'var(--accent-color)', icon: '🚛' },
         { label: 'Missing Logs', value: '0', change: 'Action Required', key: 'missingCount', alert: true, color: 'var(--error-color)', icon: '⚠️' }
     ]);
 
@@ -97,9 +98,10 @@ const Dashboard = () => {
             const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
             const data = await res.json();
             setStats([
-                { label: 'Total Inventory', value: data.totalRolls, change: isTodayOnly ? "Today's Total" : 'All-time Registered', key: 'totalRolls', color: 'var(--text-secondary)', icon: '📦' },
-                { label: 'Current Stock', value: data.stockIn, change: isTodayOnly ? "Today's Inflow" : 'Units in Warehouse', key: 'stockIn', color: 'var(--success-color)', icon: '🏭' },
-                { label: 'Dispatched', value: data.stockOut, change: isTodayOnly ? "Today's Outflow" : 'Sent to Customers', key: 'stockOut', color: 'var(--accent-color)', icon: '🚛' },
+                { label: 'Total Inventory', value: data.totalRolls, change: isTodayOnly ? "Today's Physical Stock" : 'IN + RESERVED in Godown', key: 'totalRolls', color: 'var(--text-secondary)', icon: '📦' },
+                { label: 'In Stock', value: data.inStock ?? data.stockIn, change: isTodayOnly ? "Today's Available" : 'Ready for use (IN)', key: 'stockIn', color: 'var(--success-color)', icon: '🏭' },
+                { label: 'Ready to Dispatch', value: data.readyToDispatch ?? 0, change: isTodayOnly ? "Today's Reserved" : 'Picked but not dispatched', key: 'readyToDispatch', color: 'var(--accent-color)', icon: '📋' },
+                { label: 'Out Stock', value: data.stockOut ?? 0, change: isTodayOnly ? "Today's Dispatch" : 'Already dispatched (OUT)', key: 'stockOut', color: 'var(--accent-color)', icon: '🚛' },
                 { label: 'Missing Logs', value: data.missingCount, change: isTodayOnly ? "Today's Gaps" : 'Need Resolution', key: 'missingCount', alert: data.missingCount > 0, color: 'var(--error-color)', icon: '⚠️' }
             ]);
         } catch (err) { console.error(err); }

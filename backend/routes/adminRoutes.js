@@ -12,6 +12,7 @@ const Size = require('../models/Size');
 const os = require('os');
 const { issuePairingToken } = require('../middleware/authMiddleware');
 const { normalizePieces, totalFromPieces } = require('../utils/rollPieces');
+const { detectMissingSequences } = require('../utils/missingSequenceService');
 
 // Get Audit Logs
 router.get('/audit-logs', async (req, res) => {
@@ -25,17 +26,150 @@ router.get('/audit-logs', async (req, res) => {
 
 const getConfigPath = () => require('path').join(__dirname, '../config.json');
 
+const DEFAULT_DC_TEMPLATE = {
+    layoutMode: 'printed',
+    companyName: '',
+    subTitle: '',
+    documentTitle: 'DELIVERY NOTE',
+    gstin: '',
+    address: '',
+    phoneText: '',
+    tableHeaderColor: '#1a5c1a',
+    showPartyAddress: true,
+    showQuality: true,
+    showFolding: true,
+    showLotNo: true,
+    showBillNo: true,
+    showBillPreparedBy: true,
+    showVehicle: true,
+    showDriver: true,
+    logoDataUrl: '',
+    logoDataUrl2: '',
+    companyNameSize: 16,
+    subTitleSize: 8,
+    addressSize: 7.5
+};
+
+const createTemplateId = () => `tpl-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+const sanitizeDcTemplate = (body = {}) => {
+    const safeTemplate = {
+        layoutMode: ['modern', 'printed'].includes(String(body.layoutMode || ''))
+            ? String(body.layoutMode)
+            : DEFAULT_DC_TEMPLATE.layoutMode,
+        companyName: String(body.companyName || DEFAULT_DC_TEMPLATE.companyName).trim().slice(0, 120),
+        subTitle: String(body.subTitle || DEFAULT_DC_TEMPLATE.subTitle).trim().slice(0, 160),
+        documentTitle: String(body.documentTitle || DEFAULT_DC_TEMPLATE.documentTitle).trim().slice(0, 80),
+        gstin: String(body.gstin || '').trim().slice(0, 64),
+        address: String(body.address || '').trim().slice(0, 400),
+        phoneText: String(body.phoneText || '').trim().slice(0, 80),
+        tableHeaderColor: /^#[0-9a-fA-F]{6}$/.test(String(body.tableHeaderColor || ''))
+            ? String(body.tableHeaderColor)
+            : DEFAULT_DC_TEMPLATE.tableHeaderColor,
+        showPartyAddress: body.showPartyAddress !== false,
+        showQuality: body.showQuality !== false,
+        showFolding: body.showFolding !== false,
+        showLotNo: body.showLotNo !== false,
+        showBillNo: body.showBillNo !== false,
+        showBillPreparedBy: body.showBillPreparedBy !== false,
+        showVehicle: body.showVehicle !== false,
+        showDriver: body.showDriver !== false,
+        logoDataUrl: typeof body.logoDataUrl === 'string' ? body.logoDataUrl : '',
+        logoDataUrl2: typeof body.logoDataUrl2 === 'string' ? body.logoDataUrl2 : '',
+        companyNameSize: parseFloat(body.companyNameSize) || 16,
+        subTitleSize: parseFloat(body.subTitleSize) || 8,
+        addressSize: parseFloat(body.addressSize) || 7.5
+    };
+
+    if (safeTemplate.logoDataUrl && !safeTemplate.logoDataUrl.startsWith('data:image/')) {
+        throw new Error('Invalid logo format. Please upload a valid image file.');
+    }
+    if (safeTemplate.logoDataUrl2 && !safeTemplate.logoDataUrl2.startsWith('data:image/')) {
+        throw new Error('Invalid right logo format. Please upload a valid image file.');
+    }
+    if (safeTemplate.logoDataUrl && safeTemplate.logoDataUrl.length > 5000000) {
+        throw new Error('Logo image is too large. Please upload a smaller image.');
+    }
+    if (safeTemplate.logoDataUrl2 && safeTemplate.logoDataUrl2.length > 5000000) {
+        throw new Error('Right logo image is too large. Please upload a smaller image.');
+    }
+
+    return safeTemplate;
+};
+
+const readDcTemplatesConfig = (config) => {
+    const templates = [];
+
+    if (Array.isArray(config.dcTemplates)) {
+        config.dcTemplates.forEach((tpl) => {
+            if (!tpl || typeof tpl !== 'object') return;
+            try {
+                templates.push({
+                    id: String(tpl.id || createTemplateId()),
+                    name: String(tpl.name || 'Untitled Template').trim().slice(0, 80) || 'Untitled Template',
+                    config: sanitizeDcTemplate(tpl.config || tpl)
+                });
+            } catch (_) {
+                // Skip malformed templates and continue.
+            }
+        });
+    }
+
+    if (templates.length === 0) {
+        const legacy = config.dcTemplate && typeof config.dcTemplate === 'object'
+            ? config.dcTemplate
+            : DEFAULT_DC_TEMPLATE;
+        templates.push({
+            id: 'tpl-default',
+            name: 'Default Template',
+            config: sanitizeDcTemplate(legacy)
+        });
+    }
+
+    let activeTemplateId = String(config.activeDcTemplateId || '').trim();
+    if (!activeTemplateId || !templates.some((t) => t.id === activeTemplateId)) {
+        activeTemplateId = templates[0].id;
+    }
+
+    return { templates, activeTemplateId };
+};
+
+const persistDcTemplatesConfig = (config, templates, activeTemplateId) => {
+    const safeTemplates = templates.map((tpl) => ({
+        id: String(tpl.id),
+        name: String(tpl.name || 'Untitled Template').trim().slice(0, 80) || 'Untitled Template',
+        config: sanitizeDcTemplate(tpl.config || {})
+    }));
+    const safeActiveId = safeTemplates.some((t) => t.id === activeTemplateId)
+        ? activeTemplateId
+        : safeTemplates[0].id;
+
+    config.dcTemplates = safeTemplates;
+    config.activeDcTemplateId = safeActiveId;
+    config.dcTemplate = safeTemplates.find((t) => t.id === safeActiveId).config;
+    return { templates: safeTemplates, activeTemplateId: safeActiveId };
+};
+
+const readConfigFile = () => {
+    const configPath = getConfigPath();
+    const fs = require('fs');
+    if (!fs.existsSync(configPath)) {
+        return {};
+    }
+    return JSON.parse(fs.readFileSync(configPath));
+};
+
+const writeConfigFile = (config) => {
+    const configPath = getConfigPath();
+    const fs = require('fs');
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+};
+
 // Get Backup Path
 router.get('/config/backup-path', (req, res) => {
     try {
-        const configPath = getConfigPath();
-        const fs = require('fs');
-        if (fs.existsSync(configPath)) {
-            const config = JSON.parse(fs.readFileSync(configPath));
-            res.json({ path: config.backupPath || './backups' });
-        } else {
-            res.json({ path: './backups' });
-        }
+        const config = readConfigFile();
+        res.json({ path: config.backupPath || './backups' });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -44,15 +178,132 @@ router.get('/config/backup-path', (req, res) => {
 // Update Backup Path
 router.post('/config/backup-path', (req, res) => {
     try {
-        const configPath = getConfigPath();
-        const fs = require('fs');
-        let config = {};
-        if (fs.existsSync(configPath)) {
-            config = JSON.parse(fs.readFileSync(configPath));
-        }
+        const config = readConfigFile();
         config.backupPath = req.body.path || './backups';
-        fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+        writeConfigFile(config);
         res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Get Delivery Challan Template Config
+router.get('/config/dc-template', (req, res) => {
+    try {
+        const config = readConfigFile();
+        const { templates, activeTemplateId } = readDcTemplatesConfig(config);
+        const active = templates.find((t) => t.id === activeTemplateId) || templates[0];
+        res.json({
+            ...DEFAULT_DC_TEMPLATE,
+            ...(active?.config || {}),
+            templateId: active?.id || 'tpl-default',
+            templateName: active?.name || 'Default Template'
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// List all Delivery Challan templates
+router.get('/config/dc-templates', (req, res) => {
+    try {
+        const config = readConfigFile();
+        const { templates, activeTemplateId } = readDcTemplatesConfig(config);
+        res.json({
+            activeTemplateId,
+            templates: templates.map((tpl) => ({
+                id: tpl.id,
+                name: tpl.name,
+                config: { ...DEFAULT_DC_TEMPLATE, ...(tpl.config || {}) }
+            }))
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Update Delivery Challan Template Config
+router.post('/config/dc-template', (req, res) => {
+    try {
+        const body = req.body || {};
+        const config = readConfigFile();
+        const { templates, activeTemplateId } = readDcTemplatesConfig(config);
+        const safeTemplate = sanitizeDcTemplate(body);
+        const requestedId = String(body.templateId || '').trim();
+        const templateName = String(body.templateName || '').trim().slice(0, 80) || 'Untitled Template';
+
+        let nextTemplates = [...templates];
+        let nextActiveId = activeTemplateId;
+
+        const existingIndex = requestedId
+            ? nextTemplates.findIndex((t) => t.id === requestedId)
+            : -1;
+
+        if (existingIndex >= 0) {
+            nextTemplates[existingIndex] = {
+                ...nextTemplates[existingIndex],
+                name: templateName,
+                config: safeTemplate
+            };
+            nextActiveId = nextTemplates[existingIndex].id;
+        } else {
+            const newTemplateId = requestedId || createTemplateId();
+            nextTemplates.push({
+                id: newTemplateId,
+                name: templateName,
+                config: safeTemplate
+            });
+            nextActiveId = newTemplateId;
+        }
+
+        const persisted = persistDcTemplatesConfig(config, nextTemplates, nextActiveId);
+        writeConfigFile(config);
+        const active = persisted.templates.find((t) => t.id === persisted.activeTemplateId);
+
+        res.json({
+            success: true,
+            activeTemplateId: persisted.activeTemplateId,
+            dcTemplate: { ...DEFAULT_DC_TEMPLATE, ...(active?.config || {}) },
+            templateId: active?.id,
+            templateName: active?.name,
+            templates: persisted.templates.map((tpl) => ({
+                id: tpl.id,
+                name: tpl.name,
+                config: { ...DEFAULT_DC_TEMPLATE, ...(tpl.config || {}) }
+            }))
+        });
+    } catch (err) {
+        const status = String(err.message || '').includes('Invalid') || String(err.message || '').includes('large') ? 400 : 500;
+        res.status(status).json({ error: err.message });
+    }
+});
+
+// Set active Delivery Challan template
+router.post('/config/dc-template/select', (req, res) => {
+    try {
+        const templateId = String(req.body?.templateId || '').trim();
+        if (!templateId) {
+            return res.status(400).json({ error: 'templateId is required' });
+        }
+
+        const config = readConfigFile();
+        const { templates } = readDcTemplatesConfig(config);
+        const exists = templates.some((tpl) => tpl.id === templateId);
+        if (!exists) {
+            return res.status(404).json({ error: 'Template not found' });
+        }
+
+        const persisted = persistDcTemplatesConfig(config, templates, templateId);
+        writeConfigFile(config);
+        const active = persisted.templates.find((tpl) => tpl.id === persisted.activeTemplateId);
+
+        res.json({
+            success: true,
+            activeTemplateId: persisted.activeTemplateId,
+            dcTemplate: { ...DEFAULT_DC_TEMPLATE, ...(active?.config || {}) },
+            templateId: active?.id,
+            templateName: active?.name
+        });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -322,7 +573,14 @@ router.patch('/missing/damaged/:barcode', async (req, res) => {
         const { barcode } = req.params;
         const result = await MissedScan.findOneAndUpdate(
             { barcode },
-            { status: 'DAMAGED' },
+            {
+                status: 'DAMAGED',
+                issueType: 'SEQUENCE_MISSING',
+                resolutionAction: 'MARK_DAMAGED',
+                resolutionNote: req.body?.note || 'Marked as damaged',
+                resolvedAt: new Date(),
+                resolvedBy: req.user?.username || 'Admin'
+            },
             { new: true }
         );
 
@@ -337,6 +595,122 @@ router.patch('/missing/damaged/:barcode', async (req, res) => {
         });
 
         res.json({ success: true, message: 'Barcode marked as damaged and hidden.' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.post('/missing/audit-sequences', async (req, res) => {
+    try {
+        const summary = await detectMissingSequences({ triggeredBy: req.user?.username || 'admin-audit' });
+
+        await AuditLog.create({
+            action: 'INVENTORY_EDIT',
+            user: req.user?.username || 'Admin',
+            details: { action: 'SEQUENCE_AUDIT_RUN', ...summary },
+            ipAddress: req.ip
+        });
+
+        res.json({ success: true, ...summary });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.patch('/missing/lost/:barcode', async (req, res) => {
+    try {
+        const { barcode } = req.params;
+        const note = String(req.body?.note || 'Marked as lost').trim();
+
+        const entry = await MissedScan.findOneAndUpdate(
+            { barcode },
+            {
+                status: 'LOST',
+                issueType: 'SEQUENCE_MISSING',
+                resolutionAction: 'MARK_LOST',
+                resolutionNote: note,
+                resolvedAt: new Date(),
+                resolvedBy: req.user?.username || 'Admin'
+            },
+            { new: true }
+        );
+
+        if (!entry) return res.status(404).json({ error: 'Barcode not found in missing list' });
+
+        await AuditLog.create({
+            action: 'INVENTORY_EDIT',
+            user: req.user?.username || 'Admin',
+            details: { action: 'MISSING_MARK_LOST', barcode, note },
+            ipAddress: req.ip
+        });
+
+        res.json({ success: true, entry });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.patch('/missing/ignore/:barcode', async (req, res) => {
+    try {
+        const { barcode } = req.params;
+        const note = String(req.body?.note || 'Ignored by admin').trim();
+
+        const entry = await MissedScan.findOneAndUpdate(
+            { barcode },
+            {
+                status: 'IGNORED',
+                issueType: 'SEQUENCE_MISSING',
+                resolutionAction: 'IGNORE',
+                resolutionNote: note,
+                resolvedAt: new Date(),
+                resolvedBy: req.user?.username || 'Admin'
+            },
+            { new: true }
+        );
+
+        if (!entry) return res.status(404).json({ error: 'Barcode not found in missing list' });
+
+        await AuditLog.create({
+            action: 'INVENTORY_EDIT',
+            user: req.user?.username || 'Admin',
+            details: { action: 'MISSING_IGNORE', barcode, note },
+            ipAddress: req.ip
+        });
+
+        res.json({ success: true, entry });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.patch('/missing/create-entry/:barcode', async (req, res) => {
+    try {
+        const { barcode } = req.params;
+        const note = String(req.body?.note || 'Create entry action recorded').trim();
+
+        const entry = await MissedScan.findOneAndUpdate(
+            { barcode },
+            {
+                status: 'RESOLVED',
+                issueType: 'SEQUENCE_MISSING',
+                resolutionAction: 'CREATE_ENTRY',
+                resolutionNote: note,
+                resolvedAt: new Date(),
+                resolvedBy: req.user?.username || 'Admin'
+            },
+            { new: true }
+        );
+
+        if (!entry) return res.status(404).json({ error: 'Barcode not found in missing list' });
+
+        await AuditLog.create({
+            action: 'INVENTORY_EDIT',
+            user: req.user?.username || 'Admin',
+            details: { action: 'MISSING_CREATE_ENTRY', barcode, note },
+            ipAddress: req.ip
+        });
+
+        res.json({ success: true, entry });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -364,6 +738,7 @@ router.delete('/inventory/delete/:barcode', async (req, res) => {
                     size: validBarcode.size,
                     sequence: validBarcode.sequence,
                     status: 'PENDING',
+                    issueType: 'UNREGISTERED_ROLL',
                     detectedAt: new Date()
                 });
             } catch (ignore) {

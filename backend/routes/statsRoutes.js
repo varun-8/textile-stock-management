@@ -15,10 +15,11 @@ router.get('/dashboard', async (req, res) => {
             query.updatedAt = dateFilter;
         }
 
-        // 1. Cloth Roll Stats
-        const totalRolls = await ClothRoll.countDocuments(startDate || endDate ? { createdAt: query.updatedAt } : {});
-        const stockIn = await ClothRoll.countDocuments({ status: 'IN', ...query });
+        // 1. Cloth Roll Stats (state-based inventory)
+        const inStock = await ClothRoll.countDocuments({ status: 'IN', ...query });
+        const readyToDispatch = await ClothRoll.countDocuments({ status: 'RESERVED', ...query });
         const stockOut = await ClothRoll.countDocuments({ status: 'OUT', ...query });
+        const totalRolls = inStock + readyToDispatch;
 
         // 2. Missing Barcodes Calculation (Use Actual Reported Missed Scans)
         const MissedScan = require('../models/MissedScan');
@@ -29,7 +30,9 @@ router.get('/dashboard', async (req, res) => {
 
         res.json({
             totalRolls,
-            stockIn,
+            stockIn: inStock,
+            inStock,
+            readyToDispatch,
             stockOut,
             missingCount
         });
@@ -72,6 +75,8 @@ router.get('/list/:type', async (req, res) => {
 
         if (type === 'stockIn') {
             data = await ClothRoll.find({ status: 'IN', ...query }).sort({ updatedAt: -1 }).limit(100);
+        } else if (type === 'readyToDispatch') {
+            data = await ClothRoll.find({ status: 'RESERVED', ...query }).sort({ updatedAt: -1 }).limit(100);
         } else if (type === 'stockOut') {
             data = await ClothRoll.find({ status: 'OUT', ...query }).sort({ updatedAt: -1 }).limit(100);
         } else if (type === 'totalRolls') {

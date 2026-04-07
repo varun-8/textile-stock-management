@@ -91,7 +91,7 @@ app.use(cors({
     },
     credentials: true
 }));
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '8mb' }));
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
 if (rateLimit) {
@@ -152,6 +152,7 @@ app.use('/api/sessions', require('./routes/sessionRoutes'));
 app.use('/api/reports', requireAdminAuth, require('./routes/reportsRoutes'));
 app.use('/api/sizes', require('./routes/sizesRoutes'));
 app.use('/api/employees', require('./routes/employeeRoutes'));
+app.use('/api/dc', requireAdminAuth, require('./routes/dcRoutes'));
 
 // New Endpoint: Get Server IP (for Desktop to generate QR)
 // Auth Routes (Open for pairing/login)

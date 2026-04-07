@@ -240,6 +240,60 @@ app.whenReady().then(async () => {
         return true;
     });
 
+    ipcMain.handle('pdf:printOrSave', async (event, filename, bytes) => {
+        try {
+            const safeName = String(filename || 'Delivery_Challan.pdf').replace(/[\\/:*?"<>|]+/g, '_');
+            const byteArray = Array.isArray(bytes) ? bytes : [];
+            const pdfBuffer = Buffer.from(byteArray);
+            if (!pdfBuffer || pdfBuffer.length === 0) {
+                return { success: false, mode: 'none', message: 'Empty PDF data' };
+            }
+
+            const tempPath = path.join(app.getPath('temp'), `${Date.now()}-${safeName}`);
+            fs.writeFileSync(tempPath, pdfBuffer);
+
+            const printWindow = new BrowserWindow({
+                show: false,
+                webPreferences: {
+                    sandbox: true
+                }
+            });
+
+            await printWindow.loadURL(`file://${tempPath}`);
+
+            let printers = [];
+            try {
+                printers = await printWindow.webContents.getPrintersAsync();
+            } catch (err) {
+                printers = [];
+            }
+
+            if (printers.length > 0) {
+                const printResult = await new Promise((resolve) => {
+                    printWindow.webContents.print(
+                        { silent: false, printBackground: true },
+                        (success, failureReason) => {
+                            resolve({ success, failureReason: failureReason || '' });
+                        }
+                    );
+                });
+
+                printWindow.destroy();
+
+                if (printResult.success) {
+                    try { fs.unlinkSync(tempPath); } catch (_) {}
+                    return { success: true, mode: 'printed' };
+                }
+            } else {
+                printWindow.destroy();
+            }
+            try { fs.unlinkSync(tempPath); } catch (_) {}
+            return { success: false, mode: 'no_printer' };
+        } catch (err) {
+            return { success: false, mode: 'none', message: err.message };
+        }
+    });
+
     await startServices();
     createWindow();
 

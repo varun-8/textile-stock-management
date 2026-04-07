@@ -3,7 +3,9 @@ const router = express.Router();
 const Session = require('../models/Session');
 const ClothRoll = require('../models/ClothRoll');
 const Barcode = require('../models/Barcode');
+const DeliveryChallan = require('../models/DeliveryChallan');
 const ExcelJS = require('exceljs');
+const { detectMissingSequences } = require('../utils/missingSequenceService');
 
 function escapeRegex(value) {
     return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -14,9 +16,104 @@ function formatDeliveryMetre(value) {
     return numericValue.toFixed(2).replace('.', '-');
 }
 
+function getBatchPrefix(type) {
+    return type === 'IN' ? 'BI' : 'BD';
+}
+
+function parseSequenceFromBatchCode(batchCode) {
+    if (!batchCode || typeof batchCode !== 'string') return 0;
+    const parts = batchCode.split('-');
+    if (parts.length !== 3) return 0;
+    const seq = parseInt(parts[2], 10);
+    return Number.isFinite(seq) ? seq : 0;
+}
+
+async function backfillMissingBatchCodes() {
+    const missingSessions = await Session.find({
+        $or: [{ batchCode: { $exists: false } }, { batchCode: null }]
+    }).sort({ createdAt: 1 });
+
+    if (missingSessions.length === 0) {
+        return;
+    }
+
+    const existingSessions = await Session.find({
+        batchCode: { $exists: true, $ne: null }
+    }).select('type batchYear batchSequence batchCode createdAt').lean();
+
+    const keyToMaxSequence = new Map();
+
+    for (const row of existingSessions) {
+        const yy = Number.isFinite(row.batchYear)
+            ? row.batchYear
+            : (new Date(row.createdAt).getFullYear() % 100);
+        const key = `${row.type}-${String(yy).padStart(2, '0')}`;
+        const sequence = Number.isFinite(row.batchSequence)
+            ? row.batchSequence
+            : parseSequenceFromBatchCode(row.batchCode);
+        const currentMax = keyToMaxSequence.get(key) || 0;
+        if (sequence > currentMax) {
+            keyToMaxSequence.set(key, sequence);
+        }
+    }
+
+    const updates = [];
+    for (const session of missingSessions) {
+        const yy = new Date(session.createdAt).getFullYear() % 100;
+        const yyText = String(yy).padStart(2, '0');
+        const key = `${session.type}-${yyText}`;
+        const nextSequence = (keyToMaxSequence.get(key) || 0) + 1;
+        keyToMaxSequence.set(key, nextSequence);
+
+        const batchCode = `${getBatchPrefix(session.type)}-${yyText}-${String(nextSequence).padStart(3, '0')}`;
+        updates.push({
+            updateOne: {
+                filter: { _id: session._id },
+                update: {
+                    $set: {
+                        batchCode,
+                        batchYear: yy,
+                        batchSequence: nextSequence
+                    }
+                }
+            }
+        });
+    }
+
+    if (updates.length > 0) {
+        await Session.bulkWrite(updates, { ordered: true });
+    }
+}
+
+async function createSessionWithBatchCode({ type, targetSize, createdBy }) {
+    const prefix = getBatchPrefix(type);
+    const year = new Date().getFullYear() % 100;
+    const yearText = String(year).padStart(2, '0');
+    const regex = new RegExp(`^${prefix}-${yearText}-\\d{3}$`);
+
+    const latestSession = await Session.findOne({ batchCode: regex }).sort({ batchSequence: -1, createdAt: -1 });
+    const nextSequence = (latestSession?.batchSequence || 0) + 1;
+    const batchCode = `${prefix}-${yearText}-${String(nextSequence).padStart(3, '0')}`;
+
+    const session = new Session({
+        batchCode,
+        batchYear: year,
+        batchSequence: nextSequence,
+        type,
+        targetSize,
+        createdBy,
+        status: 'ACTIVE',
+        activeScanners: []
+    });
+
+    await session.save();
+    return session;
+}
+
 // Get Active Sessions
 router.get('/active', async (req, res) => {
     try {
+        await backfillMissingBatchCodes();
         const Session = require('../models/Session');
         const Scanner = require('../models/Scanner');
 
@@ -68,6 +165,7 @@ router.get('/active', async (req, res) => {
 // Get Session History with Date Filter
 router.get('/history', async (req, res) => {
     try {
+        await backfillMissingBatchCodes();
         const { date, type } = req.query;
         let query = { status: 'COMPLETED' };
 
@@ -138,15 +236,29 @@ router.post('/create', async (req, res) => {
         // Requirement says "multiple sessions can be created either for stock in or out"
         // So we allow multiple.
 
-        const session = new Session({
-            type,
-            targetSize: normalizedTargetSize,
-            createdBy: createdBy || 'Admin',
-            status: 'ACTIVE',
-            activeScanners: [] // Initialize as empty - scanners join explicitly
-        });
+        let session = null;
+        let lastError = null;
 
-        await session.save();
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+            try {
+                session = await createSessionWithBatchCode({
+                    type,
+                    targetSize: normalizedTargetSize,
+                    createdBy: createdBy || 'Admin'
+                });
+                break;
+            } catch (err) {
+                lastError = err;
+                // Retry only on duplicate batchCode under concurrent creation.
+                if (err?.code !== 11000) {
+                    throw err;
+                }
+            }
+        }
+
+        if (!session) {
+            throw lastError || new Error('Failed to generate unique batch code');
+        }
 
         if (req.io) {
             req.io.emit('session_update', { action: 'CREATED', session });
@@ -341,6 +453,9 @@ router.post('/end', async (req, res) => {
 
         await session.save();
 
+        // Run sequence-gap detection after batch completion.
+        await detectMissingSequences({ triggeredBy: 'batch-completed' });
+
         if (req.io) {
             console.log('🔔 EMITTING SOCKET EVENT:', { action: 'ENDED', sessionId, initiator });
             req.io.emit('session_update', { action: 'ENDED', sessionId, initiator });
@@ -412,6 +527,7 @@ router.get('/:id/export/details', async (req, res) => {
 // Export Summary Report
 router.get('/:id/export/summary', async (req, res) => {
     try {
+        await backfillMissingBatchCodes();
         const { id } = req.params;
         const session = await Session.findById(id);
         if (!session) return res.status(404).send('Batch not found');
@@ -433,7 +549,7 @@ router.get('/:id/export/summary', async (req, res) => {
         const worksheet = workbook.addWorksheet('Batch Summary');
 
         // Session Info Header
-        worksheet.addRow(['Batch ID', session._id.toString()]);
+        worksheet.addRow(['Batch ID', session.batchCode || session._id.toString()]);
         worksheet.addRow(['Type', session.type]);
         worksheet.addRow(['Pick Density (PPI)', session.targetSize]);
         worksheet.addRow(['Start Time', session.createdAt.toLocaleString()]);
@@ -462,7 +578,8 @@ router.get('/:id/export/summary', async (req, res) => {
         worksheet.addRow(['GRAND TOTAL', grandCount, grandMetre.toFixed(2), grandWeight.toFixed(2)]).font = { bold: true, color: { argb: 'FF0000FF' } };
 
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-        res.setHeader('Content-Disposition', `attachment; filename=summary_${session.targetSize}_${id}.xlsx`);
+        const summaryFileBatch = session.batchCode || id;
+        res.setHeader('Content-Disposition', `attachment; filename=summary_${session.targetSize}_${summaryFileBatch}.xlsx`);
 
         await workbook.xlsx.write(res);
         res.end();
@@ -476,6 +593,7 @@ router.get('/:id/export/summary', async (req, res) => {
 // Get Session Summary Data (JSON)
 router.get('/:id/summary', async (req, res) => {
     try {
+        await backfillMissingBatchCodes();
         const { id } = req.params;
         const session = await Session.findById(id);
         if (!session) return res.status(404).json({ error: 'Batch not found' });
@@ -523,6 +641,7 @@ router.get('/:id/summary', async (req, res) => {
 // Export Download DC Report
 router.get('/:id/export/dc', async (req, res) => {
     try {
+        await backfillMissingBatchCodes();
         const { id } = req.params;
         const percentageStr = req.query.percentage;
         const dcNumber = req.query.dcNumber || `dc_report_${id}`;
@@ -593,7 +712,7 @@ router.get('/:id/export/dc', async (req, res) => {
         worksheet.getCell(2, rollsPerBlock + 2).value = new Date().toLocaleDateString('en-GB');
 
         worksheet.getCell('A3').value = 'Batch ID';
-        worksheet.getCell('B3').value = session._id.toString();
+        worksheet.getCell('B3').value = session.batchCode || session._id.toString();
         worksheet.getCell(3, rollsPerBlock + 1).value = 'Type';
         worksheet.getCell(3, rollsPerBlock + 2).value = session.type;
 
@@ -677,6 +796,84 @@ router.get('/:id/export/dc', async (req, res) => {
     } catch (err) {
         console.error(err);
         res.status(500).send('Error generating DC report');
+    }
+});
+
+// Get eligible OUT-type completed batches for one-time DC generation
+router.get('/batch/active-out/list', async (req, res) => {
+    try {
+        await backfillMissingBatchCodes();
+        
+        // Only fully completed OUT batches are eligible.
+        const outBatches = await Session.find({ 
+            status: 'COMPLETED',
+            type: 'OUT'
+        }).sort({ createdAt: -1 }).lean();
+
+        const existingBatchDcs = await DeliveryChallan.find({
+            sourceBatchId: { $in: outBatches.map(b => b._id) }
+        }).select('sourceBatchId').lean();
+
+        const usedBatchIds = new Set(existingBatchDcs.map(row => String(row.sourceBatchId)));
+        const candidateBatches = outBatches.filter(batch => !usedBatchIds.has(String(batch._id)));
+
+        // For each batch, get rolls and calculate totals
+        const batchesWithRolls = await Promise.all(candidateBatches.map(async (batch) => {
+            const rolls = await ClothRoll.find({
+                "transactionHistory.sessionId": batch._id
+            }).lean();
+
+            const hasHistoricalDcForBatch = rolls.some((roll) =>
+                (roll.transactionHistory || []).some((tx) =>
+                    typeof tx.details === 'string' && tx.details.includes('Dispatched via DC-')
+                )
+            );
+
+            // Show only rolls that are not already assigned to another DC.
+            const usableRolls = rolls.filter(r => !r.dcId);
+
+            const totalRolls = usableRolls.length;
+            const totalMetre = usableRolls.reduce((sum, roll) => sum + (Number(roll.metre) || 0), 0);
+            const totalPieces = usableRolls.reduce((sum, roll) => {
+                const pieceLengths = Array.isArray(roll.pieces)
+                    ? roll.pieces
+                        .map((piece) => Number(typeof piece === 'number' ? piece : piece?.length))
+                        .filter((length) => Number.isFinite(length) && length > 0)
+                    : [];
+
+                if (pieceLengths.length > 0) {
+                    return sum + pieceLengths.length;
+                }
+
+                return sum + ((Number(roll.metre) || 0) > 0 ? 1 : 0);
+            }, 0);
+
+            return {
+                _id: batch._id,
+                batchCode: batch.batchCode,
+                type: batch.type,
+                targetSize: batch.targetSize,
+                createdAt: batch.createdAt,
+                hasHistoricalDcForBatch,
+                totalRolls,
+                totalMetre: totalMetre.toFixed(2),
+                totalPieces,
+                rollCount: usableRolls.length,
+                rolls: usableRolls.map(r => ({
+                    _id: r._id,
+                    barcode: r.barcode,
+                    metre: r.metre,
+                    pieces: r.pieces || []
+                }))
+            };
+        }));
+
+        const eligibleBatches = batchesWithRolls.filter(batch => batch.rollCount > 0 && !batch.hasHistoricalDcForBatch);
+
+        res.json(eligibleBatches);
+    } catch (err) {
+        console.error('Error fetching OUT batches:', err);
+        res.status(500).json({ error: err.message });
     }
 });
 

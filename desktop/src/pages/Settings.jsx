@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useConfig } from '../context/ConfigContext';
-import { IconSettings, IconCloud, IconScan } from '../components/Icons';
+import { IconSettings, IconCloud } from '../components/Icons';
 import { useNotification } from '../context/NotificationContext';
+import { generateDCPdf } from '../utils/pdfGenerator';
 
 const Settings = () => {
     const { apiUrl, updateApiUrl, theme, toggleTheme } = useConfig();
@@ -24,21 +25,326 @@ const Settings = () => {
     const [isEditingApi, setIsEditingApi] = useState(false);
     const [tempApiUrl, setTempApiUrl] = useState(apiUrl);
 
+    // DC Template state
+    const [dcTemplate, setDcTemplate] = useState({
+        layoutMode: 'printed',
+        companyName: '',
+        subTitle: '',
+        documentTitle: 'DELIVERY NOTE',
+        gstin: '',
+        address: '',
+        phoneText: '',
+        tableHeaderColor: '#1a5c1a',
+        showPartyAddress: true,
+        showQuality: true,
+        showFolding: true,
+        showLotNo: true,
+        showBillNo: true,
+        showBillPreparedBy: true,
+        showVehicle: true,
+        showDriver: true,
+        logoDataUrl: '',
+        logoDataUrl2: '',
+        companyNameSize: 16,
+        subTitleSize: 8,
+        addressSize: 7.5
+    });
+    const [dcTemplates, setDcTemplates] = useState([]);
+    const [selectedDcTemplateId, setSelectedDcTemplateId] = useState('');
+    const [dcTemplateName, setDcTemplateName] = useState('Default Template');
+    const [savingDcTemplate, setSavingDcTemplate] = useState(false);
+    const [templatePreviewUrl, setTemplatePreviewUrl] = useState('');
+
+    // DC Template Preview Sample Data
+    const [previewSampleData, setPreviewSampleData] = useState({
+        dcNumber: '',
+        partyName: '',
+        vehicleNumber: '',
+        driverName: '',
+        totalRolls: '',
+        totalMetre: ''
+    });
+
     useEffect(() => {
         fetchConfig();
         fetchBackups();
         fetchSystemInfo();
     }, [apiUrl]);
 
+    useEffect(() => {
+        return () => {
+            if (templatePreviewUrl) {
+                try {
+                    URL.revokeObjectURL(templatePreviewUrl);
+                } catch (err) {
+                    console.debug('Template preview URL cleanup skipped:', err);
+                }
+            }
+        };
+    }, [templatePreviewUrl]);
+
     const fetchConfig = async () => {
         try {
             const token = localStorage.getItem('ADMIN_TOKEN');
-            const res = await fetch(`${apiUrl}/api/admin/config/backup-path`, {
-                headers: { 'Authorization': `Bearer ${token}` }
+            const [backupRes, dcTemplateRes, dcTemplatesRes] = await Promise.all([
+                fetch(`${apiUrl}/api/admin/config/backup-path`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                }),
+                fetch(`${apiUrl}/api/admin/config/dc-template`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                }),
+                fetch(`${apiUrl}/api/admin/config/dc-templates`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                })
+            ]);
+
+            const backupData = await backupRes.json();
+            if (backupData.path) setBackupPath(backupData.path);
+
+            if (dcTemplateRes.ok) {
+                const dcTemplateData = await dcTemplateRes.json();
+                setDcTemplate((prev) => ({
+                    ...prev,
+                    ...dcTemplateData,
+                    // Always default to printed layout
+                    layoutMode: dcTemplateData.layoutMode || 'printed'
+                }));
+                setSelectedDcTemplateId(dcTemplateData.templateId || '');
+                setDcTemplateName(dcTemplateData.templateName || 'Default Template');
+            }
+
+            if (dcTemplatesRes.ok) {
+                const catalog = await dcTemplatesRes.json();
+                setDcTemplates(Array.isArray(catalog.templates) ? catalog.templates : []);
+                if (catalog.activeTemplateId) {
+                    setSelectedDcTemplateId(catalog.activeTemplateId);
+                }
+            }
+        } catch (err) { console.error(err); }
+    };
+
+    const handleDcTemplateChange = (field, value) => {
+        setDcTemplate((prev) => ({ ...prev, [field]: value }));
+    };
+
+    const handleSelectDcTemplate = async (templateId) => {
+        if (!templateId) return;
+        try {
+            const token = localStorage.getItem('ADMIN_TOKEN');
+            const res = await fetch(`${apiUrl}/api/admin/config/dc-template/select`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ templateId })
             });
             const data = await res.json();
-            if (data.path) setBackupPath(data.path);
-        } catch (err) { console.error(err); }
+            if (!res.ok) {
+                throw new Error(data.error || 'Failed to switch template');
+            }
+            setSelectedDcTemplateId(data.templateId || templateId);
+            setDcTemplateName(data.templateName || 'Untitled Template');
+            setDcTemplate((prev) => ({ ...prev, ...(data.dcTemplate || {}) }));
+        } catch (err) {
+            showNotification(err.message || 'Failed to switch template', 'error');
+        }
+    };
+
+    const handleNewTemplateDraft = () => {
+        setSelectedDcTemplateId('');
+        setDcTemplateName('New Template');
+        setDcTemplate({
+            layoutMode: 'printed',
+            companyName: '',
+            subTitle: '',
+            documentTitle: 'DELIVERY NOTE',
+            gstin: '',
+            address: '',
+            phoneText: '',
+            tableHeaderColor: '#1a5c1a',
+            showPartyAddress: true,
+            showQuality: true,
+            showFolding: true,
+            showLotNo: true,
+            showBillNo: true,
+            showBillPreparedBy: true,
+            showVehicle: true,
+            showDriver: true,
+            logoDataUrl: '',
+            logoDataUrl2: '',
+            companyNameSize: 16,
+            subTitleSize: 8,
+            addressSize: 7.5
+        });
+    };
+
+    const handlePreviewSampleDataChange = (field, value) => {
+        setPreviewSampleData((prev) => ({ ...prev, [field]: value }));
+    };
+
+    // Core preview generator — called only by button click
+    const generatePreview = (templateToUse) => {
+        const sampleDc = {
+            dcNumber: previewSampleData.dcNumber || 'DC-PREVIEW',
+            createdAt: new Date().toISOString(),
+            status: 'ACTIVE',
+            partyName: previewSampleData.partyName || 'Party Name',
+            vehicleNumber: previewSampleData.vehicleNumber || '',
+            driverName: previewSampleData.driverName || '',
+            totalRolls: 13,
+            totalMetre: 410.5
+        };
+
+        const sampleRolls = [
+            { barcode: '26-42-0001', metre: 30.00, pieces: [{ length: 30.00 }] },
+            { barcode: '26-42-0002', metre: 28.50, pieces: [{ length: 14.00 }, { length: 14.50 }] },
+            { barcode: '26-42-0003', metre: 34.50, pieces: [{ length: 34.50 }] },
+            { barcode: '26-42-0004', metre: 45.00, pieces: [{ length: 15.00 }, { length: 15.00 }, { length: 15.00 }] },
+            { barcode: '26-42-0005', metre: 22.00, pieces: [{ length: 22.00 }] },
+            { barcode: '26-42-0006', metre: 60.00, pieces: [{ length: 15.00 }, { length: 15.00 }, { length: 15.00 }, { length: 15.00 }] },
+            { barcode: '26-42-0007', metre: 33.00, pieces: [{ length: 33.00 }] },
+            { barcode: '26-42-0008', metre: 12.00, pieces: [{ length: 12.00 }] },
+            { barcode: '26-42-0009', metre: 25.50, pieces: [{ length: 12.50 }, { length: 13.00 }] },
+            { barcode: '26-42-0010', metre: 10.00, pieces: [{ length: 10.00 }] },
+            { barcode: '26-42-0011', metre: 40.00, pieces: [{ length: 40.00 }] },
+            { barcode: '26-42-0012', metre: 55.00, pieces: [{ length: 11.00 }, { length: 11.00 }, { length: 11.00 }, { length: 11.00 }, { length: 11.00 }] },
+            { barcode: '26-42-0013', metre: 15.00, pieces: [{ length: 15.00 }] }
+        ];
+
+        const pdfUrl = generateDCPdf(sampleDc, sampleRolls, templateToUse, { mode: 'bloburl' });
+        if (!pdfUrl) return;  // silent fail — no popup
+
+        setTemplatePreviewUrl((prev) => {
+            if (prev) { try { URL.revokeObjectURL(prev); } catch (_) {} }
+            return pdfUrl;
+        });
+    };
+
+    const handlePreviewDcTemplate = () => generatePreview(dcTemplate);
+
+    const handleDcLogoUpload = (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        if (!file.type.startsWith('image/')) { showNotification('Please select a valid image file.', 'error'); return; }
+        if (file.size > 2.5 * 1024 * 1024) { showNotification('Logo file is too large. Please use an image under 2.5 MB.', 'error'); return; }
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+            const dataUrl = typeof evt.target?.result === 'string' ? evt.target.result : '';
+            if (!dataUrl) { showNotification('Failed to load image.', 'error'); return; }
+            setDcTemplate((prev) => ({ ...prev, logoDataUrl: dataUrl }));
+        };
+        reader.onerror = () => showNotification('Failed to read image file.', 'error');
+        reader.readAsDataURL(file);
+    };
+
+    const handleDcLogo2Upload = (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        if (!file.type.startsWith('image/')) { showNotification('Please select a valid image file.', 'error'); return; }
+        if (file.size > 2.5 * 1024 * 1024) { showNotification('Logo file is too large. Please use an image under 2.5 MB.', 'error'); return; }
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+            const dataUrl = typeof evt.target?.result === 'string' ? evt.target.result : '';
+            if (!dataUrl) { showNotification('Failed to load image.', 'error'); return; }
+            setDcTemplate((prev) => ({ ...prev, logoDataUrl2: dataUrl }));
+        };
+        reader.onerror = () => showNotification('Failed to read image file.', 'error');
+        reader.readAsDataURL(file);
+    };
+
+    const handleSaveDcTemplate = async () => {
+        setSavingDcTemplate(true);
+        try {
+            const token = localStorage.getItem('ADMIN_TOKEN');
+            const res = await fetch(`${apiUrl}/api/admin/config/dc-template`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    ...dcTemplate,
+                    templateId: selectedDcTemplateId || undefined,
+                    templateName: dcTemplateName || 'Untitled Template'
+                })
+            });
+
+            if (!res.ok) {
+                if (res.status === 413) {
+                    throw new Error('Template payload is too large. Use a smaller logo image.');
+                }
+                if (res.status === 401 || res.status === 403) {
+                    throw new Error('Session expired. Please log in again.');
+                }
+                const raw = await res.text();
+                let parsed = {};
+                try {
+                    parsed = JSON.parse(raw || '{}');
+                } catch {
+                    parsed = {};
+                }
+                throw new Error(parsed.error || raw || 'Failed to save DC template');
+            }
+
+            const data = await res.json();
+            if (data.dcTemplate) {
+                setDcTemplate((prev) => ({ ...prev, ...data.dcTemplate }));
+            }
+            if (Array.isArray(data.templates)) {
+                setDcTemplates(data.templates);
+            }
+            if (data.templateId) {
+                setSelectedDcTemplateId(data.templateId);
+            }
+            if (data.templateName) {
+                setDcTemplateName(data.templateName);
+            }
+            showNotification('DC template saved successfully', 'success');
+        } catch (err) {
+            showNotification(err.message || 'Failed to save DC template', 'error');
+        } finally {
+            setSavingDcTemplate(false);
+        }
+    };
+
+    const handleResetDcTemplate = () => {
+        setDcTemplate({
+            layoutMode: 'printed',
+            companyName: '',
+            subTitle: '',
+            documentTitle: 'DELIVERY NOTE',
+            gstin: '',
+            address: '',
+            phoneText: '',
+            tableHeaderColor: '#1a5c1a',
+            showPartyAddress: true,
+            showQuality: true,
+            showFolding: true,
+            showLotNo: true,
+            showBillNo: true,
+            showBillPreparedBy: true,
+            showVehicle: true,
+            showDriver: true,
+            logoDataUrl: '',
+            logoDataUrl2: '',
+            companyNameSize: 16,
+            subTitleSize: 8,
+            addressSize: 7.5
+        });
+    };
+
+
+
+    const closeTemplatePreview = () => {
+        if (templatePreviewUrl) {
+            try {
+                URL.revokeObjectURL(templatePreviewUrl);
+            } catch (err) {
+                console.debug('Template preview close cleanup skipped:', err);
+            }
+        }
+        setTemplatePreviewUrl('');
     };
 
     const fetchBackups = async () => {
@@ -274,6 +580,17 @@ const Settings = () => {
                         General & Interface
                     </button>
                     <button
+                        onClick={() => setActiveTab('dc-template')}
+                        style={{
+                            padding: '1rem 0.5rem', background: 'none', border: 'none',
+                            borderBottom: activeTab === 'dc-template' ? '2px solid var(--accent-color)' : '2px solid transparent',
+                            color: activeTab === 'dc-template' ? 'var(--accent-color)' : 'var(--text-secondary)',
+                            fontWeight: '700', cursor: 'pointer', fontSize: '0.9rem'
+                        }}
+                    >
+                        DC Template
+                    </button>
+                    <button
                         onClick={() => setActiveTab('backup')}
                         style={{
                             padding: '1rem 0.5rem', background: 'none', border: 'none',
@@ -390,6 +707,262 @@ const Settings = () => {
                             >
                                 Terminate Batch & Logout
                             </button>
+                        </div>
+                    )}
+
+                    {/* --- DC TEMPLATE TAB --- */}
+                    {activeTab === 'dc-template' && (
+                        <div className="animate-fade-in" style={{ display: 'flex', gap: '1.5rem', height: 'calc(100vh - 280px)', minHeight: '600px' }}>
+
+                            {/* ── LEFT: FORM PANEL ── */}
+                            <div style={{ width: '380px', flexShrink: 0, overflowY: 'auto', paddingRight: '0.5rem' }}>
+                                <h3 style={{ margin: '0 0 0.4rem' }}>DC Challan Template</h3>
+                                <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1.2rem' }}>
+                                    Fill your company details below. Click <strong>Preview</strong> to see the challan format.
+                                </p>
+
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
+
+                                {/* Template Selector */}
+                                <div style={{ ...infoCardStyle, marginBottom: 0 }}>
+                                    <div style={{ fontWeight: '700', fontSize: '0.78rem', color: 'var(--accent-color)', marginBottom: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>🧩 Template Set</div>
+
+                                    <label style={labelStyle}>Select Template</label>
+                                    <select
+                                        value={selectedDcTemplateId}
+                                        onChange={(e) => handleSelectDcTemplate(e.target.value)}
+                                        style={{ ...textInputStyle, marginBottom: '0.7rem' }}
+                                    >
+                                        {dcTemplates.length === 0 ? (
+                                            <option value="">No templates found</option>
+                                        ) : (
+                                            dcTemplates.map((tpl) => (
+                                                <option key={tpl.id} value={tpl.id}>
+                                                    {tpl.name}
+                                                </option>
+                                            ))
+                                        )}
+                                    </select>
+
+                                    <label style={labelStyle}>Template Name</label>
+                                    <input
+                                        type="text"
+                                        value={dcTemplateName}
+                                        onChange={(e) => setDcTemplateName(e.target.value)}
+                                        style={{ ...textInputStyle, marginBottom: '0.7rem' }}
+                                        placeholder="Template name"
+                                    />
+
+                                    <button className="btn" style={{ width: '100%', justifyContent: 'center' }} onClick={handleNewTemplateDraft}>
+                                        + New Template
+                                    </button>
+                                </div>
+
+                                {/* Layout Mode */}
+                                <div style={{ ...infoCardStyle, marginBottom: 0 }}>
+                                    <label style={labelStyle}>Layout Mode</label>
+                                    <select value={dcTemplate.layoutMode || 'printed'} onChange={(e) => handleDcTemplateChange('layoutMode', e.target.value)} style={textInputStyle}>
+                                        <option value="printed">Printed Ledger (Tally Sheet — matches paper)</option>
+                                        <option value="modern">Modern Table</option>
+                                    </select>
+                                </div>
+
+                                {/* Company Info */}
+                                <div style={{ ...infoCardStyle, marginBottom: 0 }}>
+                                    <div style={{ fontWeight: '700', fontSize: '0.78rem', color: 'var(--accent-color)', marginBottom: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>🏢 Company Identity</div>
+
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.3rem' }}>
+                                        <label style={labelStyle}>Company Name</label>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                            <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>Size</span>
+                                            <input type="number" min="8" max="40" step="1" 
+                                                value={dcTemplate.companyNameSize ?? ''} 
+                                                placeholder="16"
+                                                onChange={(e) => handleDcTemplateChange('companyNameSize', e.target.value === '' ? '' : parseFloat(e.target.value))} 
+                                                style={{ ...textInputStyle, width: '56px', padding: '0.3rem 0.4rem' }} 
+                                            />
+                                        </div>
+                                    </div>
+                                    <input type="text" value={dcTemplate.companyName || ''} onChange={(e) => handleDcTemplateChange('companyName', e.target.value)} style={{ ...textInputStyle, marginBottom: '0.7rem' }} placeholder="Company Name" />
+
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.3rem' }}>
+                                        <label style={labelStyle}>Sub Heading / Specialty</label>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                            <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>Size</span>
+                                            <input type="number" min="6" max="24" step="0.5" 
+                                                value={dcTemplate.subTitleSize ?? ''} 
+                                                placeholder="8"
+                                                onChange={(e) => handleDcTemplateChange('subTitleSize', e.target.value === '' ? '' : parseFloat(e.target.value))} 
+                                                style={{ ...textInputStyle, width: '56px', padding: '0.3rem 0.4rem' }} 
+                                            />
+                                        </div>
+                                    </div>
+                                    <input type="text" value={dcTemplate.subTitle || ''} onChange={(e) => handleDcTemplateChange('subTitle', e.target.value)} style={{ ...textInputStyle, marginBottom: '0.7rem' }} placeholder="Specialty or tagline" />
+
+                                    <label style={labelStyle}>Document Title</label>
+                                    <input type="text" value={dcTemplate.documentTitle || ''} onChange={(e) => handleDcTemplateChange('documentTitle', e.target.value)} style={{ ...textInputStyle, marginBottom: '0.7rem' }} placeholder="DELIVERY NOTE" />
+                                    <label style={labelStyle}>GSTIN</label>
+                                    <input type="text" value={dcTemplate.gstin || ''} onChange={(e) => handleDcTemplateChange('gstin', e.target.value)} style={{ ...textInputStyle, marginBottom: '0.7rem' }} placeholder="Your GSTIN number" />
+
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.3rem' }}>
+                                        <label style={labelStyle}>Full Address</label>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                            <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>Size</span>
+                                            <input type="number" min="6" max="18" step="0.5" 
+                                                value={dcTemplate.addressSize ?? ''} 
+                                                placeholder="7.5"
+                                                onChange={(e) => handleDcTemplateChange('addressSize', e.target.value === '' ? '' : parseFloat(e.target.value))} 
+                                                style={{ ...textInputStyle, width: '56px', padding: '0.3rem 0.4rem' }} 
+                                            />
+                                        </div>
+                                    </div>
+                                    <textarea
+                                        value={dcTemplate.address || ''}
+                                        onChange={(e) => handleDcTemplateChange('address', e.target.value)}
+                                        style={{ ...textInputStyle, marginBottom: '0.7rem', resize: 'vertical', minHeight: '68px', fontFamily: 'inherit', lineHeight: '1.5' }}
+                                        placeholder="Door No, Street, Area, City, State - PIN"
+                                        rows={3}
+                                    />
+                                    <label style={labelStyle}>Phone / Contact</label>
+                                    <input type="text" value={dcTemplate.phoneText || ''} onChange={(e) => handleDcTemplateChange('phoneText', e.target.value)} style={{ ...textInputStyle, marginBottom: '0.7rem' }} placeholder="Mobile / Phone number" />
+                                    <label style={labelStyle}>Ink / Border Colour</label>
+                                    <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center' }}>
+                                        <input type="color" value={dcTemplate.tableHeaderColor || '#1a5c1a'} onChange={(e) => handleDcTemplateChange('tableHeaderColor', e.target.value)} style={{ width: '44px', height: '38px', border: '1px solid var(--border-color)', borderRadius: '6px', background: 'transparent', cursor: 'pointer' }} />
+                                        <input type="text" value={dcTemplate.tableHeaderColor || '#1a5c1a'} onChange={(e) => handleDcTemplateChange('tableHeaderColor', e.target.value)} style={textInputStyle} placeholder="#1a5c1a" />
+                                    </div>
+                                </div>
+
+                                {/* Logos */}
+                                <div style={{ ...infoCardStyle, marginBottom: 0 }}>
+                                    <div style={{ fontWeight: '700', fontSize: '0.78rem', color: 'var(--accent-color)', marginBottom: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>🖼️ Logos (Left &amp; Right of Company Name)</div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                                        <div>
+                                            <label style={labelStyle}>Left Logo</label>
+                                            <input type="file" accept="image/*" onChange={handleDcLogoUpload} style={{ ...textInputStyle, padding: '0.4rem', fontSize: '0.78rem' }} />
+                                            {dcTemplate.logoDataUrl ? (
+                                                <div style={{ marginTop: '0.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.4rem' }}>
+                                                    <img src={dcTemplate.logoDataUrl} alt="Left logo" style={{ width: '56px', height: '56px', objectFit: 'contain', borderRadius: '6px', border: '1px solid var(--border-color)', background: '#fff', padding: '2px' }} />
+                                                    <button className="btn btn-secondary" style={{ fontSize: '0.72rem', padding: '0.25rem 0.5rem' }} onClick={() => handleDcTemplateChange('logoDataUrl', '')}>Remove</button>
+                                                </div>
+                                            ) : <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.4rem' }}>No logo</p>}
+                                        </div>
+                                        <div>
+                                            <label style={labelStyle}>Right Logo</label>
+                                            <input type="file" accept="image/*" onChange={handleDcLogo2Upload} style={{ ...textInputStyle, padding: '0.4rem', fontSize: '0.78rem' }} />
+                                            {dcTemplate.logoDataUrl2 ? (
+                                                <div style={{ marginTop: '0.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.4rem' }}>
+                                                    <img src={dcTemplate.logoDataUrl2} alt="Right logo" style={{ width: '56px', height: '56px', objectFit: 'contain', borderRadius: '6px', border: '1px solid var(--border-color)', background: '#fff', padding: '2px' }} />
+                                                    <button className="btn btn-secondary" style={{ fontSize: '0.72rem', padding: '0.25rem 0.5rem' }} onClick={() => handleDcTemplateChange('logoDataUrl2', '')}>Remove</button>
+                                                </div>
+                                            ) : <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.4rem' }}>No logo</p>}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Optional Fields */}
+                                <div style={{ ...infoCardStyle, marginBottom: 0 }}>
+                                    <div style={{ fontWeight: '700', fontSize: '0.78rem', color: 'var(--accent-color)', marginBottom: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>⚙️ Optional Fields</div>
+                                    <label style={checkboxLabelStyle}>
+                                        <input type="checkbox" checked={dcTemplate.showPartyAddress !== false} onChange={(e) => handleDcTemplateChange('showPartyAddress', e.target.checked)} />
+                                        Party Address (enter at DC generation)
+                                    </label>
+                                    <label style={{ ...checkboxLabelStyle, marginTop: '0.6rem' }}>
+                                        <input type="checkbox" checked={dcTemplate.showQuality !== false} onChange={(e) => handleDcTemplateChange('showQuality', e.target.checked)} />
+                                        Quality (enter at DC generation)
+                                    </label>
+                                    <label style={{ ...checkboxLabelStyle, marginTop: '0.6rem' }}>
+                                        <input type="checkbox" checked={dcTemplate.showFolding !== false} onChange={(e) => handleDcTemplateChange('showFolding', e.target.checked)} />
+                                        Folding (enter at DC generation)
+                                    </label>
+                                    <label style={{ ...checkboxLabelStyle, marginTop: '0.6rem' }}>
+                                        <input type="checkbox" checked={dcTemplate.showLotNo !== false} onChange={(e) => handleDcTemplateChange('showLotNo', e.target.checked)} />
+                                        Lot No (enter at DC generation)
+                                    </label>
+                                    <label style={{ ...checkboxLabelStyle, marginTop: '0.6rem' }}>
+                                        <input type="checkbox" checked={dcTemplate.showBillNo !== false} onChange={(e) => handleDcTemplateChange('showBillNo', e.target.checked)} />
+                                        Bill No (enter at DC generation)
+                                    </label>
+                                    <label style={{ ...checkboxLabelStyle, marginTop: '0.6rem' }}>
+                                        <input type="checkbox" checked={dcTemplate.showBillPreparedBy !== false} onChange={(e) => handleDcTemplateChange('showBillPreparedBy', e.target.checked)} />
+                                        Bill Prepared By (enter at DC generation)
+                                    </label>
+                                    <label style={checkboxLabelStyle}>
+                                        <input type="checkbox" checked={dcTemplate.showVehicle !== false} onChange={(e) => handleDcTemplateChange('showVehicle', e.target.checked)} />
+                                        Collect &amp; show Vehicle Number
+                                    </label>
+                                    <label style={{ ...checkboxLabelStyle, marginTop: '0.6rem' }}>
+                                        <input type="checkbox" checked={dcTemplate.showDriver !== false} onChange={(e) => handleDcTemplateChange('showDriver', e.target.checked)} />
+                                        Collect &amp; show Driver Name
+                                    </label>
+                                </div>
+
+                                {/* Sample data for preview */}
+                                <div style={{ ...infoCardStyle, marginBottom: 0 }}>
+                                    <div style={{ fontWeight: '700', fontSize: '0.78rem', color: 'var(--accent-color)', marginBottom: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>📋 Sample Data (preview only)</div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.7rem' }}>
+                                        <div>
+                                            <label style={labelStyle}>DC Number</label>
+                                            <input type="text" value={previewSampleData.dcNumber} onChange={(e) => handlePreviewSampleDataChange('dcNumber', e.target.value)} style={textInputStyle} placeholder="DC Number" />
+                                        </div>
+                                        <div>
+                                            <label style={labelStyle}>Party Name</label>
+                                            <input type="text" value={previewSampleData.partyName} onChange={(e) => handlePreviewSampleDataChange('partyName', e.target.value)} style={textInputStyle} placeholder="Customer name" />
+                                        </div>
+                                        <div>
+                                            <label style={labelStyle}>Vehicle Number</label>
+                                            <input type="text" value={previewSampleData.vehicleNumber} onChange={(e) => handlePreviewSampleDataChange('vehicleNumber', e.target.value)} style={textInputStyle} placeholder="Vehicle number" />
+                                        </div>
+                                        <div>
+                                            <label style={labelStyle}>Driver Name</label>
+                                            <input type="text" value={previewSampleData.driverName} onChange={(e) => handlePreviewSampleDataChange('driverName', e.target.value)} style={textInputStyle} placeholder="Driver name" />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Action buttons */}
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', paddingBottom: '1rem' }}>
+                                    <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '0.8rem', fontWeight: '700' }} onClick={handlePreviewDcTemplate}>
+                                        👁️ Preview Challan
+                                    </button>
+                                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                        <button className="btn" style={{ flex: 1, justifyContent: 'center' }} onClick={handleResetDcTemplate}>Reset</button>
+                                        <button className="btn btn-primary" style={{ flex: 2, justifyContent: 'center', fontWeight: '700' }} onClick={handleSaveDcTemplate} disabled={savingDcTemplate}>
+                                            {savingDcTemplate ? 'Saving...' : '💾 Save Template'}
+                                        </button>
+                                    </div>
+                                </div>
+
+                            </div>{/* end form sections */}
+                        </div>{/* end left panel */}
+
+                            {/* ── RIGHT: LIVE PREVIEW PANEL ── */}
+                            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--bg-primary)', border: '1px solid var(--border-color)', borderRadius: '12px', overflow: 'hidden', minWidth: 0 }}>
+                                <div style={{ padding: '0.9rem 1.2rem', borderBottom: '1px solid var(--border-color)', background: 'var(--bg-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <div>
+                                        <div style={{ fontWeight: '700', fontSize: '0.9rem' }}>📄 Challan Preview</div>
+                                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '2px' }}>Click "Preview Challan" button to refresh</div>
+                                    </div>
+                                    {templatePreviewUrl && (
+                                        <button className="btn btn-secondary" style={{ fontSize: '0.8rem', padding: '0.4rem 0.8rem' }} onClick={closeTemplatePreview}>✕ Clear</button>
+                                    )}
+                                </div>
+
+                                <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-primary)' }}>
+                                    {templatePreviewUrl ? (
+                                        <iframe
+                                            title="Delivery Challan Template Preview"
+                                            src={templatePreviewUrl}
+                                            style={{ width: '100%', height: '100%', border: 'none' }}
+                                        />
+                                    ) : (
+                                        <div style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '2rem' }}>
+                                            <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🧾</div>
+                                            <div style={{ fontWeight: '600', marginBottom: '0.5rem' }}>No Preview Generated</div>
+                                            <div style={{ fontSize: '0.85rem' }}>Fill in your details and click <strong>Preview Challan</strong> to see the exact PDF that will be generated.</div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
                         </div>
                     )}
 
@@ -652,11 +1225,28 @@ const Settings = () => {
 
                 </div>
             </div>
+
+
         </div>
     );
 };
 
 const labelStyle = { display: 'block', fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.8rem' };
 const infoCardStyle = { background: 'var(--bg-tertiary)', padding: '1.5rem', borderRadius: '12px', border: '1px solid var(--border-color)' };
+const textInputStyle = {
+    width: '100%',
+    padding: '0.8rem',
+    borderRadius: '8px',
+    border: '1px solid var(--border-color)',
+    background: 'var(--bg-primary)',
+    color: 'var(--text-primary)'
+};
+const checkboxLabelStyle = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem',
+    color: 'var(--text-primary)',
+    fontSize: '0.9rem'
+};
 
 export default Settings;

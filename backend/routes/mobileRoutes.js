@@ -52,14 +52,16 @@ router.get('/scan/:barcode', async (req, res) => {
                     }
                 }
 
-                // Check Type (If session is OUT, but item is not IN, etc? - Maybe handle in transaction, but early warning is good)
-                if (session.type === 'OUT' && (!clothRoll || clothRoll.status === 'OUT')) {
-                    // Allow scanning to proceed to "transaction" where it will fail, OR fail here with specific message
-                    // Standard behavior: let it pass as "EXISTING" or "NEW" and let transaction handle status check detalils?
-                    // But user wants to know if they can scan.
-                    // If OUT session, and item doesn't exist -> Error
+                // OUT session can only scan currently available IN rolls for reservation.
+                if (session.type === 'OUT') {
                     if (!clothRoll) {
-                        return res.json({ status: 'INVALID', message: 'Roll not found for Stock Out' });
+                        return res.json({ status: 'INVALID', message: 'Roll not found for Stock Out batch' });
+                    }
+                    if (clothRoll.status !== 'IN') {
+                        return res.json({
+                            status: 'INVALID',
+                            message: `Roll cannot be reserved. Current status: ${clothRoll.status}`
+                        });
                     }
                 }
             } else if (session && session.status !== 'ACTIVE') {
@@ -189,6 +191,7 @@ router.post('/transaction', async (req, res) => {
                                         size: barcodeParts[1],
                                         sequence: currentSeq - 1,
                                         status: 'PENDING',
+                                        issueType: 'SEQUENCE_MISSING',
                                         detectedAt: new Date()
                                     },
                                     { upsert: true, new: true }
@@ -256,17 +259,25 @@ router.post('/transaction', async (req, res) => {
                 return res.status(404).json({ error: 'Roll not found. Cannot Stock Out.' });
             }
 
-            // Rule: Only allow Stock Out if status = IN
+            // Rule: OUT batch scan moves IN -> RESERVED (not directly OUT)
             if (clothRoll.status === 'OUT') {
                 return res.status(400).json({ error: 'Roll is already Checked Out' });
             }
 
-            clothRoll.status = 'OUT';
+            if (clothRoll.status === 'RESERVED') {
+                return res.status(400).json({ error: 'Roll is already reserved for dispatch' });
+            }
+
+            if (clothRoll.status !== 'IN') {
+                return res.status(400).json({ error: `Roll cannot be reserved from status ${clothRoll.status}` });
+            }
+
+            clothRoll.status = 'RESERVED';
             clothRoll.employeeId = employeeId;
             clothRoll.employeeName = employeeName;
             clothRoll.transactionHistory.push({
-                status: 'OUT',
-                details: details || 'Stock Out',
+                status: 'RESERVED',
+                details: details || 'Reserved in dispatch batch',
                 date: new Date(),
                 employeeId,
                 employeeName,
@@ -417,13 +428,23 @@ router.post('/batch-transaction', async (req, res) => {
                     continue;
                 }
 
-                // Update Status
-                clothRoll.status = 'OUT';
+                if (clothRoll.status === 'RESERVED') {
+                    results.failed.push({ barcode, error: 'Already Reserved' });
+                    continue;
+                }
+
+                if (clothRoll.status !== 'IN') {
+                    results.failed.push({ barcode, error: `Invalid source status ${clothRoll.status}` });
+                    continue;
+                }
+
+                // OUT batch reserves roll until DC is generated
+                clothRoll.status = 'RESERVED';
                 clothRoll.employeeId = employeeId;
                 clothRoll.employeeName = employeeName;
                 clothRoll.transactionHistory.push({
-                    status: 'OUT',
-                    details: details || 'Bulk Stock Out',
+                    status: 'RESERVED',
+                    details: details || 'Bulk Reserved for Dispatch',
                     date: new Date(),
                     employeeId,
                     employeeName,
@@ -453,7 +474,7 @@ router.post('/batch-transaction', async (req, res) => {
         // Global Event for Dashboard Refresh
         if (req.io && results.success.length > 0) {
             req.io.emit('batch_stock_update', {
-                type: 'OUT',
+                type: 'RESERVED',
                 count: results.success.length,
                 timestamp: new Date()
             });

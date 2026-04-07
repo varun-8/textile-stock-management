@@ -476,6 +476,9 @@ const SessionManager = () => {
                                                     {session.createdBy}
                                                 </div>
                                             </div>
+                                            <div style={{ fontSize: '11px', color: THEME.textMuted, fontFamily: 'monospace', marginTop: '8px' }}>
+                                                {session.batchCode || session._id}
+                                            </div>
                                         </div>
 
                                         <div style={{
@@ -771,7 +774,7 @@ const SessionManager = () => {
                             <div>
                                 <div style={{ fontSize: '18px', fontWeight: '900', color: 'white' }}>Batch Summary</div>
                                 <div style={{ fontSize: '12px', color: THEME.textMuted, marginTop: '2px' }}>
-                                    {endSummarySession.type} | {DENSITY_NAME} {endSummarySession.targetSize}
+                                    {endSummarySession.batchCode || endSummarySession._id} | {endSummarySession.type} | {DENSITY_NAME} {endSummarySession.targetSize}
                                 </div>
                             </div>
                             <button

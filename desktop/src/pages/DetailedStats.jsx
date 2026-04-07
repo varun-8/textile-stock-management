@@ -12,6 +12,7 @@ const DetailedStats = () => {
     const [loading, setLoading] = useState(false);
     const [sizes, setSizes] = useState([]);
     const [pieceModal, setPieceModal] = useState(null);
+    const [refreshTick, setRefreshTick] = useState(0);
     const [filters, setFilters] = useState({
         startDate: '',
         endDate: '',
@@ -55,7 +56,10 @@ const DetailedStats = () => {
                     time: new Date(item.updatedAt || item.detectedAt || item.createdAt).toLocaleString(),
                     dateObj: new Date(item.updatedAt || item.detectedAt || item.createdAt),
                     barcode: item.barcode,
-                    type: item.status || (type === 'missingCount' ? 'MISSING' : 'UNKNOWN'),
+                    type: type === 'missingCount'
+                        ? (item.issueType || 'SEQUENCE_MISSING')
+                        : (item.status || 'UNKNOWN'),
+                    status: item.status || 'PENDING',
                     details: {
                         metre: parseFloat(item.metre || 0),
                         weight: parseFloat(item.weight || 0),
@@ -74,7 +78,68 @@ const DetailedStats = () => {
         };
 
         fetchData();
-    }, [type, filters, apiUrl]);
+    }, [type, filters, apiUrl, refreshTick]);
+
+    const resolveMissing = async (barcode, action) => {
+        try {
+            const token = localStorage.getItem('ADMIN_TOKEN');
+            const routeMap = {
+                MARK_LOST: 'lost',
+                CREATE_ENTRY: 'create-entry',
+                IGNORE: 'ignore'
+            };
+
+            const route = routeMap[action];
+            if (!route) return;
+
+            const noteDefault = action === 'MARK_LOST'
+                ? 'Marked as lost'
+                : action === 'CREATE_ENTRY'
+                    ? 'Create entry action recorded'
+                    : 'Ignored by admin';
+
+            const res = await fetch(`${apiUrl}/api/admin/missing/${route}/${encodeURIComponent(barcode)}`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ note: noteDefault })
+            });
+
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.error || 'Action failed');
+            }
+
+            setRefreshTick((x) => x + 1);
+        } catch (err) {
+            console.error('Failed to resolve missing entry', err);
+            alert(err.message || 'Failed to resolve missing entry');
+        }
+    };
+
+    const runSequenceAudit = async () => {
+        try {
+            const token = localStorage.getItem('ADMIN_TOKEN');
+            const res = await fetch(`${apiUrl}/api/admin/missing/audit-sequences`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
+            const out = await res.json();
+            if (!res.ok) throw new Error(out.error || 'Audit failed');
+
+            setRefreshTick((x) => x + 1);
+            alert(`Sequence audit complete: ${out.missingDetected} missing, ${out.created} created`);
+        } catch (err) {
+            console.error('Sequence audit failed', err);
+            alert(err.message || 'Sequence audit failed');
+        }
+    };
 
     const summary = useMemo(() => {
         return data.reduce((acc, item) => ({
@@ -134,11 +199,13 @@ const DetailedStats = () => {
 
     // Color theme based on type
     const themeColor = type === 'stockIn' ? 'var(--success-color)' :
+        type === 'readyToDispatch' ? 'var(--accent-color)' :
         type === 'stockOut' ? 'var(--accent-color)' :
             'var(--text-primary)';
 
     const pageTitle = type === 'totalRolls' ? 'Total Inventory Portfolio' :
         type === 'stockIn' ? 'Inbound Stock Analysis' :
+            type === 'readyToDispatch' ? 'Reserved Dispatch Queue' :
             type === 'stockOut' ? 'Outbound Dispatch Logs' :
                 type === 'missingCount' ? 'Missing Logs Review' : 'Detailed View';
 
@@ -170,7 +237,7 @@ const DetailedStats = () => {
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
                             fontSize: '1.5rem'
                         }}>
-                            {type === 'stockIn' ? '📥' : type === 'stockOut' ? '🚛' : '📦'}
+                            {type === 'stockIn' ? '📥' : type === 'readyToDispatch' ? '📋' : type === 'stockOut' ? '🚛' : '📦'}
                         </div>
                         <div>
                             <h2 style={{ fontSize: '1.4rem', fontWeight: '800', margin: 0, letterSpacing: '-0.02em', color: 'var(--text-primary)' }}>
@@ -184,6 +251,18 @@ const DetailedStats = () => {
                 </div>
 
                 <div style={{ display: 'flex', gap: '1rem' }}>
+                    {type === 'missingCount' && (
+                        <button
+                            onClick={runSequenceAudit}
+                            style={{
+                                background: 'var(--accent-color)', color: 'white', border: 'none',
+                                padding: '0.7rem 1rem', borderRadius: '10px', cursor: 'pointer',
+                                fontWeight: '700', fontSize: '0.85rem'
+                            }}
+                        >
+                            Run Sequence Audit
+                        </button>
+                    )}
                     <button
                         onClick={handleExport}
                         style={{
@@ -301,15 +380,17 @@ const DetailedStats = () => {
                                 <th style={thStyle}>BARCODE ID</th>
                                 <th style={thStyle}>SIZE</th>
                                 <th style={thStyle}>STATUS</th>
+                                {type === 'missingCount' && <th style={thStyle}>RESOLUTION</th>}
                                 {type !== 'missingCount' && <th style={thStyle}>OPERATOR</th>}
                                 {type !== 'missingCount' && <th style={{ ...thStyle, textAlign: 'right' }}>LENGTH (M)</th>}
                                 {type !== 'missingCount' && <th style={{ ...thStyle, textAlign: 'right' }}>PIECES</th>}
                                 {type !== 'missingCount' && <th style={{ ...thStyle, textAlign: 'right', paddingRight: '2.5rem' }}>WEIGHT (KG)</th>}
+                                {type === 'missingCount' && <th style={thStyle}>ACTIONS</th>}
                             </tr>
                         </thead>
                         <tbody>
                             {data.length === 0 ? (
-                                <tr><td colSpan={type === 'missingCount' ? 3 : 8} style={{ padding: '5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                                <tr><td colSpan={type === 'missingCount' ? 6 : 8} style={{ padding: '5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
                                     <div style={{ fontSize: '2rem', marginBottom: '1rem' }}>📭</div>
                                     No records found for the selected criteria.
                                 </td></tr>
@@ -338,6 +419,11 @@ const DetailedStats = () => {
                                         <td style={tdStyle}>
                                             <StatusChip type={row.type} />
                                         </td>
+                                        {type === 'missingCount' && (
+                                            <td style={tdStyle}>
+                                                <StatusChip type={row.status} />
+                                            </td>
+                                        )}
                                         {type !== 'missingCount' && (
                                             <td style={tdStyle}>
                                                 <span style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-secondary)' }}>
@@ -364,6 +450,33 @@ const DetailedStats = () => {
                                             </td>
                                         )}
                                         {type !== 'missingCount' && <td style={{ ...tdStyle, textAlign: 'right', paddingRight: '2.5rem', fontFamily: 'monospace', fontSize: '1rem', fontWeight: '600', color: 'var(--accent-color)' }}>{row.details.weight.toFixed(2)}</td>}
+                                        {type === 'missingCount' && (
+                                            <td style={tdStyle}>
+                                                <div style={{ display: 'flex', gap: '0.4rem' }}>
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); resolveMissing(row.barcode, 'MARK_LOST'); }}
+                                                        className="btn"
+                                                        style={{ padding: '0.25rem 0.5rem', fontSize: '0.72rem' }}
+                                                    >
+                                                        Mark as Lost
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); resolveMissing(row.barcode, 'CREATE_ENTRY'); }}
+                                                        className="btn"
+                                                        style={{ padding: '0.25rem 0.5rem', fontSize: '0.72rem' }}
+                                                    >
+                                                        Create Entry
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); resolveMissing(row.barcode, 'IGNORE'); }}
+                                                        className="btn"
+                                                        style={{ padding: '0.25rem 0.5rem', fontSize: '0.72rem' }}
+                                                    >
+                                                        Ignore
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        )}
                                     </tr>
                                 );
                             })}
@@ -428,8 +541,17 @@ const MetricCard = ({ label, value, unit, sub, icon, color, bg }) => (
 const StatusChip = ({ type }) => {
     const styleMap = {
         IN: { bg: 'var(--success-bg)', color: 'var(--success-color)', label: 'STOCK-IN' },
+        RESERVED: { bg: 'var(--accent-bg)', color: 'var(--accent-color)', label: 'RESERVED' },
         OUT: { bg: 'var(--accent-bg)', color: 'var(--accent-color)', label: 'DISPATCHED' },
         MISSING: { bg: 'var(--error-bg)', color: 'var(--error-color)', label: 'MISSING' },
+        PENDING: { bg: 'var(--error-bg)', color: 'var(--error-color)', label: 'PENDING' },
+        RESOLVED: { bg: 'var(--success-bg)', color: 'var(--success-color)', label: 'RESOLVED' },
+        IGNORED: { bg: 'var(--bg-tertiary)', color: 'var(--text-secondary)', label: 'IGNORED' },
+        LOST: { bg: 'var(--error-bg)', color: 'var(--error-color)', label: 'MARKED LOST' },
+        DAMAGED: { bg: 'var(--error-bg)', color: 'var(--error-color)', label: 'DAMAGED' },
+        SEQUENCE_MISSING: { bg: 'var(--error-bg)', color: 'var(--error-color)', label: 'SEQUENCE MISSING' },
+        UNREGISTERED_ROLL: { bg: 'var(--bg-tertiary)', color: 'var(--text-secondary)', label: 'UNREGISTERED' },
+        STATUS_MISMATCH: { bg: 'var(--accent-bg)', color: 'var(--accent-color)', label: 'STATUS MISMATCH' },
         UNKNOWN: { bg: 'var(--bg-tertiary)', color: 'var(--text-secondary)', label: 'UNKNOWN' }
     };
     const conf = styleMap[type] || styleMap.UNKNOWN;

@@ -34,7 +34,7 @@ router.get('/', async (req, res) => {
             const regex = new RegExp(`-${sizeCode}-`);
 
             const [inCount, outCount] = await Promise.all([
-                ClothRoll.countDocuments({ barcode: { $regex: regex }, status: 'IN' }),
+                ClothRoll.countDocuments({ barcode: { $regex: regex }, status: { $in: ['IN', 'RESERVED'] } }),
                 ClothRoll.countDocuments({ barcode: { $regex: regex }, status: 'OUT' })
             ]);
 
