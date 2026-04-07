@@ -1,13 +1,9 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useConfig } from '../context/ConfigContext';
-import { IconBox, IconScan, IconSettings, IconCloud, IconUsers, IconBroadcast } from './Icons';
+import { IconBox, IconScan, IconSettings, IconCloud, IconUsers, IconBroadcast, IconTruck } from './Icons';
 import AppLogo from '../assets/logo.svg';
 import { DENSITY_NAME } from '../constants';
-
-// Simple Chevron Icons if not imported (assuming they might not exist in Icons.js, defining inline or using simple text if needed, but trying to use standard approach. 
-// If Icons.js doesn't have them, I'll add SVGs directly).
-// Let's assume for now I should just use SVGs directly in the button to avoid import errors if they don't exist.
 
 const AppLayout = ({ children }) => {
     const navigate = useNavigate();
@@ -19,7 +15,6 @@ const AppLayout = ({ children }) => {
 
     const handleNavigation = (path) => {
         navigate(path);
-        // setIsCollapsed(true); // Disable auto-collapse on navigation
     };
 
     return (
@@ -102,6 +97,7 @@ const AppLayout = ({ children }) => {
                     </div>
                     <nav style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'center' }}>
                         <SidebarLink collapsed={isCollapsed} active={isActive('/dashboard')} onClick={() => handleNavigation('/dashboard')} icon={<IconCloud />} label="Operations Dashboard" />
+                        <SidebarLink collapsed={isCollapsed} active={isActive('/dcs')} onClick={() => handleNavigation('/dcs')} icon={<IconTruck />} label="Delivery Challans" />
                         <SidebarLink collapsed={isCollapsed} active={isActive('/sessions')} onClick={() => handleNavigation('/sessions')} icon={<IconBroadcast />} label="Active Batches" />
 
                         <SidebarLink collapsed={isCollapsed} active={isActive('/barcode')} onClick={() => handleNavigation('/barcode')} icon={<IconScan />} label="Barcode Generator" />

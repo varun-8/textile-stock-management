@@ -71,6 +71,7 @@ router.post('/generate', async (req, res) => {
                 size: b.size,
                 sequence: b.sequence,
                 status: 'PENDING',
+                issueType: 'UNREGISTERED_ROLL',
                 detectedAt: new Date()
             }));
 

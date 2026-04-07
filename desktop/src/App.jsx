@@ -11,6 +11,7 @@ import Configuration from './pages/Configuration';
 import Settings from './pages/Settings';
 import Employees from './pages/Employees';
 import Sessions from './pages/Sessions';
+import DeliveryChallans from './pages/DeliveryChallans';
 
 const ProtectedRoute = ({ children }) => {
   const hasToken = !!localStorage.getItem('ADMIN_TOKEN');
@@ -131,6 +132,13 @@ function App() {
                 <ProtectedRoute>
                   <AppLayout>
                     <Sessions />
+                  </AppLayout>
+                </ProtectedRoute>
+              } />
+              <Route path="/dcs" element={
+                <ProtectedRoute>
+                  <AppLayout>
+                    <DeliveryChallans />
                   </AppLayout>
                 </ProtectedRoute>
               } />

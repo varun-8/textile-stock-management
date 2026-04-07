@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const transactionSchema = new mongoose.Schema({
     status: {
         type: String,
-        enum: ['IN', 'OUT'],
+        enum: ['IN', 'RESERVED', 'OUT'],
         required: true
     },
     date: {
@@ -39,7 +39,7 @@ const clothRollSchema = new mongoose.Schema({
     },
     status: {
         type: String,
-        enum: ['IN', 'OUT'],
+        enum: ['IN', 'RESERVED', 'OUT'],
         required: true,
         default: 'IN'
     },
@@ -61,7 +61,11 @@ const clothRollSchema = new mongoose.Schema({
         type: [pieceSchema],
         default: undefined
     },
-    transactionHistory: [transactionSchema]
+    transactionHistory: [transactionSchema],
+    dcId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'DeliveryChallan'
+    }
 }, {
     timestamps: true // Adds createdAt and updatedAt automatically
 });

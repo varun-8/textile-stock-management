@@ -1,6 +1,18 @@
 const mongoose = require('mongoose');
 
 const sessionSchema = new mongoose.Schema({
+    batchCode: {
+        type: String,
+        default: null
+    },
+    batchYear: {
+        type: Number,
+        default: null
+    },
+    batchSequence: {
+        type: Number,
+        default: null
+    },
     type: {
         type: String,
         enum: ['IN', 'OUT'],
@@ -34,5 +46,7 @@ const sessionSchema = new mongoose.Schema({
     totalMetre: { type: Number, default: 0 },
     totalWeight: { type: Number, default: 0 }
 });
+
+sessionSchema.index({ batchCode: 1 }, { unique: true, sparse: true });
 
 module.exports = mongoose.model('Session', sessionSchema);

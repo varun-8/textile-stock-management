@@ -29,12 +29,6 @@ const Sessions = () => {
     const [showReportModal, setShowReportModal] = useState(false);
     const [reportData, setReportData] = useState(null);
 
-    // DC Export State
-    const [showDcModal, setShowDcModal] = useState(false);
-    const [dcPercentage, setDcPercentage] = useState('');
-    const [dcNumber, setDcNumber] = useState('');
-    const [dcSessionId, setDcSessionId] = useState(null);
-
     // Filters
     const [filterDate, setFilterDate] = useState('');
     const [historyTypeFilter, setHistoryTypeFilter] = useState('ALL');
@@ -312,40 +306,7 @@ const Sessions = () => {
     }
 
     const handleExport = (sessionId, type, size, reportType) => {
-        if (reportType === 'dc') {
-            setDcSessionId(sessionId);
-            setDcPercentage('');
-            setShowDcModal(true);
-            return;
-        }
-
         const url = `${apiUrl}/api/sessions/${sessionId}/export/${reportType}?token=${token}`;
-        const a = document.createElement('a');
-        a.href = url;
-        a.style.display = 'none';
-        a.setAttribute('download', '');
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-    };
-
-    const confirmDcExport = (e) => {
-        e.preventDefault();
-        const pct = parseFloat(dcPercentage);
-        if (isNaN(pct) || pct < 0) {
-            alert("Please enter a valid positive number for the percentage.");
-            return;
-        }
-
-        if (!dcNumber.trim()) {
-            alert("Please enter a valid DC Number.");
-            return;
-        }
-        
-        setShowDcModal(false);
-        const encodedDcNumber = encodeURIComponent(dcNumber.trim());
-        const url = `${apiUrl}/api/sessions/${dcSessionId}/export/dc?token=${token}&percentage=${pct}&dcNumber=${encodedDcNumber}`;
-        
         const a = document.createElement('a');
         a.href = url;
         a.style.display = 'none';
@@ -459,6 +420,9 @@ const Sessions = () => {
                                         <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontFamily: 'monospace' }}>
                                             {new Date(session.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                         </div>
+                                    </div>
+                                    <div style={{ marginTop: '-1rem', marginBottom: '1.25rem', fontSize: '0.75rem', color: 'var(--text-secondary)', fontFamily: 'monospace', textAlign: 'center' }}>
+                                        {session.batchCode || session._id}
                                     </div>
 
                                     {/* Main Content */}
@@ -597,7 +561,7 @@ const Sessions = () => {
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
                             <thead style={{ background: 'var(--bg-tertiary)', borderBottom: '1px solid var(--border-color)' }}>
                                 <tr>
-                                    <th style={{ padding: '1rem 1.5rem', textAlign: 'left', fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', width: '25%' }}>Date & Time</th>
+                                    <th style={{ padding: '1rem 1.5rem', textAlign: 'left', fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', width: '25%' }}>Batch / Date & Time</th>
                                     <th style={{ padding: '1rem 1.5rem', textAlign: 'left', fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', width: '15%' }}>Type</th>
                                     <th style={{ padding: '1rem 1.5rem', textAlign: 'center', fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', width: '15%' }}>{DENSITY_NAME}</th>
                                     <th style={{ padding: '1rem 1.5rem', textAlign: 'right', fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', width: '15%' }}>Items Scanned</th>
@@ -616,9 +580,11 @@ const Sessions = () => {
                                     filteredHistory.map(s => (
                                         <tr key={s._id} style={{ borderBottom: '1px solid var(--border-color)', transition: 'background 0.2s' }} className="hover:bg-white/5">
                                             <td style={{ padding: '1rem 1.5rem' }}>
-                                                <div style={{ fontWeight: '600', color: 'var(--text-primary)' }}>{new Date(s.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</div>
-                                                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                                                    {new Date(s.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                <div style={{ fontWeight: '700', color: 'var(--text-primary)', fontFamily: 'monospace' }}>
+                                                    {s.batchCode || s._id}
+                                                </div>
+                                                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '4px', whiteSpace: 'nowrap' }}>
+                                                    {new Date(s.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })} {new Date(s.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                                     {s.endedAt ? ` - ${new Date(s.endedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}
                                                 </div>
                                             </td>
@@ -641,16 +607,7 @@ const Sessions = () => {
 
                                             <td style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>
                                                 <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                                                    {s.type === 'OUT' && (
-                                                        <button
-                                                            onClick={() => handleExport(s._id, s.type, s.targetSize, 'dc')}
-                                                            className="btn"
-                                                            style={{ padding: '6px 12px', fontSize: '0.8rem', background: 'var(--bg-primary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
-                                                            title="Download DC Excel with Percentage"
-                                                        >
-                                                            📄 Download DC
-                                                        </button>
-                                                    )}
+                                                    {/* Download DC feature moved to Delivery Challans module with template system */}
                                                     <button
                                                         onClick={() => handleExport(s._id, s.type, s.targetSize, 'summary')}
                                                         className="btn"
@@ -886,7 +843,7 @@ const Sessions = () => {
                                 <div>
                                     <h2 style={{ fontSize: '1.25rem', margin: 0 }}>Batch Report</h2>
                                     <div style={{ fontSize: '0.8rem', opacity: 0.6, marginTop: '4px' }}>
-                                        ID: {reportData.session._id} | {DENSITY_NAME}: {reportData.session.targetSize} | {new Date(reportData.session.createdAt).toLocaleDateString()}
+                                        Batch No: {reportData.session.batchCode || reportData.session._id} | {DENSITY_NAME}: {reportData.session.targetSize} | {new Date(reportData.session.createdAt).toLocaleDateString()}
                                     </div>
                                 </div>
                                 <button onClick={() => setShowReportModal(false)} style={{ background: 'none', border: 'none', fontSize: '1.5rem', cursor: 'pointer', color: 'var(--text-secondary)' }}>×</button>
@@ -1061,80 +1018,6 @@ const Sessions = () => {
                                         style={{ flex: 2 }}
                                     >
                                         Start Batch
-                                    </button>
-                                </div>
-                            </form>
-                        </div>
-                    </div>
-                )
-            }
-
-            {/* DC MODAL */}
-            {
-                showDcModal && (
-                    <div style={{
-                        position: 'fixed', inset: 0, zIndex: 1050,
-                        background: 'var(--modal-overlay)', backdropFilter: 'blur(5px)',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center'
-                    }}>
-                        <div className="panel animate-scale-up" style={{ width: '400px', padding: '2.5rem', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                                <h3 style={{ margin: 0, fontSize: '1.4rem' }}>Download DC</h3>
-                                <button onClick={() => setShowDcModal(false)} className="btn" style={{ padding: '8px', background: 'transparent', border: 'none' }}><IconTrash size="18" /></button>
-                            </div>
-                            
-                            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '1.5rem', lineHeight: '1.4' }}>
-                                Please enter the DC name and percentage to apply. This will calculate the equivalent additional metre for each roll directly onto the Excel sheet.
-                            </p>
-
-                            <form onSubmit={confirmDcExport}>
-                                <div style={{ marginBottom: '1.2rem' }}>
-                                    <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.75rem', fontWeight: '700', opacity: 0.7 }}>DC NAME (e.g. DC01)</label>
-                                    <input 
-                                        type="text" 
-                                        value={dcNumber} 
-                                        onChange={e => setDcNumber(e.target.value)}
-                                        placeholder="DC01"
-                                        style={{
-                                            width: '100%', padding: '1rem', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)',
-                                            borderRadius: '12px', color: 'var(--text-primary)', fontSize: '1.1rem', fontWeight: '600', outline: 'none'
-                                        }}
-                                        autoFocus
-                                        required
-                                    />
-                                </div>
-                                
-                                <div style={{ marginBottom: '2rem' }}>
-                                    <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.75rem', fontWeight: '700', opacity: 0.7 }}>APPLIED PERCENTAGE (%)</label>
-                                    <input 
-                                        type="number" 
-                                        step="0.01"
-                                        value={dcPercentage} 
-                                        onChange={e => setDcPercentage(e.target.value)}
-                                        placeholder="e.g. 5"
-                                        style={{
-                                            width: '100%', padding: '1rem', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)',
-                                            borderRadius: '12px', color: 'var(--text-primary)', fontSize: '1.1rem', fontWeight: '600', outline: 'none'
-                                        }}
-                                        autoFocus
-                                    />
-                                </div>
-
-                                <div style={{ display: 'flex', gap: '1rem' }}>
-                                    <button
-                                        type="button"
-                                        onClick={() => setShowDcModal(false)}
-                                        className="btn"
-                                        style={{ flex: 1, background: 'transparent', border: '1px solid var(--border-color)' }}
-                                    >
-                                        Cancel
-                                    </button>
-                                    <button
-                                        type="submit"
-                                        className="btn btn-primary"
-                                        style={{ flex: 2, background: 'var(--accent-color)', color: 'white', border: 'none' }}
-                                    >
-                                        Export DC
                                     </button>
                                 </div>
                             </form>
