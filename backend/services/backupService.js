@@ -13,8 +13,24 @@ const Scanner = require('../models/Scanner');
 const Session = require('../models/Session');
 const Size = require('../models/Size');
 const User = require('../models/User');
+const DeliveryChallan = require('../models/DeliveryChallan');
+const Quotation = require('../models/Quotation');
 
 const getConfigPath = () => path.join(__dirname, '../config.json');
+
+const BACKUP_MODEL_DEFS = [
+    { key: 'barcodes', model: Barcode },
+    { key: 'clothRolls', model: ClothRoll },
+    { key: 'auditLogs', model: AuditLog },
+    { key: 'employees', model: Employee },
+    { key: 'missedScans', model: MissedScan },
+    { key: 'scanners', model: Scanner },
+    { key: 'sessions', model: Session },
+    { key: 'sizes', model: Size },
+    { key: 'users', model: User },
+    { key: 'deliveryChallans', model: DeliveryChallan },
+    { key: 'quotations', model: Quotation }
+];
 
 const getBackupDir = () => {
     let backupPath = './backups';
@@ -41,33 +57,27 @@ const performBackup = async (type = 'AUTO') => {
     console.log(`[Backup] Starting ${type} backup in ${backupDir}...`);
 
     try {
-        const barcodes = await Barcode.find({});
-        const clothRolls = await ClothRoll.find({});
-        const auditLogs = await AuditLog.find({});
-        const employees = await Employee.find({});
-        const missedScans = await MissedScan.find({});
-        const scanners = await Scanner.find({});
-        const sessions = await Session.find({});
-        const sizes = await Size.find({});
-        const users = await User.find({});
+        const configPath = getConfigPath();
+        const configSnapshot = (await fs.pathExists(configPath))
+            ? await fs.readJson(configPath)
+            : null;
+
+        const data = {};
+        let totalDocs = 0;
+        for (const def of BACKUP_MODEL_DEFS) {
+            const docs = await def.model.find({}).lean();
+            data[def.key] = docs;
+            totalDocs += docs.length;
+        }
 
         const backupData = {
             metadata: {
                 timestamp: new Date(),
-                version: '1.1',
+                version: '1.2',
                 type
             },
-            data: {
-                barcodes,
-                clothRolls,
-                auditLogs,
-                employees,
-                missedScans,
-                scanners,
-                sessions,
-                sizes,
-                users
-            }
+            configSnapshot,
+            data
         };
 
         await fs.writeJson(filePath, backupData, { spaces: 2 });
@@ -76,7 +86,7 @@ const performBackup = async (type = 'AUTO') => {
         // Log the success
         await AuditLog.create({
             action: 'BACKUP',
-            details: { filename, type, size: barcodes.length + clothRolls.length },
+            details: { filename, type, totalDocs },
             user: 'System'
         });
 
@@ -120,26 +130,32 @@ const restoreBackup = async (filename) => {
     try {
         console.log(`[Restore] Restoring from ${filename}...`);
         const backup = await fs.readJson(filePath);
+        const backupData = backup?.data || {};
 
-        const restoreOps = [
-            { model: Barcode, data: backup.data.barcodes },
-            { model: ClothRoll, data: backup.data.clothRolls },
-            { model: AuditLog, data: backup.data.auditLogs },
-            { model: Employee, data: backup.data.employees },
-            { model: MissedScan, data: backup.data.missedScans },
-            { model: Scanner, data: backup.data.scanners },
-            { model: Session, data: backup.data.sessions },
-            { model: Size, data: backup.data.sizes },
-            { model: User, data: backup.data.users }
-        ];
+        const legacyMap = {
+            barcodes: backupData.barcodes,
+            clothRolls: backupData.clothRolls,
+            auditLogs: backupData.auditLogs,
+            employees: backupData.employees,
+            missedScans: backupData.missedScans,
+            scanners: backupData.scanners,
+            sessions: backupData.sessions,
+            sizes: backupData.sizes,
+            users: backupData.users,
+            deliveryChallans: backupData.deliveryChallans,
+            quotations: backupData.quotations
+        };
 
-        for (const op of restoreOps) {
-            if (op.model) {
-                await op.model.deleteMany({});
-                if (op.data && op.data.length > 0) {
-                    await op.model.insertMany(op.data);
-                }
+        for (const def of BACKUP_MODEL_DEFS) {
+            const rows = Array.isArray(legacyMap[def.key]) ? legacyMap[def.key] : [];
+            await def.model.deleteMany({});
+            if (rows.length > 0) {
+                await def.model.insertMany(rows);
             }
+        }
+
+        if (backup.configSnapshot && typeof backup.configSnapshot === 'object') {
+            await fs.writeJson(getConfigPath(), backup.configSnapshot, { spaces: 2 });
         }
 
         console.log('[Restore] Complete');

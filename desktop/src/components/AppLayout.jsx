@@ -98,6 +98,7 @@ const AppLayout = ({ children }) => {
                     <nav style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'center' }}>
                         <SidebarLink collapsed={isCollapsed} active={isActive('/dashboard')} onClick={() => handleNavigation('/dashboard')} icon={<IconCloud />} label="Operations Dashboard" />
                         <SidebarLink collapsed={isCollapsed} active={isActive('/dcs')} onClick={() => handleNavigation('/dcs')} icon={<IconTruck />} label="Delivery Challans" />
+                        <SidebarLink collapsed={isCollapsed} active={isActive('/quotations')} onClick={() => handleNavigation('/quotations')} icon={<IconBox />} label="Quotations" />
                         <SidebarLink collapsed={isCollapsed} active={isActive('/sessions')} onClick={() => handleNavigation('/sessions')} icon={<IconBroadcast />} label="Active Batches" />
 
                         <SidebarLink collapsed={isCollapsed} active={isActive('/barcode')} onClick={() => handleNavigation('/barcode')} icon={<IconScan />} label="Barcode Generator" />

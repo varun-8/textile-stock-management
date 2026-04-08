@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useConfig } from '../context/ConfigContext';
 import { useNotification } from '../context/NotificationContext';
-import { IconPlus, IconTruck, IconEye, IconX } from '../components/Icons';
+import { IconPlus, IconTruck, IconEye, IconX, IconPrint } from '../components/Icons';
 import { generateDCPdf } from '../utils/pdfGenerator';
 
 const DEFAULT_DC_TEMPLATE = {
@@ -381,7 +381,6 @@ const DeliveryChallans = () => {
         setPdfPreviewTitle(`DC ${dc.dcNumber || ''} Preview`);
         setPdfPreviewUrl(pdfUrl);
         setPdfPreviewMode('history');
-        setShouldAutoPrint(false);
     };
 
     const closePdfPreview = () => {
@@ -395,6 +394,22 @@ const DeliveryChallans = () => {
         setPdfPreviewUrl('');
         setPdfPreviewTitle('PDF Preview');
         setPdfPreviewMode('history');
+    };
+
+    const handlePrintPdf = () => {
+        if (pdfPreviewUrl) {
+            // Open in new window for printing
+            const printWindow = window.open(pdfPreviewUrl, '_blank');
+            if (printWindow) {
+                printWindow.addEventListener('load', () => {
+                    printWindow.print();
+                });
+            }
+        }
+    };
+
+    const openHistoryPrompt = (dc) => {
+        setSelectedHistoryDc(dc);
     };
 
     return (
@@ -428,9 +443,9 @@ const DeliveryChallans = () => {
             </header>
 
             {/* Main Content */}
-            <main style={{ flex: 1, padding: '2rem', overflowY: 'auto' }}>
+            <main style={{ flex: 1, padding: '2.5rem 2rem', overflowY: 'auto' }}>
                 <div className="card">
-                    <h2 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <h2 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.5rem' }}>
                         <IconTruck size="18" /> DC History
                     </h2>
                     
@@ -441,60 +456,86 @@ const DeliveryChallans = () => {
                             No Delivery Challans generated yet.
                         </div>
                     ) : (
-                        <div className="table-container">
-                            <table>
+                        <div className="panel" style={{ padding: 0, overflow: 'hidden', border: '1px solid var(--border-color)', borderRadius: '16px' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', fontSize: '0.9rem' }}>
+                                <colgroup>
+                                    <col style={{ width: '20%' }} />
+                                    <col style={{ width: '12%' }} />
+                                    <col style={{ width: '30%' }} />
+                                    <col style={{ width: '14%' }} />
+                                    <col style={{ width: '24%' }} />
+                                </colgroup>
                                 <thead>
-                                    <tr>
-                                        <th>DC NO.</th>
-                                        <th>DATE</th>
-                                        <th>PARTY</th>
-                                        <th>TOTALS</th>
-                                        <th>STATUS</th>
-                                        <th>ACTIONS</th>
+                                    <tr style={{ background: 'var(--bg-tertiary)', borderBottom: '1px solid var(--border-color)' }}>
+                                        <th style={{ padding: '1rem 1.5rem', textAlign: 'left', fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>DC No.</th>
+                                        <th style={{ padding: '1rem 1.5rem', textAlign: 'center', fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Date</th>
+                                        <th style={{ padding: '1rem 1.5rem', textAlign: 'left', fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Party</th>
+                                        <th style={{ padding: '1rem 1.5rem', textAlign: 'center', fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Totals</th>
+                                        <th style={{ padding: '1rem 1.5rem', textAlign: 'center', fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Status</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {dcs.map(dc => {
+                                    {dcs.map((dc, idx) => {
                                         const isCancelled = dc.status === 'CANCELLED';
                                         return (
-                                            <tr key={dc._id} style={{ opacity: isCancelled ? 0.6 : 1 }}>
-                                                <td style={{ fontWeight: 'bold' }}>{dc.dcNumber}</td>
-                                                <td>{new Date(dc.createdAt).toLocaleDateString()}</td>
-                                                <td>{dc.partyName}</td>
-                                                <td>
-                                                    <div style={{ fontSize: '0.85rem' }}>
-                                                        <span style={{ fontWeight: '600' }}>{dc.totalRolls}</span> Rolls<br/>
-                                                        <span style={{ color: 'var(--text-secondary)' }}>{dc.totalMetre} m</span>
+                                            <tr 
+                                                key={dc._id} 
+                                                style={{ 
+                                                    opacity: isCancelled ? 0.65 : 1,
+                                                    background: idx % 2 === 0 ? 'transparent' : 'var(--row-alt-bg)',
+                                                    borderBottom: '1px solid var(--border-color)',
+                                                    transition: 'background 0.2s ease',
+                                                    cursor: 'pointer'
+                                                }}
+                                                onMouseOver={(e) => {
+                                                    e.currentTarget.style.background = 'var(--row-hover-bg)';
+                                                }}
+                                                onMouseOut={(e) => {
+                                                    e.currentTarget.style.background = idx % 2 === 0 ? 'transparent' : 'var(--row-alt-bg)';
+                                                }}
+                                                onClick={() => handleViewPdf(dc)}
+                                            >
+                                                <td style={{
+                                                    fontWeight: '700',
+                                                    padding: '1rem 1.5rem',
+                                                    textAlign: 'left',
+                                                    color: 'var(--accent-color)',
+                                                    whiteSpace: 'nowrap',
+                                                    overflow: 'hidden',
+                                                    textOverflow: 'ellipsis',
+                                                    fontFamily: 'monospace'
+                                                }} title={dc.dcNumber}>
+                                                    {dc.dcNumber}
+                                                </td>
+                                                <td style={{ padding: '1rem 1.5rem', textAlign: 'center', fontSize: '0.9rem', color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+                                                    {new Date(dc.createdAt).toLocaleDateString('en-IN')}
+                                                </td>
+                                                <td style={{ padding: '1rem 1.5rem', textAlign: 'left', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={dc.partyName}>
+                                                    {dc.partyName}
+                                                </td>
+                                                <td style={{ padding: '1rem 1.5rem', textAlign: 'center' }}>
+                                                    <div style={{ fontSize: '0.85rem', lineHeight: '1.4' }}>
+                                                        <div style={{ fontWeight: '700', color: 'var(--text-primary)' }}>{dc.totalRolls}</div>
+                                                        <div style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>{dc.totalMetre} m</div>
                                                     </div>
                                                 </td>
-                                                <td>
+                                                <td style={{ padding: '1rem 1.5rem', textAlign: 'center' }}>
                                                     <span style={{
-                                                        padding: '4px 8px', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 'bold',
-                                                        background: isCancelled ? 'rgba(239, 68, 68, 0.1)' : 'rgba(16, 185, 129, 0.1)',
-                                                        color: isCancelled ? 'var(--error-color)' : 'var(--success-color)'
+                                                        display: 'inline-flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        minWidth: '96px',
+                                                        padding: '5px 10px',
+                                                        borderRadius: '999px',
+                                                        fontSize: '0.73rem',
+                                                        fontWeight: '700',
+                                                        letterSpacing: '0.03em',
+                                                        background: isCancelled ? 'rgba(239, 68, 68, 0.12)' : 'rgba(16, 185, 129, 0.12)',
+                                                        color: isCancelled ? 'var(--error-color)' : 'var(--success-color)',
+                                                        border: `1px solid ${isCancelled ? 'rgba(239, 68, 68, 0.3)' : 'rgba(16, 185, 129, 0.3)'}`
                                                     }}>
                                                         {dc.status}
                                                     </span>
-                                                </td>
-                                                <td>
-                                                    <div style={{ display: 'flex', gap: '8px' }}>
-                                                        <button 
-                                                            onClick={() => handleViewPdf(dc)}
-                                                            className="btn" 
-                                                            style={{ padding: '6px 10px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px' }}
-                                                        >
-                                                            <IconEye size="14" /> View PDF
-                                                        </button>
-                                                        {!isCancelled && (
-                                                            <button 
-                                                                onClick={() => handleCancelDC(dc._id)}
-                                                                className="btn" 
-                                                                style={{ padding: '6px 10px', fontSize: '0.8rem', background: 'rgba(239, 68, 68, 0.1)', color: 'var(--error-color)' }}
-                                                            >
-                                                                Cancel
-                                                            </button>
-                                                        )}
-                                                    </div>
                                                 </td>
                                             </tr>
                                         );
@@ -753,6 +794,14 @@ const DeliveryChallans = () => {
                     }}>
                         <h3 style={{ margin: 0, fontSize: '1rem', color: '#f8fafc' }}>{pdfPreviewTitle}</h3>
                         <div style={{ display: 'flex', gap: '0.75rem' }}>
+                            <button
+                                className="btn"
+                                onClick={handlePrintPdf}
+                                style={{ padding: '0.45rem 0.8rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+                                title="Print PDF"
+                            >
+                                <IconPrint size="16" /> Print
+                            </button>
                             <button
                                 className="btn"
                                 onClick={closePdfPreview}

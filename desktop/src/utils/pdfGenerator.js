@@ -61,17 +61,152 @@ function normalizeTemplate(templateConfig, dcData) {
     return safe;
 }
 
-function renderPrintedTemplate(doc, dcData, rollsList, template) {
+function renderPrintedHeaderScaffold(doc, template, documentMeta = {}) {
     const inkRgb = hexToRgb(template.tableHeaderColor || '#1a5c1a');
     const [iR, iG, iB] = inkRgb;
-    const setInk = () => { doc.setDrawColor(iR, iG, iB); doc.setTextColor(iR, iG, iB); };
+    const setInk = () => {
+        doc.setDrawColor(iR, iG, iB);
+        doc.setTextColor(iR, iG, iB);
+    };
 
     const PW = doc.internal.pageSize.getWidth();
     const PH = doc.internal.pageSize.getHeight();
-    const mL = 8, mR = 8, mT = 8;
+    const mL = 8;
+    const mR = 8;
+    const mT = 8;
     const UW = PW - mL - mR;
     const cx = PW / 2;
-    const PT = 0.353; // 1pt ≈ 0.353 mm
+    const PT = 0.353;
+
+    setInk();
+    doc.setLineWidth(0.6);
+    doc.rect(mL, mT, UW, PH - mT - 8);
+
+    let curY = mT + 5;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    if (template.gstin) {
+        doc.text(`GSTIN : ${template.gstin}`, mL + 2, curY);
+    }
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.text(template.documentTitle || 'DELIVERY NOTE', cx, curY, { align: 'center' });
+    if (template.phoneText) {
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7.5);
+        doc.text(`Ph: ${template.phoneText}`, PW - mR - 2, curY, { align: 'right' });
+    }
+
+    curY += 3;
+    const cNameSz = parseFloat(template.companyNameSize) || 16;
+    const subSz = parseFloat(template.subTitleSize) || 8;
+    const addrSz = parseFloat(template.addressSize) || 7.5;
+    const addrMaxW = UW * 0.54;
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(addrSz);
+    const addrLines = template.address ? doc.splitTextToSize(template.address, addrMaxW) : [];
+    const addrLineH = addrSz * PT + 0.4;
+    const contentH = 0.5 + cNameSz * PT + (template.subTitle ? subSz * PT + 1.5 : 0) + (addrLines.length > 0 ? addrSz * PT + 1.5 + (addrLines.length - 1) * addrLineH : 0) + 0.5;
+    const textExtraH = 6;
+    const containerH = Math.max(contentH + textExtraH, 22);
+    const containerY = curY;
+
+    doc.setLineWidth(0.4);
+    doc.rect(mL, containerY, UW, containerH);
+
+    const textLeft = cx - addrMaxW / 2;
+    const textRight = cx + addrMaxW / 2;
+    const logoSz = Math.min(containerH - textExtraH - 2, 26);
+    const logoY = containerY + (containerH - textExtraH - logoSz) / 2 + 1;
+    const logoGap = 3;
+
+    const leftLogo = String(template.logoDataUrl || '');
+    if (leftLogo.startsWith('data:image/')) {
+        try {
+            doc.addImage(leftLogo, leftLogo.startsWith('data:image/png') ? 'PNG' : 'JPEG', textLeft - logoGap - logoSz, logoY, logoSz, logoSz);
+        } catch (_) {}
+    }
+    const rightLogo = String(template.logoDataUrl2 || '');
+    if (rightLogo.startsWith('data:image/')) {
+        try {
+            doc.addImage(rightLogo, rightLogo.startsWith('data:image/png') ? 'PNG' : 'JPEG', textRight + logoGap, logoY, logoSz, logoSz);
+        } catch (_) {}
+    }
+
+    const numberLabel = documentMeta.numberLabel || 'DC No.';
+    const numberValue = documentMeta.numberValue || '__________';
+    const numberValueOffset = Number.isFinite(documentMeta.numberValueOffset)
+        ? documentMeta.numberValueOffset
+        : 11;
+    const dateLabel = documentMeta.dateLabel || 'Date';
+    const rawDate = documentMeta.dateValue;
+    const dateStr = rawDate ? new Date(rawDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '___________';
+
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`${numberLabel} `, mL + 2, containerY + containerH - 2);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`: ${numberValue}`, mL + 2 + numberValueOffset, containerY + containerH - 2);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`${dateLabel} `, PW - mR - 30, containerY + containerH - 2);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`: ${dateStr}`, PW - mR - 22, containerY + containerH - 2);
+
+    let ty = containerY + (containerH - contentH) / 2 + 0.5;
+    ty += cNameSz * PT;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(cNameSz);
+    doc.text(template.companyName || 'COMPANY NAME', cx, ty, { align: 'center' });
+    if (template.subTitle) {
+        ty += subSz * PT + 1.5;
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(subSz);
+        doc.text(template.subTitle, cx, ty, { align: 'center' });
+    }
+    if (addrLines.length > 0) {
+        ty += addrSz * PT + 1.5;
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(addrSz);
+        addrLines.forEach((line, i) => {
+            doc.text(line, cx, ty + i * addrLineH, { align: 'center' });
+        });
+    }
+
+    curY = containerY + containerH;
+    doc.setLineWidth(0.4);
+    doc.line(mL, curY, PW - mR, curY);
+    curY += 3;
+
+    return {
+        setInk,
+        mL,
+        mR,
+        UW,
+        PW,
+        PH,
+        cx,
+        curY
+    };
+}
+
+function renderPrintedTemplate(doc, dcData, rollsList, template) {
+    const {
+        setInk,
+        mL,
+        mR,
+        UW,
+        PW,
+        PH,
+        cx,
+        curY: baseHeaderY
+    } = renderPrintedHeaderScaffold(doc, template, {
+        numberLabel: 'DC No.',
+        numberValue: dcData.dcNumber || '__________',
+        dateLabel: 'Date',
+        dateValue: dcData.createdAt
+    });
+
     const pct = Number(dcData?.appliedPercentage || 0);
     const safePct = Number.isFinite(pct) ? pct : 0;
     const factor = 1 + safePct / 100;
@@ -81,122 +216,60 @@ function renderPrintedTemplate(doc, dcData, rollsList, template) {
         return Number((raw * factor).toFixed(2));
     };
 
-    // Helper: Render Page Header, Logos, and Meta Data
-    const renderPageScaffold = (yStart) => {
-        setInk();
-        doc.setLineWidth(0.6);
-        doc.rect(mL, mT, UW, PH - mT - 8);
+    let curY = baseHeaderY;
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'bold');
+    doc.text('To M/s.', mL + 2, curY + 4);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`: ${dcData.partyName || '________________________________'}`, mL + 16, curY + 4);
+    curY += 5;
 
-        let curY = mT + 5;
-        // Top Row: GSTIN, Title, Phone
-        doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5);
-        if (template.gstin) doc.text(`GSTIN : ${template.gstin}`, mL + 2, curY);
-        doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
-        doc.text(template.documentTitle || 'DELIVERY NOTE', cx, curY, { align: 'center' });
-        if (template.phoneText) {
-            doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5);
-            doc.text(`Ph: ${template.phoneText}`, PW - mR - 2, curY, { align: 'right' });
-        }
+    const pAddr = dcData.partyAddress || '';
+    if (template.showPartyAddress && pAddr) {
+        doc.setFont('helvetica', 'bold');
+        doc.text('Address', mL + 2, curY + 4);
+        doc.setFont('helvetica', 'normal');
+        const pAddrLines = doc.splitTextToSize(`: ${pAddr}`, UW - 20);
+        pAddrLines.forEach((line, i) => {
+            doc.text(line, mL + 16, curY + 4 + i * 4);
+        });
+        curY += 4 + pAddrLines.length * 4;
+    } else if (template.showPartyAddress) {
+        doc.setFont('helvetica', 'bold');
+        doc.text('Address', mL + 2, curY + 4);
+        doc.setFont('helvetica', 'normal');
+        doc.text(': ________________________________', mL + 16, curY + 4);
+        curY += 7;
+    }
 
-        // Header Container with Logos
-        curY += 3;
-        const cNameSz = parseFloat(template.companyNameSize) || 16;
-        const subSz = parseFloat(template.subTitleSize) || 8;
-        const addrSz = parseFloat(template.addressSize) || 7.5;
-        const addrMaxW = UW * 0.54; // Slightly tighter to avoid logos
+    if (template.showQuality) {
+        doc.setFont('helvetica', 'bold');
+        doc.text('Quality', mL + 2, curY + 4);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`: ${dcData.quality || '______________________'}`, mL + 17, curY + 4);
+    }
+    if (template.showFolding) {
+        doc.setFont('helvetica', 'bold');
+        doc.text('Folding', cx - 26, curY + 4);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`: ${dcData.folding || '__________________'}`, cx - 11, curY + 4);
+    }
+    if (template.showLotNo) {
+        doc.setFont('helvetica', 'bold');
+        doc.text('Lot No', PW - mR - 40, curY + 4);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`: ${dcData.lotNo || '__________'}`, PW - mR - 28, curY + 4);
+    }
+    curY += 9;
 
-        doc.setFont('helvetica', 'normal'); doc.setFontSize(addrSz);
-        let addrLines = template.address ? doc.splitTextToSize(template.address, addrMaxW) : [];
-        const addrLineH = addrSz * PT + 0.4; // Tighter line spacing for professional look
-        const contentH = 0.5 + cNameSz * PT + (template.subTitle ? subSz * PT + 1.5 : 0) + (addrLines.length > 0 ? addrSz * PT + 1.5 + (addrLines.length - 1) * addrLineH : 0) + 0.5;
-        const textExtraH = 6;
-        const containerH = Math.max(contentH + textExtraH, 22);
-        const containerY = curY;
-
-        doc.setLineWidth(0.4); doc.rect(mL, containerY, UW, containerH);
-        const textLeft = cx - addrMaxW / 2;
-        const textRight = cx + addrMaxW / 2;
-        const logoSz = Math.min(containerH - textExtraH - 2, 26);
-        const logoY = containerY + (containerH - textExtraH - logoSz) / 2 + 1;
-        const logoGap = 3;
-
-        const leftLogo = String(template.logoDataUrl || '');
-        if (leftLogo.startsWith('data:image/')) {
-            try { doc.addImage(leftLogo, leftLogo.startsWith('data:image/png') ? 'PNG' : 'JPEG', textLeft - logoGap - logoSz, logoY, logoSz, logoSz); } catch (_) {}
-        }
-        const rightLogo = String(template.logoDataUrl2 || '');
-        if (rightLogo.startsWith('data:image/')) {
-            try { doc.addImage(rightLogo, rightLogo.startsWith('data:image/png') ? 'PNG' : 'JPEG', textRight + logoGap, logoY, logoSz, logoSz); } catch (_) {}
-        }
-
-        // DC No & Date bottom corners of container
-        doc.setFontSize(8);
-        const dateStr = dcData.createdAt ? new Date(dcData.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '___________';
-        doc.setFont('helvetica', 'bold'); doc.text('DC No. ', mL + 2, containerY + containerH - 2);
-        doc.setFont('helvetica', 'normal'); doc.text(`: ${dcData.dcNumber || '__________'}`, mL + 13, containerY + containerH - 2);
-        doc.setFont('helvetica', 'bold'); doc.text('Date ', PW - mR - 30, containerY + containerH - 2);
-        doc.setFont('helvetica', 'normal'); doc.text(`: ${dateStr}`, PW - mR - 22, containerY + containerH - 2);
-
-        // Render header text block
-        let ty = containerY + (containerH - contentH) / 2 + 0.5;
-        ty += cNameSz * PT;
-        doc.setFont('helvetica', 'bold'); doc.setFontSize(cNameSz); doc.text(template.companyName || 'COMPANY NAME', cx, ty, { align: 'center' });
-        if (template.subTitle) {
-            ty += subSz * PT + 1.5;
-            doc.setFont('helvetica', 'bold'); doc.setFontSize(subSz); doc.text(template.subTitle, cx, ty, { align: 'center' });
-        }
-        if (addrLines.length > 0) {
-            ty += addrSz * PT + 1.5;
-            doc.setFont('helvetica', 'normal'); doc.setFontSize(addrSz);
-            addrLines.forEach((line, i) => { doc.text(line, cx, ty + i * addrLineH, { align: 'center' }); });
-        }
-
-        curY = containerY + containerH;
-        doc.setLineWidth(0.4); doc.line(mL, curY, PW - mR, curY);
-        curY += 3;
-
-        // Meta Rows (To M/s, Address, etc.)
-        doc.setFontSize(8);
-        doc.setFont('helvetica', 'bold'); doc.text('To M/s.', mL + 2, curY + 4);
-        doc.setFont('helvetica', 'normal'); doc.text(`: ${dcData.partyName || '________________________________'}`, mL + 16, curY + 4);
-        curY += 5;
-
-        const pAddr = dcData.partyAddress || '';
-        if (template.showPartyAddress && pAddr) {
-            doc.setFont('helvetica', 'bold'); doc.text('Address', mL + 2, curY + 4);
-            doc.setFont('helvetica', 'normal');
-            const pAddrLines = doc.splitTextToSize(`: ${pAddr}`, UW - 20);
-            pAddrLines.forEach((line, i) => { doc.text(line, mL + 16, curY + 4 + i * 4); });
-            curY += 4 + pAddrLines.length * 4;
-        } else if (template.showPartyAddress) {
-            doc.setFont('helvetica', 'bold'); doc.text('Address', mL + 2, curY + 4);
-            doc.setFont('helvetica', 'normal'); doc.text(': ________________________________', mL + 16, curY + 4);
-            curY += 7;
-        }
-
-        if (template.showQuality) {
-            doc.setFont('helvetica', 'bold'); doc.text('Quality', mL + 2, curY + 4);
-            doc.setFont('helvetica', 'normal'); doc.text(`: ${dcData.quality || '______________________'}`, mL + 17, curY + 4);
-        }
-        if (template.showFolding) {
-            doc.setFont('helvetica', 'bold'); doc.text('Folding', cx - 26, curY + 4);
-            doc.setFont('helvetica', 'normal'); doc.text(`: ${dcData.folding || '__________________'}`, cx - 11, curY + 4);
-        }
-        if (template.showLotNo) {
-            doc.setFont('helvetica', 'bold'); doc.text('Lot No', PW - mR - 40, curY + 4);
-            doc.setFont('helvetica', 'normal'); doc.text(`: ${dcData.lotNo || '__________'}`, PW - mR - 28, curY + 4);
-        }
-        curY += 9;
-
-        doc.setLineWidth(0.4); doc.line(mL, curY, PW - mR, curY);
-        return curY + 1;
-    };
+    doc.setLineWidth(0.4);
+    doc.line(mL, curY, PW - mR, curY);
+    const startY = curY + 1;
 
     // ─── Tally Rendering: Balanced Sequential Columns ────────────────────────
     const cellH = 4.3;
     const colCount = 3;
     const colW = UW / colCount;
-    const startY = renderPageScaffold();
     const bottomLimit = PH - 45; // Leave room for footer
     
     // 1. Measure all blocks
@@ -273,7 +346,7 @@ function renderPrintedTemplate(doc, dcData, rollsList, template) {
     });
 
     // Summary Table start point: Max Y of all columns
-    let curY = Math.max(...columnFinalYs);
+    curY = Math.max(...columnFinalYs);
 
     // ─── 3-Column Summary Table ───────────────────────────────────────────────
     // Jump to new page if not enough space (need at least 30mm)
@@ -536,5 +609,153 @@ export const generateDCPdf = (dcData, rollsList, templateConfig = null, options 
     doc.line(150, pageHeight - 25, 200, pageHeight - 25);
 
     const filename = `${String(dcData.dcNumber || 'DC').replace(/\s+/g, '_')}_Challan.pdf`;
+    return finalizePdf(doc, filename, options);
+};
+
+export const generateQuotationPdf = (quotationData, rollsList, templateConfig = null, options = {}) => {
+    const doc = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+    });
+
+    const template = normalizeTemplate(templateConfig, quotationData);
+    template.documentTitle = 'QUOTATION';
+    const rows = Array.isArray(rollsList) ? rollsList : [];
+
+    if (template.layoutMode === 'printed') {
+        const {
+            setInk,
+            mL,
+            mR,
+            UW,
+            PW,
+            PH,
+            curY: baseHeaderY
+        } = renderPrintedHeaderScaffold(doc, template, {
+            numberLabel: 'Quotation No.',
+            numberValue: quotationData.quotationNumber || '__________',
+            numberValueOffset: 27,
+            dateLabel: 'Date',
+            dateValue: quotationData.createdAt
+        });
+
+        let curY = baseHeaderY;
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8);
+        doc.text('To M/s.', mL + 2, curY + 4);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`: ${quotationData.partyName || '________________________________'}`, mL + 16, curY + 4);
+        curY += 5;
+
+        const pAddr = String(quotationData.partyAddress || '').trim();
+        if (pAddr) {
+            doc.setFont('helvetica', 'bold');
+            doc.text('Address', mL + 2, curY + 4);
+            doc.setFont('helvetica', 'normal');
+            const pAddrLines = doc.splitTextToSize(`: ${pAddr}`, UW - 20);
+            pAddrLines.forEach((line, i) => {
+                doc.text(line, mL + 16, curY + 4 + i * 4);
+            });
+            curY += 4 + pAddrLines.length * 4;
+        }
+
+        const validityText = quotationData.validityDate
+            ? new Date(quotationData.validityDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })
+            : 'N/A';
+
+        doc.setFont('helvetica', 'bold');
+        doc.text('Density', mL + 2, curY + 4);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`: ${quotationData.density || 'N/A'}`, mL + 16, curY + 4);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Validity', PW - mR - 40, curY + 4);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`: ${validityText}`, PW - mR - 28, curY + 4);
+        curY += 9;
+
+        doc.setLineWidth(0.4);
+        doc.line(mL, curY, PW - mR, curY);
+        curY += 2;
+
+        autoTable(doc, {
+            startY: curY,
+            margin: { left: mL, right: mR },
+            head: [['S.No', 'Barcode', 'Metre', 'Weight', 'Pieces']],
+            body: rows.map((roll, index) => {
+                const piecesCount = Array.isArray(roll?.pieces) ? roll.pieces.length : Number(roll?.pieces || 1);
+                return [
+                    index + 1,
+                    roll?.barcode || '-',
+                    Number(roll?.metre || 0).toFixed(2),
+                    Number(roll?.weight || 0).toFixed(2),
+                    piecesCount
+                ];
+            }),
+            theme: 'grid',
+            headStyles: {
+                fillColor: hexToRgb(template.tableHeaderColor),
+                textColor: 255,
+                fontStyle: 'bold',
+                fontSize: 8.5
+            },
+            styles: {
+                fontSize: 8,
+                cellPadding: 2.5,
+                textColor: [30, 41, 59]
+            },
+            columnStyles: {
+                0: { cellWidth: 14, halign: 'center' },
+                2: { halign: 'right' },
+                3: { halign: 'right' },
+                4: { halign: 'right', cellWidth: 16 }
+            }
+        });
+
+        const finalY = doc.lastAutoTable?.finalY || curY;
+        const totalRolls = Number(quotationData.totalRolls || rows.length || 0);
+
+        doc.setLineWidth(0.35);
+        setInk();
+        doc.rect(mL, finalY + 4, UW, 8);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(9);
+        doc.text('Total Rolls', mL + 2, finalY + 9.3);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`: ${totalRolls}`, mL + 24, finalY + 9.3);
+
+        let notesY = finalY + 16;
+        const notes = String(quotationData.notes || '').trim();
+        if (notes) {
+            doc.setFont('helvetica', 'bold');
+            doc.text('Notes:', mL + 2, notesY);
+            doc.setFont('helvetica', 'normal');
+            const notesLines = doc.splitTextToSize(notes, UW - 14);
+            notesLines.forEach((line, idx) => {
+                doc.text(line, mL + 14, notesY + idx * 4);
+            });
+            notesY += Math.max(6, notesLines.length * 4 + 2);
+        }
+
+        const terms = String(quotationData.terms || '').trim();
+        if (terms) {
+            doc.setFont('helvetica', 'bold');
+            doc.text('Terms:', mL + 2, notesY);
+            doc.setFont('helvetica', 'normal');
+            const termLines = doc.splitTextToSize(terms, UW - 14);
+            termLines.forEach((line, idx) => {
+                doc.text(line, mL + 14, notesY + idx * 4);
+            });
+        }
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7);
+        doc.text('Authorised Signatory', PW - mR - 2, PH - 11, { align: 'right' });
+
+        const filename = `${String(quotationData.quotationNumber || 'Quotation').replace(/\s+/g, '_')}.pdf`;
+        return finalizePdf(doc, filename, options);
+    }
+
+    const filename = `${String(quotationData.quotationNumber || 'Quotation').replace(/\s+/g, '_')}.pdf`;
     return finalizePdf(doc, filename, options);
 };

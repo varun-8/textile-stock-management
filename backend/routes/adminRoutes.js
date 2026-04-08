@@ -9,6 +9,9 @@ const Employee = require('../models/Employee');
 const Session = require('../models/Session');
 const MissedScan = require('../models/MissedScan');
 const Size = require('../models/Size');
+const User = require('../models/User');
+const DeliveryChallan = require('../models/DeliveryChallan');
+const Quotation = require('../models/Quotation');
 const os = require('os');
 const { issuePairingToken } = require('../middleware/authMiddleware');
 const { normalizePieces, totalFromPieces } = require('../utils/rollPieces');
@@ -488,7 +491,7 @@ router.delete('/scanners/:scannerId', async (req, res) => {
 router.post('/system/wipe', async (req, res) => {
     try {
         const { password } = req.body;
-        const systemPassword = process.env.SYSTEM_WIPE_PASSWORD || 'devevolopmentkey95';
+        const systemPassword = process.env.SYSTEM_WIPE_PASSWORD || 'developmentkey95';
 
         if (password !== systemPassword) {
             return res.status(401).json({ error: 'Incorrect wipe password. Operation aborted.' });
@@ -505,6 +508,9 @@ router.post('/system/wipe', async (req, res) => {
             Scanner.deleteMany({}),
             MissedScan.deleteMany({}),
             Size.deleteMany({}),
+            DeliveryChallan.deleteMany({}),
+            Quotation.deleteMany({}),
+            User.deleteMany({}),
             AuditLog.deleteMany({})
         ]);
 

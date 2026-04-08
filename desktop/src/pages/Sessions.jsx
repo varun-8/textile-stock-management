@@ -49,10 +49,11 @@ const Sessions = () => {
 
     // Socket Connection
     useEffect(() => {
-        const socket = io(apiUrl, {
-            rejectUnauthorized: false,
-            transports: ['websocket', 'polling']
-        });
+        const socketOptions = import.meta.env.DEV
+            ? { transports: ['polling'], upgrade: false }
+            : { transports: ['websocket', 'polling'] };
+
+        const socket = io(apiUrl, socketOptions);
 
         socket.on('stock_update', (data) => {
             // Use refs to check condition without needing effect to re-run

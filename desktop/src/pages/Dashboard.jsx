@@ -151,10 +151,11 @@ const Dashboard = () => {
         fetchActiveSessions();
         if (activeTab === 'LIVE') fetchRecentLogs();
 
-        const socket = io(apiUrl, {
-            rejectUnauthorized: false,
-            transports: ['websocket', 'polling']
-        });
+        const socketOptions = import.meta.env.DEV
+            ? { transports: ['polling'], upgrade: false }
+            : { transports: ['websocket', 'polling'] };
+
+        const socket = io(apiUrl, socketOptions);
         socket.on('stock_update', (data) => {
             if (activeTab === 'LIVE') {
                 const newLog = {

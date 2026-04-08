@@ -12,6 +12,7 @@ import Settings from './pages/Settings';
 import Employees from './pages/Employees';
 import Sessions from './pages/Sessions';
 import DeliveryChallans from './pages/DeliveryChallans';
+import Quotations from './pages/Quotations';
 
 const ProtectedRoute = ({ children }) => {
   const hasToken = !!localStorage.getItem('ADMIN_TOKEN');
@@ -139,6 +140,13 @@ function App() {
                 <ProtectedRoute>
                   <AppLayout>
                     <DeliveryChallans />
+                  </AppLayout>
+                </ProtectedRoute>
+              } />
+              <Route path="/quotations" element={
+                <ProtectedRoute>
+                  <AppLayout>
+                    <Quotations />
                   </AppLayout>
                 </ProtectedRoute>
               } />

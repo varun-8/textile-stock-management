@@ -41,7 +41,11 @@ const BarcodeGenerator = () => {
         fetchMissing();
         fetchHistory();
 
-        const socket = io(apiUrl);
+        const socketOptions = import.meta.env.DEV
+            ? { transports: ['polling'], upgrade: false }
+            : { transports: ['websocket', 'polling'] };
+
+        const socket = io(apiUrl, socketOptions);
         socket.on('sequence_update', (data) => {
             if (String(data.year) === String(year) && String(data.size) === String(size)) {
                 setSeqInfo({ lastSequence: data.lastSequence, nextSequence: data.lastSequence + 1 });
