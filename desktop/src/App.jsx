@@ -5,6 +5,7 @@ import Dashboard from './pages/Dashboard';
 import DetailedStats from './pages/DetailedStats';
 import BarcodeGenerator from './pages/BarcodeGenerator';
 import MobileScanner from './pages/MobileScanner';
+import LicenseActivation from './pages/LicenseActivation';
 
 import Scanners from './pages/Scanners';
 import Configuration from './pages/Configuration';
@@ -28,19 +29,25 @@ const ServerGuard = ({ children }) => {
   const { apiUrl } = useConfig();
   const [serverReady, setServerReady] = useState(false);
   const [attempts, setAttempts] = useState(0);
+  const [licenseStatus, setLicenseStatus] = useState(null);
+  const [loadingLicense, setLoadingLicense] = useState(true);
   const pollRef = useRef(null);
 
   useEffect(() => {
     const ping = async () => {
       try {
-        await fetch(`${apiUrl}/api/auth/ping`, {
+        const response = await fetch(`${apiUrl}/api/license/status`, {
           method: 'GET',
           signal: AbortSignal.timeout(2000)
         });
+        const data = await response.json();
+        setLicenseStatus(data);
         setServerReady(true);
+        setLoadingLicense(false);
         clearInterval(pollRef.current);
       } catch (err) {
         setAttempts(prev => prev + 1);
+        setLoadingLicense(false);
       }
     };
     
@@ -54,7 +61,7 @@ const ServerGuard = ({ children }) => {
     return () => clearInterval(pollRef.current);
   }, [apiUrl]);
 
-  if (!serverReady) {
+  if (!serverReady || loadingLicense) {
     return (
       <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-primary)' }}>
         <div style={{ position: 'absolute', width: '600px', height: '600px', background: 'radial-gradient(circle, var(--accent-color) 0%, transparent 70%)', opacity: 0.1, top: '50%', left: '50%', transform: 'translate(-50%, -50%)', borderRadius: '50%', zIndex: 0 }}></div>
@@ -67,6 +74,26 @@ const ServerGuard = ({ children }) => {
         </div>
         <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
       </div>
+    );
+  }
+
+  if (licenseStatus?.required && !licenseStatus?.active) {
+    return (
+      <LicenseActivation
+        licenseStatus={licenseStatus}
+        onActivated={async () => {
+          try {
+            const response = await fetch(`${apiUrl}/api/license/status`, {
+              method: 'GET',
+              signal: AbortSignal.timeout(2000)
+            });
+            const data = await response.json();
+            setLicenseStatus(data);
+          } catch (err) {
+            console.error('Failed to refresh license status after activation', err);
+          }
+        }}
+      />
     );
   }
 

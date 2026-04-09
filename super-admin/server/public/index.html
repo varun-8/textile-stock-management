@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow, noarchive">
+  <meta name="googlebot" content="noindex, nofollow, noarchive">
+  <title>Super Admin</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #020617;
+      --panel: rgba(15, 23, 42, 0.86);
+      --border: rgba(148, 163, 184, 0.18);
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --accent: #6366f1;
+      --accent-2: #14b8a6;
+    }
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+      background: radial-gradient(circle at top, #1e293b 0%, var(--bg) 50%, #000 100%);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    .shell {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 32px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 18px;
+    }
+    @media (min-width: 920px) {
+      .grid { grid-template-columns: 1fr 1fr; }
+    }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 22px;
+      backdrop-filter: blur(18px);
+      box-shadow: 0 20px 60px rgba(0,0,0,0.35);
+    }
+    .row { display: grid; gap: 12px; margin-top: 14px; }
+    input, textarea, button {
+      width: 100%;
+      box-sizing: border-box;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.03);
+      color: var(--text);
+      padding: 14px 16px;
+      font: inherit;
+    }
+    textarea { min-height: 120px; resize: vertical; font-family: ui-monospace, SFMono-Regular, monospace; }
+    button {
+      border: 0;
+      cursor: pointer;
+      font-weight: 800;
+      background: linear-gradient(135deg, var(--accent) 0%, #8b5cf6 100%);
+    }
+    button.secondary {
+      background: linear-gradient(135deg, #0f766e 0%, var(--accent-2) 100%);
+    }
+    .muted { color: var(--muted); }
+    .pill {
+      display: inline-flex;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(99,102,241,0.12);
+      color: #c7d2fe;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    pre {
+      overflow: auto;
+      background: rgba(2, 6, 23, 0.8);
+      padding: 14px;
+      border-radius: 16px;
+      border: 1px solid var(--border);
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="pill">Private super admin</div>
+    <h1 style="margin:14px 0 8px; font-size: 2rem;">LoomTrack Cloud Control</h1>
+    <p class="muted" style="max-width: 720px; line-height: 1.6;">
+      This portal issues signed activation and reset codes for local Prodexa installations. It is intentionally private and not meant for search indexing.
+    </p>
+
+    <div class="grid">
+      <div class="card">
+        <h2 style="margin-top:0;">Admin Login</h2>
+        <div class="row">
+          <input id="admin-password" type="password" placeholder="Super admin password">
+          <button id="login-btn">Login</button>
+        </div>
+        <div id="auth-status" class="muted" style="margin-top: 12px;"></div>
+      </div>
+
+      <div class="card">
+        <h2 style="margin-top:0;">Issue License</h2>
+        <div class="row">
+          <input id="company-name" placeholder="Company name">
+          <input id="workspace-code" placeholder="Workspace code (default)">
+          <input id="device-id" placeholder="Device ID">
+          <textarea id="features" placeholder='Features as JSON array, e.g. ["inventory","scanner"]'></textarea>
+          <button id="issue-license">Issue Activation Code</button>
+        </div>
+        <div id="license-output"></div>
+      </div>
+
+      <div class="card">
+        <h2 style="margin-top:0;">Reset Password Code</h2>
+        <div class="row">
+          <input id="reset-device-id" placeholder="Device ID">
+          <button id="issue-reset" class="secondary">Generate Reset Code</button>
+        </div>
+        <div id="reset-output"></div>
+      </div>
+
+      <div class="card">
+        <h2 style="margin-top:0;">Issued Licenses</h2>
+        <button id="refresh" class="secondary" style="margin-bottom: 12px;">Refresh</button>
+        <div id="licenses"></div>
+      </div>
+    </div>
+  </div>
+  <script src="/app.js" type="module"></script>
+</body>
+</html>

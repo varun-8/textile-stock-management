@@ -1,4 +1,4 @@
-const CACHE_NAME = 'sl-scanner-v3';
+const CACHE_NAME = 'sl-scanner-v4';
 const ASSETS_TO_CACHE = [
     '/pwa/',
     '/pwa/index.html',
@@ -50,7 +50,7 @@ self.addEventListener('fetch', event => {
     const reqUrl = new URL(event.request.url);
     if (event.request.mode === 'navigate' && reqUrl.pathname.startsWith('/pwa')) {
         event.respondWith(
-            caches.match('/pwa/index.html').then(cached => cached || fetch('/pwa/index.html'))
+            fetch('/pwa/index.html', { cache: 'no-store' }).catch(() => caches.match('/pwa/index.html'))
         );
         return;
     }

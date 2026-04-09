@@ -1,6 +1,11 @@
 const mongoose = require('mongoose');
 
 const barcodeSchema = new mongoose.Schema({
+    workspaceCode: {
+        type: String,
+        default: () => process.env.WORKSPACE_CODE || 'default',
+        index: true
+    },
     year: {
         type: Number,
         required: true
@@ -15,8 +20,7 @@ const barcodeSchema = new mongoose.Schema({
     },
     full_barcode: {
         type: String,
-        required: true,
-        unique: true
+        required: true
     },
     status: {
         type: String,
@@ -39,7 +43,8 @@ const barcodeSchema = new mongoose.Schema({
     }
 });
 
-// Compound unique index to ensure strict sequence uniqueness per year+size
-barcodeSchema.index({ year: 1, size: 1, sequence: 1 }, { unique: true });
+// Compound unique index to ensure strict sequence uniqueness per workspace+year+size
+barcodeSchema.index({ workspaceCode: 1, year: 1, size: 1, sequence: 1 }, { unique: true });
+barcodeSchema.index({ workspaceCode: 1, full_barcode: 1 }, { unique: true });
 
 module.exports = mongoose.model('Barcode', barcodeSchema);

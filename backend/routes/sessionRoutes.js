@@ -820,7 +820,14 @@ router.get('/batch/active-out/list', async (req, res) => {
         // For each batch, get rolls and calculate totals
         const batchesWithRolls = await Promise.all(candidateBatches.map(async (batch) => {
             const rolls = await ClothRoll.find({
-                "transactionHistory.sessionId": batch._id
+                status: 'RESERVED',
+                $or: [{ dcId: { $exists: false } }, { dcId: null }],
+                transactionHistory: {
+                    $elemMatch: {
+                        status: 'RESERVED',
+                        sessionId: batch._id
+                    }
+                }
             }).lean();
 
             const hasHistoricalDcForBatch = rolls.some((roll) =>
@@ -829,12 +836,9 @@ router.get('/batch/active-out/list', async (req, res) => {
                 )
             );
 
-            // Show only rolls that are not already assigned to another DC.
-            const usableRolls = rolls.filter(r => !r.dcId);
-
-            const totalRolls = usableRolls.length;
-            const totalMetre = usableRolls.reduce((sum, roll) => sum + (Number(roll.metre) || 0), 0);
-            const totalPieces = usableRolls.reduce((sum, roll) => {
+            const totalRolls = rolls.length;
+            const totalMetre = rolls.reduce((sum, roll) => sum + (Number(roll.metre) || 0), 0);
+            const totalPieces = rolls.reduce((sum, roll) => {
                 const pieceLengths = Array.isArray(roll.pieces)
                     ? roll.pieces
                         .map((piece) => Number(typeof piece === 'number' ? piece : piece?.length))
@@ -858,8 +862,8 @@ router.get('/batch/active-out/list', async (req, res) => {
                 totalRolls,
                 totalMetre: totalMetre.toFixed(2),
                 totalPieces,
-                rollCount: usableRolls.length,
-                rolls: usableRolls.map(r => ({
+                rollCount: rolls.length,
+                rolls: rolls.map(r => ({
                     _id: r._id,
                     barcode: r.barcode,
                     metre: r.metre,

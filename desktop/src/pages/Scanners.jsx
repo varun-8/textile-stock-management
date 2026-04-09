@@ -7,12 +7,18 @@ import { useNotification } from '../context/NotificationContext';
 
 const Scanners = () => {
     const { apiUrl } = useConfig();
+    const MOBILE_LAN_PORT = 5001;
     const [scanners, setScanners] = useState([]);
     const [setupToken, setSetupToken] = useState('');
     const [qrTarget, setQrTarget] = useState(null); // null, 'NEW', or scanner object
     const [serverIp, setServerIp] = useState('');
     const [loading, setLoading] = useState(false);
     const [deleteConfirm, setDeleteConfirm] = useState(null);
+    const [showInstallQr, setShowInstallQr] = useState(false);
+    const [checkingInstallApk, setCheckingInstallApk] = useState(false);
+    const [installApkStatus, setInstallApkStatus] = useState('unknown'); // unknown | ready | missing
+    const [httpPort, setHttpPort] = useState(5001);
+    const [pwaUrl, setPwaUrl] = useState('');
     const { showNotification } = useNotification();
 
     useEffect(() => {
@@ -27,12 +33,26 @@ const Scanners = () => {
     }, [qrTarget, serverIp]); // Optimized dependency
 
     useEffect(() => {
+        if (showInstallQr && !serverIp) fetchServerIp();
+    }, [showInstallQr, serverIp]);
+
+    useEffect(() => {
         if (qrTarget === 'NEW') {
             fetchPairingToken();
         }
         if (!qrTarget) {
             setSetupToken('');
         }
+    }, [qrTarget]);
+
+    useEffect(() => {
+        if (qrTarget !== 'NEW') return undefined;
+
+        const interval = setInterval(() => {
+            fetchPairingToken();
+        }, 60 * 1000);
+
+        return () => clearInterval(interval);
     }, [qrTarget]);
 
     const authHeaders = () => {
@@ -44,6 +64,7 @@ const Scanners = () => {
         try {
             const res = await axios.get(`${apiUrl}/api/admin/server-ip`, { headers: authHeaders() });
             if (res.data.ip) setServerIp(res.data.ip);
+            if (res.data.httpPort) setHttpPort(Number(res.data.httpPort) || 5001);
         } catch (err) {
             console.error("Failed to fetch Server IP", err);
             showNotification("Could not resolve Server LAN IP", 'error');
@@ -95,15 +116,82 @@ const Scanners = () => {
     const getPairingUrl = () => {
         if (!serverIp) return '';
         if (qrTarget === 'NEW' && !setupToken) return '';
-        const lanUrl = `https://${serverIp}:5000`;
+        // Use HTTPS port 5000 - avoids Chrome HTTPS-First upgrade issues on port 5001
+        const httpsUrl = `https://${serverIp}:5000`;
 
-        // Use scanner's fingerprint for repair, otherwise use setupToken for new devices
         const tokenToUse = (qrTarget && typeof qrTarget === 'object') ? qrTarget.fingerprint : setupToken;
-        const urlParams = `server=${encodeURIComponent(lanUrl)}`;
+        // Pass server as HTTPS too so the PWA can call the API without mixed-content errors
+        const urlParams = `server=${encodeURIComponent(httpsUrl)}`;
 
-        // Master Link that works with System Camera AND In-App Scanner
-        return `${lanUrl}/pwa/index.html?token=${tokenToUse}&${urlParams}&action=PAIR`;
+        return `${httpsUrl}/pair?token=${tokenToUse}&${urlParams}&action=PAIR`;
     };
+
+    const getInstallUrl = () => {
+        if (!serverIp) return '';
+        return `https://${serverIp}:5000/pwa/ProdexaMobile.apk`;
+    };
+
+    const getPwaUrl = () => {
+        if (!serverIp) return '';
+        return `https://${serverIp}:5000/pwa/index.html`;
+    };
+
+    const verifyInstallApk = async () => {
+        setCheckingInstallApk(true);
+        setInstallApkStatus('unknown');
+        try {
+            const statusRes = await axios.get(`${apiUrl}/api/admin/apk-status`, { headers: authHeaders() });
+            const exists = Boolean(statusRes.data?.exists);
+            if (serverIp) {
+                setPwaUrl(`http://${serverIp}:${MOBILE_LAN_PORT}/pwa/index.html`);
+            } else if (statusRes.data?.pwaUrl) {
+                setPwaUrl(statusRes.data.pwaUrl);
+            }
+            if (exists) {
+                setInstallApkStatus('ready');
+                return;
+            }
+
+            // Fallback for dev/runtime path mismatches: check local filesystem via Electron.
+            const localCandidates = Array.isArray(statusRes.data?.checkedPaths)
+                ? statusRes.data.checkedPaths
+                : [];
+
+            let localFound = false;
+            if (window.electronAPI?.fileExists && localCandidates.length > 0) {
+                for (const p of localCandidates) {
+                    // eslint-disable-next-line no-await-in-loop
+                    const ok = await window.electronAPI.fileExists(p);
+                    if (ok) {
+                        localFound = true;
+                        break;
+                    }
+                }
+            }
+
+            if (localFound) {
+                setInstallApkStatus('ready');
+                return;
+            }
+
+            setInstallApkStatus('missing');
+            const checkedHint = localCandidates.length > 0
+                ? ` Checked: ${localCandidates.join(' | ')}`
+                : '';
+            showNotification(`APK not found on server. Run mobile-web apk publish flow first.${checkedHint}`, 'warning');
+        } catch (err) {
+            setInstallApkStatus('unknown');
+        } finally {
+            setCheckingInstallApk(false);
+        }
+    };
+
+    useEffect(() => {
+        if (showInstallQr && serverIp) {
+            verifyInstallApk();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [showInstallQr, serverIp]);
 
     return (
         <div style={{ padding: '0', height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--bg-primary)' }} className="animate-fade-in">
@@ -129,13 +217,32 @@ const Scanners = () => {
                         </h1>
                     </div>
                 </div>
-                <button
-                    onClick={() => setQrTarget('NEW')}
-                    className="btn btn-primary"
-                    style={{ padding: '0.8rem 1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}
-                >
-                    <IconScan /> <span>Pair Device</span>
-                </button>
+                <div style={{ display: 'flex', gap: '0.75rem' }}>
+                    <button
+                        onClick={() => {
+                            setShowInstallQr(true);
+                        }}
+                        className="btn"
+                        style={{
+                            padding: '0.8rem 1.5rem',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.5rem',
+                            border: '1px solid var(--border-color)',
+                            background: 'var(--bg-tertiary)'
+                        }}
+                    >
+                        <span style={{ fontSize: '1rem' }}>📲</span> <span>Install App</span>
+                    </button>
+
+                    <button
+                        onClick={() => setQrTarget('NEW')}
+                        className="btn btn-primary"
+                        style={{ padding: '0.8rem 1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+                    >
+                        <IconScan /> <span>Pair Device</span>
+                    </button>
+                </div>
             </header>
 
             <div style={{ flex: 1, padding: '2rem 2.5rem', overflowY: 'auto' }}>
@@ -338,6 +445,114 @@ const Scanners = () => {
 
 
 
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showInstallQr && (
+                <div style={{
+                    position: 'fixed', inset: 0, zIndex: 1000,
+                    background: 'var(--modal-overlay)', backdropFilter: 'blur(5px)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    padding: '20px'
+                }} className="animate-fade-in">
+                    <div style={{
+                        width: '100%', maxWidth: '440px', background: 'var(--bg-secondary)',
+                        borderRadius: '24px', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+                        border: '1px solid var(--border-color)', overflow: 'hidden',
+                        position: 'relative', display: 'flex', flexDirection: 'column'
+                    }}>
+                        <button
+                            onClick={() => setShowInstallQr(false)}
+                            style={{
+                                position: 'absolute', top: '15px', right: '15px',
+                                background: 'transparent', border: 'none', color: 'var(--text-secondary)',
+                                cursor: 'pointer', padding: '5px', zIndex: 10
+                            }}
+                        >
+                            <IconX />
+                        </button>
+
+                        <div style={{ padding: '2.5rem 2rem 2rem', textAlign: 'center' }}>
+                            <div style={{
+                                width: '64px', height: '64px', borderRadius: '20px',
+                                background: 'var(--accent-bg)', color: 'var(--accent-color)',
+                                margin: '0 auto 1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                fontSize: '1.5rem'
+                            }}>
+                                📲
+                            </div>
+
+                            <h2 style={{ fontSize: '1.5rem', fontWeight: '800', margin: '0 0 0.5rem', color: 'var(--text-primary)' }}>
+                                Install Mobile App
+                            </h2>
+                            <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', margin: '0 0 1.25rem' }}>
+                                Scan this QR from your phone browser to download the APK or open the PWA web app.
+                            </p>
+
+                            <div style={{
+                                margin: '0 0 1rem',
+                                fontSize: '0.8rem',
+                                color:
+                                    installApkStatus === 'ready'
+                                        ? 'var(--success-color)'
+                                        : installApkStatus === 'missing'
+                                            ? 'var(--warning-color)'
+                                            : 'var(--text-secondary)'
+                            }}>
+                                {checkingInstallApk
+                                    ? 'Checking APK availability...'
+                                    : installApkStatus === 'ready'
+                                        ? 'APK is ready to install'
+                                        : installApkStatus === 'missing'
+                                            ? 'APK not found on server yet'
+                                            : 'Could not verify from desktop, but QR may still work'}
+                            </div>
+
+                            {!serverIp || checkingInstallApk ? (
+                                <div style={{ padding: '2.25rem', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                    <div className="spinner" style={{ width: '32px', height: '32px', border: '3px solid var(--border-color)', borderTopColor: 'var(--accent-color)', borderRadius: '50%' }}></div>
+                                </div>
+                            ) : (
+                                <div style={{ background: 'white', padding: '1.5rem', borderRadius: '16px', display: 'inline-block', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}>
+                                    <QRCode
+                                        value={installApkStatus === 'ready' ? getInstallUrl() : getPwaUrl()}
+                                        size={200}
+                                    />
+                                </div>
+                            )}
+
+                            <div style={{ marginTop: '1.25rem', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                                {installApkStatus === 'ready'
+                                    ? 'Publish APK to server path: /pwa/ProdexaMobile.apk'
+                                    : 'PWA fallback: /pwa/index.html'}
+                            </div>
+
+                            {serverIp && (
+                                <div style={{ marginTop: '0.9rem' }}>
+                                    <a
+                                        href={getPwaUrl()}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        style={{
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            padding: '0.7rem 1rem',
+                                            borderRadius: '999px',
+                                            border: '1px solid var(--border-color)',
+                                            color: 'var(--text-primary)',
+                                            textDecoration: 'none',
+                                            fontSize: '0.82rem',
+                                            fontWeight: '700',
+                                            background: 'var(--bg-tertiary)'
+                                        }}
+                                    >
+                                        Open PWA
+                                    </a>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>

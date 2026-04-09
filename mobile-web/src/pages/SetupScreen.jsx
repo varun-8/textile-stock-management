@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useMobile } from '../context/MobileContext';
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import { haptic } from '../utils/haptic';
-import InstallPrompt from '../components/InstallPrompt';
+import { Capacitor } from '@capacitor/core';
 
 const THEME = {
     bg: '#0f172a', // Slate 900
@@ -18,28 +19,61 @@ const THEME = {
 const SetupScreen = () => {
     const { setupDevice } = useMobile();
     const [step, setStep] = useState('LANDING');
+    
+    useEffect(() => {
+        // Platform logging removed for production
+    }, []);
     const [manualIp, setManualIp] = useState('');
     const [showManual, setShowManual] = useState(false);
     const [error, setError] = useState(null);
+    const [showScanner, setShowScanner] = useState(false);
+    const [scannerRequested, setScannerRequested] = useState(false);
+    const [scannerError, setScannerError] = useState('');
+    const html5QrCodeRef = useRef(null);
 
     // 1. Auto-Pairing from URL (QR Scan)
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
-        const serverParam = params.get('server');
+        let serverParam = params.get('server');
         const tokenParam = params.get('token');
 
         if (serverParam && tokenParam) {
             console.log('🔗 Deep Link Detected - Auto-triggering pairing');
-            let ip = serverParam.replace(/https?:\/\//, '').split(':')[0];
-            executePairing(ip, tokenParam, 'AUTO_ASSIGN');
-        } else if (window.location.hostname && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-            // 2. Auto-Pairing from Current Host (if remote)
-            console.log('🌐 Remote Host Detected - Attempting auto-pairing with:', window.location.hostname);
-            executePairing(window.location.hostname, 'FACTORY_SETUP_2026', 'AUTO_ASSIGN');
+            
+            // Normalize for native app: force http://ip:5001 to bypass SSL
+            if (Capacitor.isNativePlatform() && serverParam.includes('://')) {
+                const ip = serverParam.replace(/https?:\/\//, '').split(':')[0];
+                if (ip) {
+                    serverParam = `http://${ip}:5001`;
+                    console.log('🔄 Normalized Deep Link Server URL for native:', serverParam);
+                }
+            }
+            
+            executePairing(serverParam, tokenParam, 'AUTO_ASSIGN');
         }
     }, [setupDevice]); // Add dependency for linting, though stable
 
+    useEffect(() => {
+        return () => {
+            stopQrScanner();
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    useEffect(() => {
+        if (!showScanner || !scannerRequested) return;
+
+        // Start scanner only after modal is painted and target element exists.
+        const timer = setTimeout(() => {
+            initializeQrScanner();
+        }, 0);
+
+        return () => clearTimeout(timer);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [showScanner, scannerRequested]);
+
     const handleManualConnect = () => {
+        setError(null);
         if (!manualIp.trim()) {
             setError("Enter Server IP");
             return;
@@ -55,25 +89,158 @@ const SetupScreen = () => {
     const executePairing = async (ip, token, nameOverride = null) => {
         setStep('CONNECTING');
         setError(null);
+        const finalName = nameOverride || 'AUTO_ASSIGN';
 
         try {
-            const finalName = nameOverride || 'AUTO_ASSIGN';
-            await setupDevice(ip, token, finalName);
+            // Clean the input IP/URL to get just the hostname/IP
+            const cleanHost = String(ip || '').replace(/https?:\/\//i, '').split(':')[0].split('/')[0];
+            
+            // Attempt 1: HTTP (Port 5001)
+            const httpUrl = `http://${cleanHost}:5001`;
+            try {
+                await setupDevice(httpUrl, token, finalName);
+                finishPairing();
+                return;
+            } catch (err) {
+                // Silently try next port
+            }
 
-            // Success -> Clear URL to prevent re-pairing on reload
-            const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
-            window.history.replaceState({ path: cleanUrl }, '', cleanUrl);
+            // Attempt 2: HTTPS (Port 5000)
+            const httpsUrl = `https://${cleanHost}:5000`;
+            try {
+                await setupDevice(httpsUrl, token, finalName);
+                finishPairing();
+                return;
+            } catch (err) {
+                // Fail
+            }
 
-            // Context update will trigger App redirect
+            handlePairError("Unable to reach server. Please check your network.");
         } catch (err) {
             handlePairError(err.message || 'Connection Failed');
         }
+    };
+
+    const finishPairing = () => {
+        // Success -> Clear URL to prevent re-pairing on reload
+        const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
+        window.history.replaceState({ path: cleanUrl }, '', cleanUrl);
+        // Context update will trigger App redirect
     };
 
     const handlePairError = (msg) => {
         setStep('LANDING'); // Go back to landing to show error
         setError(msg);
         haptic.error();
+    };
+
+    const extractPairPayload = (raw) => {
+        const text = String(raw || '').trim();
+        if (!text) return null;
+
+        const normalized = text.startsWith('?') ? text.slice(1) : text;
+        const queryLike = normalized.includes('token=') || normalized.includes('server=');
+
+        if (/ProdexaMobile(?:-debug)?\.apk/i.test(text) || /\/pwa\/.*\.apk/i.test(text)) {
+            return { kind: 'install' };
+        }
+
+        const parseParams = (params) => {
+            const token = params.get('token');
+            const serverFromParam = params.get('server');
+
+            if (!token) return null;
+
+            let ip = '';
+            let finalServerUrl = serverFromParam || '';
+
+            if (serverFromParam) {
+                ip = serverFromParam.replace(/https?:\/\//, '').split(':')[0];
+                
+                // If native, normalization: force http://ip:5001
+                if (Capacitor.isNativePlatform() && ip) {
+                    finalServerUrl = `http://${ip}:5001`;
+                }
+            }
+
+            if (!ip) return null;
+
+            return { kind: 'pair', ip, token, serverUrl: finalServerUrl };
+        };
+
+        try {
+            const url = new URL(text);
+            const payload = parseParams(url.searchParams);
+            if (payload) return payload;
+        } catch {
+            // Fall through to query-string parsing below.
+        }
+
+        if (queryLike) {
+            const payload = parseParams(new URLSearchParams(normalized));
+            if (payload) return payload;
+        }
+
+        return null;
+    };
+
+    const stopQrScanner = async () => {
+        try {
+            if (html5QrCodeRef.current) {
+                if (html5QrCodeRef.current.isScanning) {
+                    await html5QrCodeRef.current.stop();
+                }
+                await html5QrCodeRef.current.clear();
+                html5QrCodeRef.current = null;
+            }
+        } catch (e) {
+            html5QrCodeRef.current = null;
+        }
+    };
+
+    const initializeQrScanner = async () => {
+        try {
+            if (html5QrCodeRef.current) return;
+
+            const scanner = new Html5Qrcode('setup-qr-reader');
+            html5QrCodeRef.current = scanner;
+
+            await scanner.start(
+                { facingMode: 'environment' },
+                {
+                    fps: 10,
+                    qrbox: { width: 240, height: 240 },
+                    formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE]
+                },
+                async (decodedText) => {
+                    const payload = extractPairPayload(decodedText);
+                    if (!payload) {
+                        setScannerError('Invalid pairing QR. Scan the QR shown in desktop Pair Device window.');
+                        return;
+                    }
+
+                    if (payload.kind === 'install') {
+                        setScannerError('This is the install QR. Use the Pair Device QR from desktop instead.');
+                        return;
+                    }
+
+                    await stopQrScanner();
+                    setShowScanner(false);
+                    setScannerRequested(false);
+                    executePairing(payload.serverUrl || payload.ip, payload.token, 'AUTO_ASSIGN');
+                },
+                () => {}
+            );
+        } catch (err) {
+            setScannerError(err?.message || 'Unable to start camera scanner');
+            setScannerRequested(false);
+        }
+    };
+
+    const startQrScanner = async () => {
+        setScannerError('');
+        setShowScanner(true);
+        setScannerRequested(true);
     };
 
 
@@ -94,6 +261,8 @@ const SetupScreen = () => {
     }
 
     // 3. LANDING SCREEN (Fallback / Manual)
+    const isNativeApp = Capacitor.isNativePlatform();
+
     return (
         <div style={containerStyle}>
             {/* Header Logo */}
@@ -101,7 +270,9 @@ const SetupScreen = () => {
                 <div style={iconBadgeStyle}>⚡</div>
                 <h1 style={headingStyle}>Connect Scanner</h1>
                 <p style={subTextStyle}>
-                    To pair this device, scan the <b>Master QR Code</b> using your <b>Camera App</b> or <b>Google Lens</b>.
+                    {isNativeApp 
+                        ? "To pair this device, use in-app scanner and scan the Master QR from desktop."
+                        : "Use your phone's camera or Google Lens to scan the Master QR from desktop."}
                 </p>
             </div>
 
@@ -112,8 +283,16 @@ const SetupScreen = () => {
                 </div>
             )}
 
-            {/* Manual Connect Option */}
+            {/* Connect Options */}
             <div style={{ width: '100%', maxWidth: '320px', marginTop: '20px' }}>
+                {isNativeApp && (
+                    <button
+                        onClick={startQrScanner}
+                        style={{ ...btnPrimaryStyle, width: '100%', marginBottom: '10px' }}
+                    >
+                        SCAN PAIR QR
+                    </button>
+                )}
                 <button
                     onClick={() => setShowManual(true)}
                     style={{ ...btnSecondaryStyle, width: '100%' }}
@@ -121,6 +300,37 @@ const SetupScreen = () => {
                     ENTER IP MANUALLY
                 </button>
             </div>
+
+            {/* In-App QR Scanner Modal */}
+            {showScanner && (
+                <div style={modalBackdropStyle}>
+                    <div style={{ ...modalCardStyle, maxWidth: '360px' }}>
+                        <h3 style={{ color: 'white', margin: '0 0 12px', fontSize: '18px' }}>Scan Pairing QR</h3>
+                        <p style={{ color: THEME.textMuted, fontSize: '13px', margin: '0 0 12px' }}>
+                            Point camera at desktop Pair Device QR.
+                        </p>
+
+                        <div id="setup-qr-reader" style={{ width: '100%', borderRadius: '12px', overflow: 'hidden', background: '#000', minHeight: '260px' }} />
+
+                        {scannerError && (
+                            <div style={{ marginTop: '10px', color: THEME.error, fontSize: '12px', fontWeight: '600' }}>
+                                {scannerError}
+                            </div>
+                        )}
+
+                        <button
+                            onClick={async () => {
+                                await stopQrScanner();
+                                setShowScanner(false);
+                                setScannerRequested(false);
+                            }}
+                            style={{ ...btnSecondaryStyle, width: '100%', marginTop: '14px' }}
+                        >
+                            CLOSE SCANNER
+                        </button>
+                    </div>
+                </div>
+            )}
 
             {/* Manual Input Modal */}
             {showManual && (
@@ -155,7 +365,7 @@ const SetupScreen = () => {
             )}
 
             <div style={{ position: 'absolute', bottom: '30px', opacity: 0.3, fontSize: '12px' }}>
-                v2.6 • Auto-Config Enabled
+                v1.0 • Official Stable Release
             </div>
         </div>
     );
@@ -216,3 +426,4 @@ const modalCardStyle = {
 const spinnerStyle = { width: '40px', height: '40px', border: '4px solid rgba(255,255,255,0.1)', borderTopColor: THEME.accent, borderRadius: '50%' };
 
 export default SetupScreen;
+

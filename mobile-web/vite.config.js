@@ -1,9 +1,9 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import { VitePWA } from 'vite-plugin-pwa'
 
 
 const isElectron = process.env.ELECTRON_BUILD === 'true';
+const isCapacitorBuild = process.env.CAPACITOR_BUILD === 'true';
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -14,8 +14,9 @@ export default defineConfig({
   },
   // Build to backend public folder for web, or local dist for Electron
   build: {
-    outDir: isElectron ? 'dist' : '../backend/public/pwa',
-    emptyOutDir: true,
+    outDir: (isElectron || isCapacitorBuild) ? 'dist' : '../backend/public/pwa',
+    // Preserve published APK files that live beside the PWA assets in backend/public/pwa.
+    emptyOutDir: isElectron || isCapacitorBuild,
     chunkSizeWarningLimit: 1000,
     rollupOptions: {
       output: {
@@ -26,5 +27,5 @@ export default defineConfig({
       }
     }
   },
-  base: isElectron ? './' : '/pwa/'
+  base: (isElectron || isCapacitorBuild) ? './' : '/pwa/'
 })

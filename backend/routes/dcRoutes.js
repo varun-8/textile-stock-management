@@ -21,10 +21,22 @@ router.get('/', async (req, res) => {
 // Get Available Rolls for DC (Only RESERVED rolls and not linked to a DC)
 router.get('/available-rolls', async (req, res) => {
     try {
-        const rolls = await ClothRoll.find({
+        const { batchId } = req.query;
+        const query = {
             status: 'RESERVED',
             $or: [{ dcId: { $exists: false } }, { dcId: null }]
-        })
+        };
+
+        if (batchId) {
+            query.transactionHistory = {
+                $elemMatch: {
+                    status: 'RESERVED',
+                    sessionId: batchId
+                }
+            };
+        }
+
+        const rolls = await ClothRoll.find(query)
             .sort({ updatedAt: -1 })
             .select('barcode metre weight pieces updatedAt');
         res.json(rolls);
@@ -47,15 +59,14 @@ router.post('/', async (req, res) => {
             appliedPercentage,
             vehicleNumber,
             driverName,
-            barcodes,
             batchId,
             templateId,
             templateName,
             templateSnapshot
         } = req.body;
         
-        if (!partyName || !barcodes || !Array.isArray(barcodes) || barcodes.length === 0) {
-            return res.status(400).json({ error: 'Party Name and at least one roll are required' });
+        if (!partyName) {
+            return res.status(400).json({ error: 'Party Name is required' });
         }
 
         if (!batchId) {
@@ -94,15 +105,25 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ error: 'This completed batch has already undergone DC once' });
         }
 
-        // Fetch rolls to validate
-        const rollsToDispatch = await ClothRoll.find({ barcode: { $in: barcodes } });
-        
-        if (rollsToDispatch.length !== barcodes.length) {
-            const foundBarcodes = rollsToDispatch.map(r => r.barcode);
-            const missing = barcodes.filter(b => !foundBarcodes.includes(b));
-            return res.status(400).json({ error: `Some rolls were not found: ${missing.join(', ')}` });
+        const eligibleBatchRolls = await ClothRoll.find({
+            status: 'RESERVED',
+            $or: [{ dcId: { $exists: false } }, { dcId: null }],
+            transactionHistory: {
+                $elemMatch: {
+                    status: 'RESERVED',
+                    sessionId: sourceBatch._id
+                }
+            }
+        }).select('barcode metre weight pieces dcId status transactionHistory');
+
+        if (eligibleBatchRolls.length === 0) {
+            return res.status(400).json({ error: 'No reserved rolls are available for this dispatch batch' });
         }
 
+        // DC rolls are always derived from the selected dispatch batch.
+        // Client payload cannot manually add/remove roll barcodes.
+        const rollsToDispatch = eligibleBatchRolls;
+        
         let totalMetre = 0;
         for (const roll of rollsToDispatch) {
             if (roll.status !== 'RESERVED') {

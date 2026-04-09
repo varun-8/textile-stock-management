@@ -3,6 +3,7 @@ const router = express.Router();
 const Scanner = require('../models/Scanner');
 const User = require('../models/User');
 const crypto = require('crypto'); // Built-in Node module
+const os = require('os');
 const { verifyToken } = require('../middleware/authMiddleware');
 let bcrypt = null;
 try {
@@ -16,6 +17,39 @@ const comparePin = async (plain, stored) => {
     if (stored.startsWith('$2') && bcrypt) return bcrypt.compare(plain, stored);
     return plain === stored;
 };
+
+const CURRENT_WORKSPACE_CODE = process.env.WORKSPACE_CODE || 'default';
+
+const getWorkspaceCode = (value = CURRENT_WORKSPACE_CODE) => String(value || CURRENT_WORKSPACE_CODE).trim() || CURRENT_WORKSPACE_CODE;
+
+const workspaceMatch = (workspaceCode = CURRENT_WORKSPACE_CODE) => ({
+    $or: [
+        { workspaceCode },
+        { workspaceCode: { $exists: false } },
+        { workspaceCode: null }
+    ]
+});
+
+const getLocalIp = () => {
+    const interfaces = os.networkInterfaces();
+    for (const addrs of Object.values(interfaces)) {
+        for (const addr of addrs || []) {
+            if (addr.family === 'IPv4' && !addr.internal) {
+                return addr.address;
+            }
+        }
+    }
+    return 'localhost';
+};
+
+router.get('/discovery/ping', (req, res) => {
+    res.json({
+        ok: true,
+        workspaceCode: CURRENT_WORKSPACE_CODE,
+        serverIp: getLocalIp(),
+        appName: 'Prodexa Mobile'
+    });
+});
 
 // --- 1. SCANNER PAIRING (Machine Layer) ---
 
@@ -38,29 +72,38 @@ router.post('/pair', async (req, res) => {
         // We configure this secret in .env or hardcode for this refactor phase.
 
         let tokenScanner = null;
-
-        let validPairingToken = false;
+        let decodedToken = null;
         try {
-            const decoded = verifyToken(token);
-            validPairingToken = decoded && decoded.type === 'PAIRING';
+            decodedToken = verifyToken(token);
         } catch (e) {
-            validPairingToken = false;
+            decodedToken = null;
         }
 
-        if (!validPairingToken) {
+        const tokenWorkspace = getWorkspaceCode(decodedToken?.workspaceCode || decodedToken?.workspace || CURRENT_WORKSPACE_CODE);
+        if (decodedToken && decodedToken.type === 'PAIRING' && tokenWorkspace !== CURRENT_WORKSPACE_CODE) {
+            return res.status(401).json({
+                error: 'Invalid or Expired Link',
+                message: 'This link belongs to a different workspace.'
+            });
+        }
+
+        const pairingTokenValid = Boolean(decodedToken && decodedToken.type === 'PAIRING');
+
+        if (!pairingTokenValid) {
+            const tokenQuery = workspaceMatch(CURRENT_WORKSPACE_CODE);
+
             // Check if token is a FINGERPRINT (immutable repair token)
-            tokenScanner = await Scanner.findOne({ fingerprint: token });
+            tokenScanner = await Scanner.findOne({ fingerprint: token, ...tokenQuery });
             if (tokenScanner) {
-                    // Force the identity to this scanner
-                    req.body.scannerId = tokenScanner.uuid;
-                    existingId = tokenScanner.uuid;
+                req.body.scannerId = tokenScanner.uuid;
+                existingId = tokenScanner.uuid;
+            } else {
+                // Last check: is it an old UUID token format?
+                tokenScanner = await Scanner.findOne({ uuid: token, ...tokenQuery });
+                if (tokenScanner) {
+                    req.body.scannerId = token;
+                    existingId = token;
                 } else {
-                    // Last check: is it an old UUID token format?
-                    tokenScanner = await Scanner.findOne({ uuid: token });
-                    if (tokenScanner) {
-                        req.body.scannerId = token;
-                        existingId = token;
-                    } else {
                     return res.status(401).json({
                         error: 'Invalid or Expired Link',
                         message: 'This link is no longer valid. Please use the repair QR code or pair as a new device.'
@@ -70,16 +113,18 @@ router.post('/pair', async (req, res) => {
         }
 
         const ip = req.ip || req.connection.remoteAddress;
+        const currentWorkspace = CURRENT_WORKSPACE_CODE;
 
         // RE-PAIRING LOGIC (Strict Mode)
         if (existingId) {
-            const existingScanner = await Scanner.findOne({ uuid: existingId });
+            const existingScanner = await Scanner.findOne({ uuid: existingId, ...workspaceMatch(currentWorkspace) });
             if (existingScanner) {
                 // Return existing identity - preserve fingerprint for next pairing
                 existingScanner.lastSeen = new Date();
                 existingScanner.lastIp = ip; // Update IP
                 existingScanner.repairCount = (existingScanner.repairCount || 0) + 1;
                 if (existingScanner.status === 'DISABLED') existingScanner.status = 'ACTIVE';
+                existingScanner.workspaceCode = existingScanner.workspaceCode || currentWorkspace;
                 await existingScanner.save();
 
                 return res.json({
@@ -107,7 +152,8 @@ router.post('/pair', async (req, res) => {
         if (!existingId) {
             const potentialMatch = await Scanner.findOne({
                 lastIp: ip,
-                'deviceInfo.userAgent': req.headers['user-agent'] || 'unknown'
+                'deviceInfo.userAgent': req.headers['user-agent'] || 'unknown',
+                ...workspaceMatch(currentWorkspace)
             });
 
             if (potentialMatch) {
@@ -134,7 +180,7 @@ router.post('/pair', async (req, res) => {
         // Generate Name if needed (Auto-Assign Logic)
         let finalName = name;
         if (!name || name === 'AUTO_ASSIGN' || name.startsWith('Mobile -')) {
-            const allScanners = await Scanner.find({});
+            const allScanners = await Scanner.find({ workspaceCode: currentWorkspace });
             const numbers = allScanners.map(s => {
                 // Match "Scanner 1", "scanner 1", "SCANNER 1"
                 const match = (s.name || '').match(/^Scanner (\d+)$/i);
@@ -145,6 +191,7 @@ router.post('/pair', async (req, res) => {
         }
 
         const newScanner = await Scanner.create({
+            workspaceCode: currentWorkspace,
             uuid: scannerId,
             fingerprint: crypto.randomUUID(), // Immutable fingerprint (like serial number)
             name: finalName,
@@ -161,6 +208,7 @@ router.post('/pair', async (req, res) => {
             scannerId: newScanner.uuid,
             fingerprint: newScanner.fingerprint,
             name: newScanner.name,
+            workspaceCode: currentWorkspace,
             message: `Paired as ${newScanner.name}`,
             repairQR: {
                 description: 'Use this QR to repair/reconnect this scanner in future',
@@ -175,7 +223,8 @@ router.post('/pair', async (req, res) => {
 // Check if Scanner is Active (Heartbeat / Startup Check)
 router.get('/check-scanner/:id', async (req, res) => {
     try {
-        const scanner = await Scanner.findOne({ uuid: req.params.id });
+        const currentWorkspace = getWorkspaceCode(req.query?.workspaceCode);
+        const scanner = await Scanner.findOne({ uuid: req.params.id, ...workspaceMatch(currentWorkspace) });
         if (!scanner) return res.status(404).json({ valid: false });
 
         if (scanner.status === 'DISABLED') {
@@ -212,10 +261,11 @@ router.get('/check-scanner/:id', async (req, res) => {
 router.post('/check-device', async (req, res) => {
     try {
         const { ip, fingerprint } = req.body;
+        const currentWorkspace = getWorkspaceCode(req.body?.workspaceCode);
 
         // If fingerprint provided, check if this exact device is already paired
         if (fingerprint) {
-            const scanner = await Scanner.findOne({ fingerprint, status: 'ACTIVE' });
+            const scanner = await Scanner.findOne({ fingerprint, status: 'ACTIVE', ...workspaceMatch(currentWorkspace) });
             if (scanner) {
                 return res.json({
                     alreadyPaired: true,
@@ -228,7 +278,7 @@ router.post('/check-device', async (req, res) => {
         }
 
         // Check by IP (more lenient - detects if any device on this network is paired)
-        const byIp = await Scanner.findOne({ lastIp: ip, status: 'ACTIVE' });
+        const byIp = await Scanner.findOne({ lastIp: ip, status: 'ACTIVE', ...workspaceMatch(currentWorkspace) });
         if (byIp) {
             return res.json({
                 alreadyPaired: true,
@@ -253,9 +303,10 @@ router.post('/login', async (req, res) => {
         const { username, pin, password, scannerId } = req.body;
         const effectiveScannerId = scannerId || req.headers['x-scanner-id'];
         const credentialPin = pin || password;
+        const currentWorkspace = getWorkspaceCode(req.body?.workspaceCode);
 
         // 1. Validate Scanner First (Must be a trusted machine)
-        const scanner = await Scanner.findOne({ uuid: effectiveScannerId });
+        const scanner = await Scanner.findOne({ uuid: effectiveScannerId, ...workspaceMatch(currentWorkspace) });
         if (!scanner || scanner.status !== 'ACTIVE') {
             return res.status(403).json({ error: 'Unauthorized Scanner Device' });
         }
@@ -263,6 +314,7 @@ router.post('/login', async (req, res) => {
         // 2. Validate User
         // Case-insensitive user lookup
         const user = await User.findOne({
+            workspaceCode: currentWorkspace,
             username: { $regex: new RegExp(`^${username}$`, 'i') }
         });
 
@@ -293,11 +345,12 @@ router.post('/login', async (req, res) => {
 router.post('/logout', async (req, res) => {
     try {
         const { scannerId } = req.body;
+        const currentWorkspace = getWorkspaceCode(req.body?.workspaceCode);
         if (!scannerId) {
             return res.status(400).json({ error: 'Scanner ID required' });
         }
 
-        const scanner = await Scanner.findOne({ uuid: scannerId });
+        const scanner = await Scanner.findOne({ uuid: scannerId, ...workspaceMatch(currentWorkspace) });
         if (scanner) {
             scanner.currentEmployee = null;
             await scanner.save();

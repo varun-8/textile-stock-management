@@ -13,9 +13,14 @@ const User = require('../models/User');
 const DeliveryChallan = require('../models/DeliveryChallan');
 const Quotation = require('../models/Quotation');
 const os = require('os');
+const fs = require('fs');
+const path = require('path');
 const { issuePairingToken } = require('../middleware/authMiddleware');
+const { getWorkspaceCode } = require('../utils/workspace');
 const { normalizePieces, totalFromPieces } = require('../utils/rollPieces');
 const { detectMissingSequences } = require('../utils/missingSequenceService');
+const { ensureInstallApk } = require('../services/installApkService');
+const HTTP_PORT = parseInt(process.env.HTTP_PORT || '5001', 10);
 
 // Get Audit Logs
 router.get('/audit-logs', async (req, res) => {
@@ -384,7 +389,46 @@ router.get('/server-ip', (req, res) => {
             if (lanIp) break;
         }
 
-        res.json({ ip: lanIp || 'localhost' });
+        res.json({ ip: lanIp || 'localhost', httpPort: HTTP_PORT, httpsPort: parseInt(process.env.PORT || '5000', 10) });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Check whether installable APK is available on server
+router.get('/apk-status', async (req, res) => {
+    try {
+        let lanIp = 'localhost';
+        const interfaces = os.networkInterfaces();
+        for (const addrs of Object.values(interfaces)) {
+            for (const addr of addrs || []) {
+                if (addr.family === 'IPv4' && !addr.internal) {
+                    lanIp = addr.address;
+                    break;
+                }
+            }
+            if (lanIp !== 'localhost') break;
+        }
+
+        const apkState = ensureInstallApk();
+        const resolvedPath = apkState.exists ? apkState.target : null;
+        const exists = Boolean(resolvedPath);
+        const stats = exists ? fs.statSync(resolvedPath) : null;
+        const fileName = exists ? path.basename(resolvedPath) : 'ProdexaMobile.apk';
+        const relativePath = `/pwa/${fileName}`;
+
+        res.json({
+            exists,
+            fileName,
+            relativePath,
+            installUrl: `http://${lanIp}:${HTTP_PORT}${relativePath}`,
+            pwaUrl: `http://${lanIp}:${HTTP_PORT}/pwa/index.html`,
+            resolvedPath,
+            checkedPaths: apkState.checkedPaths || [resolvedPath].filter(Boolean),
+            restoredFrom: apkState.copied ? apkState.source : null,
+            size: stats ? stats.size : 0,
+            lastModified: stats ? stats.mtime : null
+        });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -422,8 +466,9 @@ router.get('/scanners', async (req, res) => {
 
 // Issue short-lived pairing token for QR setup links
 router.get('/pairing-token', (req, res) => {
-    const token = issuePairingToken();
-    res.json({ token, expiresIn: process.env.PAIRING_TOKEN_TTL || '10m' });
+    const workspaceCode = getWorkspaceCode(req.query?.workspaceCode);
+    const token = issuePairingToken(workspaceCode);
+    res.json({ token, workspaceCode, expiresIn: process.env.PAIRING_TOKEN_TTL || '10m' });
 });
 
 // Register a New Scanner (called when mobile app pairs)

@@ -57,7 +57,7 @@ router.get('/scan/:barcode', async (req, res) => {
                     if (!clothRoll) {
                         return res.json({ status: 'INVALID', message: 'Roll not found for Stock Out batch' });
                     }
-                    if (clothRoll.status !== 'IN') {
+                    if (clothRoll.status !== 'IN' && clothRoll.status !== 'RESERVED') {
                         return res.json({
                             status: 'INVALID',
                             message: `Roll cannot be reserved. Current status: ${clothRoll.status}`
@@ -265,7 +265,23 @@ router.post('/transaction', async (req, res) => {
             }
 
             if (clothRoll.status === 'RESERVED') {
-                return res.status(400).json({ error: 'Roll is already reserved for dispatch' });
+                // Idempotent behavior: if the roll is already reserved by this same batch,
+                // allow scanner retries without blocking batch flow.
+                const alreadyReservedInThisBatch = Array.isArray(clothRoll.transactionHistory)
+                    && clothRoll.transactionHistory.some((tx) =>
+                        tx.status === 'RESERVED'
+                        && String(tx.sessionId || '') === String(sessionId || '')
+                    );
+
+                if (alreadyReservedInThisBatch) {
+                    return res.json({
+                        success: true,
+                        clothRoll,
+                        message: 'Roll already reserved in this batch'
+                    });
+                }
+
+                return res.status(400).json({ error: 'Roll is already reserved in another dispatch batch' });
             }
 
             if (clothRoll.status !== 'IN') {
@@ -429,7 +445,17 @@ router.post('/batch-transaction', async (req, res) => {
                 }
 
                 if (clothRoll.status === 'RESERVED') {
-                    results.failed.push({ barcode, error: 'Already Reserved' });
+                    const alreadyReservedInThisBatch = Array.isArray(clothRoll.transactionHistory)
+                        && clothRoll.transactionHistory.some((tx) =>
+                            tx.status === 'RESERVED'
+                            && String(tx.sessionId || '') === String(sessionId || '')
+                        );
+
+                    if (alreadyReservedInThisBatch) {
+                        results.success.push({ barcode, note: 'Already reserved in this batch' });
+                    } else {
+                        results.failed.push({ barcode, error: 'Already Reserved in another batch' });
+                    }
                     continue;
                 }
 

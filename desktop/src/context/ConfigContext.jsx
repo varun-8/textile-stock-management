@@ -3,13 +3,12 @@ import React, { createContext, useState, useContext, useEffect } from 'react';
 
 const ConfigContext = createContext();
 
-const isDev = import.meta.env.DEV;
 const defaultProtocol = 'https';
+const defaultApiUrl = `${defaultProtocol}://localhost:5000`;
 
 // Normalize API URL while keeping production secure and local development simple.
 const sanitizeUrl = (raw) => {
-    if (isDev) return '';
-    if (!raw) return `${defaultProtocol}://localhost:5000`;
+    if (!raw) return defaultApiUrl;
 
     const value = raw.trim();
     const hasProtocol = /^https?:\/\//i.test(value);
@@ -34,13 +33,12 @@ export const ConfigProvider = ({ children }) => {
     });
 
     const updateApiUrl = (newUrl) => {
-        if (isDev) {
-            setApiUrl('');
-            localStorage.setItem('API_URL', '');
+        const value = newUrl.trim();
+        if (!value) {
+            setApiUrl(defaultApiUrl);
+            localStorage.setItem('API_URL', defaultApiUrl);
             return;
         }
-
-        const value = newUrl.trim();
         const hasProtocol = /^https?:\/\//i.test(value);
         const parsed = hasProtocol ? new URL(value) : null;
 

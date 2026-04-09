@@ -27,25 +27,31 @@ const SessionGuard = ({ children }) => {
 function AppContent() {
   const { scannerId, scannerDeletedError, setScannerDeletedError } = useMobile();
 
-  // Detect if this is a "Repair/Setup" link
-  const queryParams = useMemo(() => new URLSearchParams(window.location.search), [window.location.search]);
-  const isSetupLink = queryParams.get('server') && queryParams.get('token');
-
-  // If we JUST paired, we want to IGNORE the isSetupLink so we can transition to the app
-  const [justPaired, setJustPaired] = React.useState(false);
-
-  React.useEffect(() => {
-    if (scannerId && isSetupLink) {
-      setJustPaired(true);
-    }
-  }, [scannerId, isSetupLink]);
-
-  if (isSetupLink && !justPaired) {
-    console.log("🔗 Setup Link Detected - Active:", Object.fromEntries(queryParams));
+  // If scanner already paired, always show the app (eliminates flashing)
+  if (scannerId) {
+    return (
+      <Routes>
+        <Route path="/pin" element={<PinScreen />} />
+        <Route path="/sessions" element={
+          <ProtectedRoute>
+            <SessionManager />
+          </ProtectedRoute>
+        } />
+        <Route path="/*" element={
+          <ProtectedRoute>
+            <SessionGuard>
+              <AppShell>
+                <WorkScreen />
+              </AppShell>
+            </SessionGuard>
+          </ProtectedRoute>
+        } />
+      </Routes>
+    );
   }
 
-  // If scanner was deleted - show error screen (UNLESS we are trying to setup)
-  if (scannerDeletedError && !isSetupLink) {
+  // If scanner was deleted or connection lost - show error screen
+  if (scannerDeletedError) {
     return (
       <div style={{
         height: '100vh',
@@ -86,34 +92,8 @@ function AppContent() {
     );
   }
 
-  // If no scanner ID OR we are setting up (and haven't just finished)
-  if (!scannerId || (isSetupLink && !justPaired)) {
-    return (
-      <div className="transition-opacity duration-300 opacity-100">
-        <SetupScreen />
-      </div>
-    );
-  }
-
-  return (
-    <Routes>
-      <Route path="/pin" element={<PinScreen />} />
-      <Route path="/sessions" element={
-        <ProtectedRoute>
-          <SessionManager />
-        </ProtectedRoute>
-      } />
-      <Route path="/work" element={
-        <ProtectedRoute>
-          <SessionGuard>
-            <WorkScreen />
-          </SessionGuard>
-        </ProtectedRoute>
-      } />
-      <Route path="/" element={<Navigate to="/sessions" replace />} />
-      <Route path="*" element={<Navigate to="/sessions" replace />} />
-    </Routes>
-  );
+  // Fallback: No scanner paired, show setup
+  return <SetupScreen />;
 }
 
 function App() {
@@ -121,9 +101,7 @@ function App() {
     <MobileProvider>
       <NotificationProvider>
         <HashRouter>
-          <AppShell>
-            <AppContent />
-          </AppShell>
+          <AppContent />
         </HashRouter>
       </NotificationProvider>
     </MobileProvider>

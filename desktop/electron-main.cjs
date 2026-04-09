@@ -294,6 +294,15 @@ app.whenReady().then(async () => {
         }
     });
 
+    ipcMain.handle('fs:fileExists', async (event, targetPath) => {
+        try {
+            if (!targetPath || typeof targetPath !== 'string') return false;
+            return fs.existsSync(targetPath);
+        } catch (_) {
+            return false;
+        }
+    });
+
     await startServices();
     createWindow();
 

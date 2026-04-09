@@ -9,6 +9,7 @@ try {
 
 const ADMIN_TOKEN_TTL = process.env.ADMIN_TOKEN_TTL || '12h';
 const PAIRING_TOKEN_TTL = process.env.PAIRING_TOKEN_TTL || '10m';
+const DEFAULT_WORKSPACE_CODE = process.env.WORKSPACE_CODE || 'default';
 
 const getJwtSecret = () => {
     const secret = process.env.JWT_SECRET;
@@ -95,8 +96,8 @@ const issueAdminToken = (payload) => {
     return signToken(payload, ADMIN_TOKEN_TTL);
 };
 
-const issuePairingToken = () => {
-    return signToken({ type: 'PAIRING' }, PAIRING_TOKEN_TTL);
+const issuePairingToken = (workspaceCode = DEFAULT_WORKSPACE_CODE) => {
+    return signToken({ type: 'PAIRING', workspaceCode }, PAIRING_TOKEN_TTL);
 };
 
 const getBearerToken = (req) => {
@@ -131,7 +132,17 @@ const requireScannerAuth = async (req, res, next) => {
             return res.status(401).json({ error: 'Scanner ID is required' });
         }
 
-        const scanner = await Scanner.findOne({ uuid: scannerId, status: 'ACTIVE' });
+        const workspaceCode = process.env.WORKSPACE_CODE || 'default';
+        const scannerQuery = {
+            uuid: scannerId,
+            status: 'ACTIVE',
+            $or: [
+                { workspaceCode },
+                { workspaceCode: { $exists: false } },
+                { workspaceCode: null }
+            ]
+        };
+        const scanner = await Scanner.findOne(scannerQuery);
         if (!scanner) {
             return res.status(403).json({ error: 'Scanner unauthorized or disabled' });
         }

@@ -2,6 +2,11 @@ const mongoose = require('mongoose');
 const crypto = require('crypto');
 
 const scannerSchema = new mongoose.Schema({
+    workspaceCode: {
+        type: String,
+        default: () => process.env.WORKSPACE_CODE || 'default',
+        index: true
+    },
     uuid: {
         type: String,
         required: true,
@@ -50,5 +55,7 @@ const scannerSchema = new mongoose.Schema({
         loginAt: Date
     }
 });
+
+scannerSchema.index({ workspaceCode: 1, uuid: 1 });
 
 module.exports = mongoose.model('Scanner', scannerSchema);

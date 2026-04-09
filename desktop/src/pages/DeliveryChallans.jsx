@@ -288,7 +288,9 @@ const DeliveryChallans = () => {
                 billPreparedBy: billPreparedBy.trim(),
                 vehicleNumber: latestTemplate.showVehicle ? vehicleNumber : '',
                 driverName: latestTemplate.showDriver ? driverName : '',
-                barcodes: selectedBatch.rolls.map(r => r.barcode),
+                // Backward compatibility for older backend builds.
+                // New backend derives rolls from batchId and ignores this list.
+                barcodes: Array.isArray(selectedBatch.rolls) ? selectedBatch.rolls.map(r => r.barcode) : [],
                 batchId: selectedBatch._id,
                 appliedPercentage: pct,
                 templateId: selectedTemplate?.id || '',
