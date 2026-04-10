@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import axios from 'axios';
 import QRCode from 'react-qr-code';
 import { useConfig } from '../context/ConfigContext';
@@ -7,7 +7,6 @@ import { useNotification } from '../context/NotificationContext';
 
 const Scanners = () => {
     const { apiUrl } = useConfig();
-    const MOBILE_LAN_PORT = 5001;
     const [scanners, setScanners] = useState([]);
     const [setupToken, setSetupToken] = useState('');
     const [qrTarget, setQrTarget] = useState(null); // null, 'NEW', or scanner object
@@ -17,61 +16,24 @@ const Scanners = () => {
     const [showInstallQr, setShowInstallQr] = useState(false);
     const [checkingInstallApk, setCheckingInstallApk] = useState(false);
     const [installApkStatus, setInstallApkStatus] = useState('unknown'); // unknown | ready | missing
-    const [httpPort, setHttpPort] = useState(5001);
-    const [pwaUrl, setPwaUrl] = useState('');
     const { showNotification } = useNotification();
-
-    useEffect(() => {
-        fetchScanners();
-        const interval = setInterval(fetchScanners, 5000);
-        return () => clearInterval(interval);
-    }, [apiUrl]);
-
-    // Fetch IP when QR modal opens
-    useEffect(() => {
-        if (qrTarget && !serverIp) fetchServerIp();
-    }, [qrTarget, serverIp]); // Optimized dependency
-
-    useEffect(() => {
-        if (showInstallQr && !serverIp) fetchServerIp();
-    }, [showInstallQr, serverIp]);
-
-    useEffect(() => {
-        if (qrTarget === 'NEW') {
-            fetchPairingToken();
-        }
-        if (!qrTarget) {
-            setSetupToken('');
-        }
-    }, [qrTarget]);
-
-    useEffect(() => {
-        if (qrTarget !== 'NEW') return undefined;
-
-        const interval = setInterval(() => {
-            fetchPairingToken();
-        }, 60 * 1000);
-
-        return () => clearInterval(interval);
-    }, [qrTarget]);
 
     const authHeaders = () => {
         const token = localStorage.getItem('ADMIN_TOKEN');
         return token ? { Authorization: `Bearer ${token}` } : {};
     };
 
-    const fetchServerIp = async () => {
+    const fetchServerIp = useCallback(async () => {
         try {
             const res = await axios.get(`${apiUrl}/api/admin/server-ip`, { headers: authHeaders() });
             if (res.data.ip) setServerIp(res.data.ip);
-            if (res.data.httpPort) setHttpPort(Number(res.data.httpPort) || 5001);
         } catch (err) {
             console.error("Failed to fetch Server IP", err);
             showNotification("Could not resolve Server LAN IP", 'error');
         }
-    };
+    }, [apiUrl, showNotification]);
 
-    const fetchPairingToken = async () => {
+    const fetchPairingToken = useCallback(async () => {
         try {
             const res = await axios.get(`${apiUrl}/api/admin/pairing-token`, { headers: authHeaders() });
             if (res.data.token) setSetupToken(res.data.token);
@@ -79,9 +41,9 @@ const Scanners = () => {
             console.error("Failed to fetch pairing token", err);
             showNotification("Could not generate pairing token", 'error');
         }
-    };
+    }, [apiUrl, showNotification]);
 
-    const fetchScanners = async () => {
+    const fetchScanners = useCallback(async () => {
         try {
             if (scanners.length === 0) setLoading(true);
             const res = await axios.get(`${apiUrl}/api/admin/scanners`, { headers: authHeaders() });
@@ -99,7 +61,41 @@ const Scanners = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }, [apiUrl, scanners.length]);
+
+    useEffect(() => {
+        fetchScanners();
+        const interval = setInterval(fetchScanners, 5000);
+        return () => clearInterval(interval);
+    }, [fetchScanners]);
+
+    // Fetch IP when QR modal opens
+    useEffect(() => {
+        if (qrTarget && !serverIp) fetchServerIp();
+    }, [qrTarget, serverIp, fetchServerIp]);
+
+    useEffect(() => {
+        if (showInstallQr && !serverIp) fetchServerIp();
+    }, [showInstallQr, serverIp, fetchServerIp]);
+
+    useEffect(() => {
+        if (qrTarget === 'NEW') {
+            fetchPairingToken();
+        }
+        if (!qrTarget) {
+            setSetupToken('');
+        }
+    }, [qrTarget, fetchPairingToken]);
+
+    useEffect(() => {
+        if (qrTarget !== 'NEW') return undefined;
+
+        const interval = setInterval(() => {
+            fetchPairingToken();
+        }, 60 * 1000);
+
+        return () => clearInterval(interval);
+    }, [qrTarget, fetchPairingToken]);
 
     const removeScannerDevice = async (scannerId) => {
         try {
@@ -142,11 +138,6 @@ const Scanners = () => {
         try {
             const statusRes = await axios.get(`${apiUrl}/api/admin/apk-status`, { headers: authHeaders() });
             const exists = Boolean(statusRes.data?.exists);
-            if (serverIp) {
-                setPwaUrl(`http://${serverIp}:${MOBILE_LAN_PORT}/pwa/index.html`);
-            } else if (statusRes.data?.pwaUrl) {
-                setPwaUrl(statusRes.data.pwaUrl);
-            }
             if (exists) {
                 setInstallApkStatus('ready');
                 return;
@@ -160,7 +151,6 @@ const Scanners = () => {
             let localFound = false;
             if (window.electronAPI?.fileExists && localCandidates.length > 0) {
                 for (const p of localCandidates) {
-                    // eslint-disable-next-line no-await-in-loop
                     const ok = await window.electronAPI.fileExists(p);
                     if (ok) {
                         localFound = true;
@@ -180,6 +170,7 @@ const Scanners = () => {
                 : '';
             showNotification(`APK not found on server. Run mobile-web apk publish flow first.${checkedHint}`, 'warning');
         } catch (err) {
+            console.error('Failed to verify APK availability', err);
             setInstallApkStatus('unknown');
         } finally {
             setCheckingInstallApk(false);

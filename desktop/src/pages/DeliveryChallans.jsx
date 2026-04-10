@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { io } from 'socket.io-client';
 import { useConfig } from '../context/ConfigContext';
 import { useNotification } from '../context/NotificationContext';
 import { IconPlus, IconTruck, IconEye, IconX, IconPrint } from '../components/Icons';
@@ -40,7 +41,8 @@ const DeliveryChallans = () => {
     const [selectedTemplateId, setSelectedTemplateId] = useState('');
     const [pdfPreviewUrl, setPdfPreviewUrl] = useState('');
     const [pdfPreviewTitle, setPdfPreviewTitle] = useState('PDF Preview');
-    const [pdfPreviewMode, setPdfPreviewMode] = useState('history');
+    const [partySuggestions, setPartySuggestions] = useState([]);
+    const [showPartySuggestions, setShowPartySuggestions] = useState(false);
 
     // Form state
     const [partyName, setPartyName] = useState('');
@@ -83,6 +85,74 @@ const DeliveryChallans = () => {
         }
     };
 
+    // Reconnect only when the API host changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    useEffect(() => {
+        const socketOptions = import.meta.env.DEV
+            ? { transports: ['polling'], upgrade: false }
+            : { transports: ['websocket', 'polling'] };
+
+        const socket = io(apiUrl, socketOptions);
+        socket.on('dc_update', () => {
+            fetchDCs();
+        });
+
+        return () => socket.disconnect();
+    }, [apiUrl]);
+
+    const buildPartyDirectory = (records) => {
+        const directory = new Map();
+
+        (Array.isArray(records) ? records : []).forEach((dc) => {
+            const name = String(dc?.partyName || '').trim();
+            if (!name) return;
+
+            const key = name.toLowerCase();
+            const createdAt = new Date(dc?.createdAt || 0).getTime();
+            const next = {
+                partyName: name,
+                partyAddress: String(dc?.partyAddress || '').trim(),
+                createdAt: Number.isFinite(createdAt) ? createdAt : 0,
+                dcNumber: dc?.dcNumber || ''
+            };
+
+            const existing = directory.get(key);
+            if (!existing || next.createdAt >= existing.createdAt) {
+                directory.set(key, next);
+            }
+        });
+
+        return Array.from(directory.values()).sort((a, b) => b.createdAt - a.createdAt);
+    };
+
+    const handlePartyNameChange = (value) => {
+        setPartyName(value);
+
+        const typed = String(value || '').trim().toLowerCase();
+        if (!typed) {
+            setPartySuggestions([]);
+            setShowPartySuggestions(false);
+            return;
+        }
+
+        const directory = buildPartyDirectory(dcs);
+        const matches = directory.filter((entry) => entry.partyName.toLowerCase().includes(typed)).slice(0, 6);
+        setPartySuggestions(matches);
+        setShowPartySuggestions(matches.length > 0);
+
+        const exactMatch = directory.find((entry) => entry.partyName.toLowerCase() === typed);
+        if (exactMatch && !String(partyAddress || '').trim()) {
+            setPartyAddress(exactMatch.partyAddress || '');
+        }
+    };
+
+    const applyPartySuggestion = (suggestion) => {
+        setPartyName(suggestion.partyName || '');
+        setPartyAddress(suggestion.partyAddress || '');
+        setPartySuggestions([]);
+        setShowPartySuggestions(false);
+    };
+
     useEffect(() => {
         fetchDCs();
         fetchDcTemplateConfig();
@@ -100,6 +170,27 @@ const DeliveryChallans = () => {
             }
         };
     }, [pdfPreviewUrl]);
+
+    useEffect(() => {
+        const typed = String(partyName || '').trim().toLowerCase();
+        if (!typed) {
+            setPartySuggestions([]);
+            setShowPartySuggestions(false);
+            return;
+        }
+
+        const directory = buildPartyDirectory(dcs);
+        const matches = directory.filter((entry) => entry.partyName.toLowerCase().includes(typed)).slice(0, 6);
+        setPartySuggestions(matches);
+        setShowPartySuggestions(matches.length > 0);
+
+        const exactMatch = directory.find((entry) => entry.partyName.toLowerCase() === typed);
+        if (exactMatch && !String(partyAddress || '').trim()) {
+            setPartyAddress(exactMatch.partyAddress || '');
+        }
+        // Keep suggestions in sync with history and current input.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [dcs, partyName]);
 
     const fetchDcTemplateConfig = async () => {
         try {
@@ -245,7 +336,6 @@ const DeliveryChallans = () => {
 
             setPdfPreviewTitle(`DC Preview - ${partyName}`);
             setPdfPreviewUrl(pdfUrl);
-            setPdfPreviewMode('preview');
         } catch (error) {
             console.error('Failed to generate preview:', error);
             showNotification('Failed to generate preview', 'error');
@@ -323,7 +413,6 @@ const DeliveryChallans = () => {
             if (pdfUrl) {
                 setPdfPreviewTitle(`DC ${res.data.dc.dcNumber} Preview`);
                 setPdfPreviewUrl(pdfUrl);
-                setPdfPreviewMode('generated');
             }
 
             setIsCreateModalOpen(false);
@@ -331,19 +420,6 @@ const DeliveryChallans = () => {
         } catch (error) {
             console.error('Failed to create DC:', error);
             showNotification(error.response?.data?.error || 'Failed to create DC', 'error');
-        }
-    };
-
-    const handleCancelDC = async (id) => {
-        if (!window.confirm('Are you sure you want to completely CANCEL this Delivery Challan? This action will reverse the stock OUT status.')) return;
-        
-        try {
-            await axios.post(`${apiUrl}/api/dc/${id}/cancel`, {}, authHeaders);
-            showNotification('Delivery Challan Cancelled', 'success');
-            fetchDCs();
-        } catch (error) {
-            console.error('Failed to cancel DC:', error);
-            showNotification(error.response?.data?.error || 'Failed to cancel DC', 'error');
         }
     };
 
@@ -382,7 +458,6 @@ const DeliveryChallans = () => {
 
         setPdfPreviewTitle(`DC ${dc.dcNumber || ''} Preview`);
         setPdfPreviewUrl(pdfUrl);
-        setPdfPreviewMode('history');
     };
 
     const closePdfPreview = () => {
@@ -395,7 +470,6 @@ const DeliveryChallans = () => {
         }
         setPdfPreviewUrl('');
         setPdfPreviewTitle('PDF Preview');
-        setPdfPreviewMode('history');
     };
 
     const handlePrintPdf = () => {
@@ -408,10 +482,6 @@ const DeliveryChallans = () => {
                 });
             }
         }
-    };
-
-    const openHistoryPrompt = (dc) => {
-        setSelectedHistoryDc(dc);
     };
 
     return (
@@ -607,7 +677,47 @@ const DeliveryChallans = () => {
 
                                 <div className="form-group">
                                     <label>Party Name / Billed To *</label>
-                                    <input type="text" className="input" value={partyName} onChange={e => setPartyName(e.target.value)} placeholder="Customer Name" />
+                                    <input
+                                        type="text"
+                                        className="input"
+                                        value={partyName}
+                                        onChange={e => handlePartyNameChange(e.target.value)}
+                                        placeholder="Customer Name"
+                                        autoComplete="off"
+                                    />
+                                    {showPartySuggestions && partySuggestions.length > 0 && (
+                                        <div style={{
+                                            marginTop: '0.6rem',
+                                            border: '1px solid var(--border-color)',
+                                            borderRadius: '10px',
+                                            overflow: 'hidden',
+                                            background: 'var(--bg-primary)',
+                                            boxShadow: '0 8px 24px rgba(0,0,0,0.12)'
+                                        }}>
+                                            {partySuggestions.map((suggestion) => (
+                                                <button
+                                                    key={`${suggestion.partyName}-${suggestion.dcNumber}`}
+                                                    type="button"
+                                                    onClick={() => applyPartySuggestion(suggestion)}
+                                                    style={{
+                                                        width: '100%',
+                                                        textAlign: 'left',
+                                                        padding: '0.8rem 0.9rem',
+                                                        border: 'none',
+                                                        borderBottom: '1px solid var(--border-color)',
+                                                        background: 'transparent',
+                                                        cursor: 'pointer',
+                                                        color: 'var(--text-primary)'
+                                                    }}
+                                                >
+                                                    <div style={{ fontWeight: '700' }}>{suggestion.partyName}</div>
+                                                    <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
+                                                        {suggestion.partyAddress || 'No saved address'}{suggestion.dcNumber ? ` · Last DC ${suggestion.dcNumber}` : ''}
+                                                    </div>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
                                 {selectedTemplateConfig.showPartyAddress && (
                                     <div className="form-group" style={{ marginTop: '1rem' }}>

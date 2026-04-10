@@ -1,0 +1,15 @@
+{
+  "items": [
+    {
+      "userId": "super-admin",
+      "username": "superadmin@gmail.com",
+      "email": "superadmin@gmail.com",
+      "fullName": "Super Admin",
+      "role": "SUPER_ADMIN",
+      "active": true,
+      "passwordHash": "$2a$10$9Tr6y6joe4R20OGyWery/OSUb3LJBZ/bmcOymxbZux.Ti9jCVEH6K",
+      "createdAt": "2026-04-09T17:21:38.294Z",
+      "createdBy": "system"
+    }
+  ]
+}

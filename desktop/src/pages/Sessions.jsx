@@ -1,5 +1,6 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 import React, { useState, useEffect, useRef } from 'react';
-import { IconBroadcast, IconPlus, IconTrash } from '../components/Icons';
+import { IconBroadcast, IconEdit, IconPlus, IconTrash, IconX } from '../components/Icons';
 import { io } from "socket.io-client";
 import { useConfig } from '../context/ConfigContext';
 import { DENSITY_NAME } from '../constants';
@@ -37,6 +38,16 @@ const Sessions = () => {
     const [showLiveView, setShowLiveView] = useState(false);
     const [liveSession, setLiveSession] = useState(null);
     const [liveScans, setLiveScans] = useState([]);
+
+    // Dispatch batch edit state
+    const [showDispatchEditModal, setShowDispatchEditModal] = useState(false);
+    const [dispatchEditSession, setDispatchEditSession] = useState(null);
+    const [dispatchEditRolls, setDispatchEditRolls] = useState([]);
+    const [dispatchEditSearch, setDispatchEditSearch] = useState('');
+    const [dispatchEditResults, setDispatchEditResults] = useState([]);
+    const [dispatchEditLoading, setDispatchEditLoading] = useState(false);
+    const [dispatchEditSaving, setDispatchEditSaving] = useState(false);
+    const [dispatchEditError, setDispatchEditError] = useState('');
 
     // Refs for Socket Listeners (To avoid constant reconnections)
     const liveViewRef = useRef(showLiveView);
@@ -218,6 +229,42 @@ const Sessions = () => {
         }
     }, [sessions, showLiveView]);
 
+    useEffect(() => {
+        if (!showDispatchEditModal || !dispatchEditSession) {
+            return undefined;
+        }
+
+        const query = String(dispatchEditSearch || '').trim();
+        if (query.length < 2) {
+            setDispatchEditResults([]);
+            return undefined;
+        }
+
+        let cancelled = false;
+        const timer = setTimeout(async () => {
+            try {
+                const res = await fetch(
+                    `${apiUrl}/api/sessions/${dispatchEditSession._id}/roll-search?q=${encodeURIComponent(query)}`,
+                    { headers: { Authorization: `Bearer ${token}` } }
+                );
+                const data = await res.json();
+                if (!cancelled) {
+                    setDispatchEditResults(Array.isArray(data) ? data : []);
+                }
+            } catch (err) {
+                console.error('Failed to search dispatch rolls', err);
+                if (!cancelled) {
+                    setDispatchEditResults([]);
+                }
+            }
+        }, 250);
+
+        return () => {
+            cancelled = true;
+            clearTimeout(timer);
+        };
+    }, [apiUrl, token, showDispatchEditModal, dispatchEditSession?._id, dispatchEditSearch]);
+
     const formatPieceLengths = (pieces, totalMetre) => {
         if (Array.isArray(pieces) && pieces.length > 1) {
             return pieces.map((piece) => piece.length).join(' + ');
@@ -257,6 +304,105 @@ const Sessions = () => {
         } catch (err) {
             console.error('Failed to create session', err);
             alert(err.message || 'Failed to create batch');
+        }
+    };
+
+    const closeDispatchEditModal = () => {
+        setShowDispatchEditModal(false);
+        setDispatchEditSession(null);
+        setDispatchEditRolls([]);
+        setDispatchEditSearch('');
+        setDispatchEditResults([]);
+        setDispatchEditLoading(false);
+        setDispatchEditSaving(false);
+        setDispatchEditError('');
+    };
+
+    const openDispatchEditModal = async (session) => {
+        if (session?.type !== 'OUT') {
+            return;
+        }
+
+        setShowDispatchEditModal(true);
+        setDispatchEditSession(session);
+        setDispatchEditRolls([]);
+        setDispatchEditSearch('');
+        setDispatchEditResults([]);
+        setDispatchEditError('');
+        setDispatchEditLoading(true);
+
+        try {
+            const res = await fetch(`${apiUrl}/api/sessions/${session._id}/preview`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || 'Failed to load dispatch batch');
+            }
+            setDispatchEditRolls(Array.isArray(data.rolls) ? data.rolls : []);
+        } catch (err) {
+            console.error('Failed to open dispatch edit modal', err);
+            setDispatchEditError(err.message || 'Failed to load dispatch batch');
+        } finally {
+            setDispatchEditLoading(false);
+        }
+    };
+
+    const addDispatchRoll = (roll) => {
+        if (!roll?._id) return;
+        setDispatchEditRolls((current) => {
+            if (current.some((item) => String(item._id) === String(roll._id))) {
+                return current;
+            }
+            return [...current, roll];
+        });
+        setDispatchEditResults((current) => current.filter((item) => String(item._id) !== String(roll._id)));
+        setDispatchEditSearch('');
+    };
+
+    const removeDispatchRoll = (rollId) => {
+        setDispatchEditRolls((current) => current.filter((item) => String(item._id) !== String(rollId)));
+    };
+
+    const handleSaveDispatchBatch = async () => {
+        if (!dispatchEditSession) {
+            return;
+        }
+
+        setDispatchEditSaving(true);
+        setDispatchEditError('');
+
+        try {
+            const payload = {
+                barcodes: dispatchEditRolls.map((roll) => roll.barcode)
+            };
+
+            const res = await fetch(`${apiUrl}/api/sessions/${dispatchEditSession._id}/dispatch-rolls`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || 'Failed to save dispatch batch');
+            }
+
+            fetchSessions();
+            fetchHistory();
+            setShowDispatchEditModal(false);
+            setDispatchEditSession(null);
+            setDispatchEditRolls([]);
+            setDispatchEditSearch('');
+            setDispatchEditResults([]);
+        } catch (err) {
+            console.error('Failed to save dispatch batch', err);
+            setDispatchEditError(err.message || 'Failed to save dispatch batch');
+        } finally {
+            setDispatchEditSaving(false);
         }
     };
 
@@ -451,7 +597,7 @@ const Sessions = () => {
                                     </div>
 
                                     {/* Actions */}
-                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: isIN ? '1fr 1fr' : '1fr 1fr 1fr', gap: '1rem' }}>
                                         <button
                                             onClick={() => openLiveView(session)}
                                             style={{
@@ -468,9 +614,36 @@ const Sessions = () => {
                                             }}
                                             onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--accent-color)'}
                                             onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border-color)'}
-                                        >
+                                            >
                                             <IconBroadcast size={16} /> Monitor
                                         </button>
+                                        {!isIN && (
+                                            <button
+                                                onClick={() => openDispatchEditModal(session)}
+                                                style={{
+                                                    background: 'rgba(99, 102, 241, 0.1)',
+                                                    color: 'var(--accent-color)',
+                                                    border: '1px solid transparent',
+                                                    padding: '10px',
+                                                    borderRadius: '8px',
+                                                    cursor: 'pointer',
+                                                    fontWeight: '600',
+                                                    fontSize: '0.85rem',
+                                                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                                                    transition: 'all 0.2s'
+                                                }}
+                                                onMouseEnter={e => {
+                                                    e.currentTarget.style.background = 'var(--accent-color)';
+                                                    e.currentTarget.style.color = 'white';
+                                                }}
+                                                onMouseLeave={e => {
+                                                    e.currentTarget.style.background = 'rgba(99, 102, 241, 0.1)';
+                                                    e.currentTarget.style.color = 'var(--accent-color)';
+                                                }}
+                                            >
+                                                <IconEdit size={16} /> Edit Batch
+                                            </button>
+                                        )}
                                         <button
                                             onClick={() => initiateCloseSession(session._id)}
                                             style={{
@@ -608,6 +781,16 @@ const Sessions = () => {
 
                                             <td style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>
                                                 <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                                                    {s.type === 'OUT' && (
+                                                        <button
+                                                            onClick={() => openDispatchEditModal(s)}
+                                                            className="btn"
+                                                            style={{ padding: '6px 12px', fontSize: '0.8rem', background: 'rgba(99, 102, 241, 0.1)', border: 'none', color: 'var(--accent-color)' }}
+                                                            title="Edit Dispatch Batch"
+                                                        >
+                                                            <IconEdit size={14} /> Edit
+                                                        </button>
+                                                    )}
                                                     {/* Download DC feature moved to Delivery Challans module with template system */}
                                                     <button
                                                         onClick={() => handleExport(s._id, s.type, s.targetSize, 'summary')}
@@ -634,6 +817,159 @@ const Sessions = () => {
                     </div>
                 </div>
             </div>
+
+            {/* DISPATCH EDIT MODAL */}
+            {showDispatchEditModal && dispatchEditSession && (
+                <div style={{
+                    position: 'fixed', inset: 0, zIndex: 2400,
+                    background: 'var(--modal-overlay)', backdropFilter: 'blur(8px)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem'
+                }}>
+                    <div className="panel animate-fade-in" style={{ width: '100%', maxWidth: '1100px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', padding: '0', overflow: 'hidden' }}>
+                        <div style={{ padding: '1.5rem 2rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-secondary)' }}>
+                            <div>
+                                <div style={{ fontSize: '0.75rem', fontWeight: '800', letterSpacing: '0.08em', color: 'var(--accent-color)', marginBottom: '0.25rem' }}>EDIT DISPATCH BATCH</div>
+                                <h2 style={{ fontSize: '1.2rem', margin: 0 }}>{dispatchEditSession.batchCode || dispatchEditSession._id}</h2>
+                                <div style={{ fontSize: '0.8rem', opacity: 0.65, marginTop: '4px' }}>
+                                    {DENSITY_NAME} {dispatchEditSession.targetSize} • Updated rolls will also refresh the linked DC.
+                                </div>
+                            </div>
+                            <button onClick={closeDispatchEditModal} className="btn" style={{ background: 'transparent', border: '1px solid var(--border-color)' }}>
+                                <IconX size={18} />
+                            </button>
+                        </div>
+
+                        <div style={{ padding: '1.5rem 2rem', overflow: 'auto', flex: 1 }}>
+                            {dispatchEditError && (
+                                <div style={{ marginBottom: '1rem', padding: '0.9rem 1rem', borderRadius: '10px', background: 'rgba(239, 68, 68, 0.1)', color: 'var(--error-color)', border: '1px solid rgba(239, 68, 68, 0.25)' }}>
+                                    {dispatchEditError}
+                                </div>
+                            )}
+
+                            {dispatchEditLoading ? (
+                                <div style={{ padding: '3rem', textAlign: 'center', opacity: 0.6 }}>Loading dispatch rolls...</div>
+                            ) : (
+                                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '1.5rem' }}>
+                                    <div style={{ border: '1px solid var(--border-color)', borderRadius: '14px', overflow: 'hidden', background: 'var(--bg-primary)' }}>
+                                        <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                            <div>
+                                                <div style={{ fontWeight: '800' }}>Current Dispatch Rolls</div>
+                                                <div style={{ fontSize: '0.8rem', opacity: 0.6 }}>{dispatchEditRolls.length} rolls in this batch</div>
+                                            </div>
+                                            <div style={{ fontSize: '0.8rem', opacity: 0.6 }}>Save to move removed rolls back to IN stock.</div>
+                                        </div>
+                                        <div style={{ maxHeight: '58vh', overflowY: 'auto' }}>
+                                            {dispatchEditRolls.length === 0 ? (
+                                                <div style={{ padding: '2rem', textAlign: 'center', opacity: 0.5 }}>No rolls selected yet.</div>
+                                            ) : (
+                                                dispatchEditRolls.map((roll) => (
+                                                    <div key={roll._id} style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', padding: '1rem 1.25rem', borderBottom: '1px solid var(--border-color)' }}>
+                                                        <div>
+                                                            <div style={{ fontFamily: 'monospace', fontWeight: '800', color: 'var(--accent-color)' }}>{roll.barcode}</div>
+                                                            <div style={{ fontSize: '0.8rem', opacity: 0.65, marginTop: '0.25rem' }}>
+                                                                {roll.metre || 0}m • {roll.weight || 0}kg • {Array.isArray(roll.pieces) ? roll.pieces.length : 0} pieces
+                                                            </div>
+                                                        </div>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => removeDispatchRoll(roll._id)}
+                                                            className="btn"
+                                                            style={{ background: 'rgba(239, 68, 68, 0.1)', border: 'none', color: 'var(--error-color)', padding: '0.6rem 0.75rem' }}
+                                                        >
+                                                            <IconTrash size={16} />
+                                                        </button>
+                                                    </div>
+                                                ))
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div style={{ border: '1px solid var(--border-color)', borderRadius: '14px', overflow: 'hidden', background: 'var(--bg-primary)', display: 'flex', flexDirection: 'column' }}>
+                                        <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid var(--border-color)' }}>
+                                            <div style={{ fontWeight: '800', marginBottom: '0.35rem' }}>Add Rolls by Barcode</div>
+                                            <div style={{ fontSize: '0.8rem', opacity: 0.6 }}>Search a barcode to add more rolls into this dispatch batch.</div>
+                                        </div>
+                                        <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid var(--border-color)' }}>
+                                            <input
+                                                type="text"
+                                                className="input"
+                                                value={dispatchEditSearch}
+                                                onChange={(e) => setDispatchEditSearch(e.target.value)}
+                                                placeholder="Scan or type barcode"
+                                                autoComplete="off"
+                                            />
+                                            <div style={{ fontSize: '0.78rem', opacity: 0.55, marginTop: '0.5rem' }}>
+                                                Type at least 2 characters to search available IN rolls.
+                                            </div>
+                                        </div>
+                                        <div style={{ flex: 1, overflowY: 'auto', minHeight: '240px' }}>
+                                            {dispatchEditSearch.trim().length < 2 ? (
+                                                <div style={{ padding: '1.5rem', textAlign: 'center', opacity: 0.5 }}>Search results will appear here.</div>
+                                            ) : dispatchEditResults.length === 0 ? (
+                                                <div style={{ padding: '1.5rem', textAlign: 'center', opacity: 0.5 }}>No matching available rolls.</div>
+                                            ) : (
+                                                dispatchEditResults.map((roll) => (
+                                                    <button
+                                                        key={roll._id}
+                                                        type="button"
+                                                        onClick={() => addDispatchRoll(roll)}
+                                                        style={{
+                                                            width: '100%',
+                                                            textAlign: 'left',
+                                                            padding: '1rem 1.25rem',
+                                                            border: 'none',
+                                                            borderBottom: '1px solid var(--border-color)',
+                                                            background: 'transparent',
+                                                            cursor: 'pointer',
+                                                            color: 'var(--text-primary)'
+                                                        }}
+                                                    >
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'center' }}>
+                                                            <div>
+                                                                <div style={{ fontFamily: 'monospace', fontWeight: '800' }}>{roll.barcode}</div>
+                                                                <div style={{ fontSize: '0.8rem', opacity: 0.65, marginTop: '0.25rem' }}>
+                                                                    {roll.metre || 0}m • {roll.weight || 0}kg
+                                                                </div>
+                                                            </div>
+                                                            <span style={{ padding: '4px 10px', borderRadius: '999px', background: 'rgba(99, 102, 241, 0.12)', color: 'var(--accent-color)', fontSize: '0.75rem', fontWeight: '800' }}>
+                                                                Add
+                                                            </span>
+                                                        </div>
+                                                    </button>
+                                                ))
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        <div style={{ padding: '1.25rem 2rem', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', gap: '1rem', background: 'var(--bg-secondary)' }}>
+                            <div style={{ fontSize: '0.8rem', opacity: 0.6, alignSelf: 'center' }}>
+                                Edited rolls are saved back into the batch and the linked DC is refreshed automatically.
+                            </div>
+                            <div style={{ display: 'flex', gap: '1rem' }}>
+                                <button
+                                    className="btn"
+                                    onClick={closeDispatchEditModal}
+                                    style={{ background: 'transparent', border: '1px solid var(--border-color)' }}
+                                    disabled={dispatchEditSaving}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    className="btn btn-primary"
+                                    onClick={handleSaveDispatchBatch}
+                                    disabled={dispatchEditSaving || dispatchEditLoading}
+                                    style={{ minWidth: '160px' }}
+                                >
+                                    {dispatchEditSaving ? 'Saving...' : 'Save Batch'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* LIVE VIEW MODAL */}
             {showLiveView && liveSession && (

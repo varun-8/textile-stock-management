@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useConfig } from '../context/ConfigContext';
 import { io } from "socket.io-client";
@@ -68,8 +68,6 @@ const Dashboard = () => {
     // Filters for "Recent Logs" only (Live view)
     const [searchTerm, setSearchTerm] = useState('');
     const [editItem, setEditItem] = useState(null);
-    const [isTodayOnly, setIsTodayOnly] = useState(false);
-    const [activeSessionCount, setActiveSessionCount] = useState(0);
 
     // Modal State
     const [modalConfig, setModalConfig] = useState({ isOpen: false, type: 'info', title: '', message: '', onConfirm: null });
@@ -82,42 +80,25 @@ const Dashboard = () => {
         setModalConfig({ ...modalConfig, isOpen: false });
     };
 
-    const getTodayRange = () => {
-        const today = new Date().toISOString().split('T')[0];
-        return { startDate: today, endDate: today };
-    };
-
-    const fetchStats = async () => {
+    const fetchStats = useCallback(async () => {
         try {
             const token = localStorage.getItem('ADMIN_TOKEN');
-            let url = `${apiUrl}/api/stats/dashboard`;
-            if (isTodayOnly) {
-                const { startDate, endDate } = getTodayRange();
-                url += `?startDate=${startDate}&endDate=${endDate}`;
-            }
-            const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+            const res = await fetch(`${apiUrl}/api/stats/dashboard`, { headers: { 'Authorization': `Bearer ${token}` } });
             const data = await res.json();
             setMissingCount(data.missingCount || 0);
             setStats([
-                { label: 'Total Inventory', value: data.totalRolls, change: isTodayOnly ? "Today's Physical Stock" : 'IN + RESERVED in Godown', key: 'totalRolls', color: 'var(--text-secondary)', icon: '📦' },
-                { label: 'In Stock', value: data.inStock ?? data.stockIn, change: isTodayOnly ? "Today's Available" : 'Ready for use (IN)', key: 'stockIn', color: 'var(--success-color)', icon: '🏭' },
-                { label: 'Ready to Dispatch', value: data.readyToDispatch ?? 0, change: isTodayOnly ? "Today's Reserved" : 'Picked but not dispatched', key: 'readyToDispatch', color: 'var(--accent-color)', icon: '📋' },
-                { label: 'Out Stock', value: data.stockOut ?? 0, change: isTodayOnly ? "Today's Dispatch" : 'Already dispatched (OUT)', key: 'stockOut', color: 'var(--accent-color)', icon: '🚛' }
+                { label: 'Total Inventory', value: data.totalRolls, change: 'IN + RESERVED in Godown', key: 'totalRolls', color: 'var(--text-secondary)', icon: '📦' },
+                { label: 'In Stock', value: data.inStock ?? data.stockIn, change: 'Ready for use (IN)', key: 'stockIn', color: 'var(--success-color)', icon: '🏭' },
+                { label: 'Ready to Dispatch', value: data.readyToDispatch ?? 0, change: 'Picked but not dispatched', key: 'readyToDispatch', color: 'var(--accent-color)', icon: '📋' },
+                { label: 'Out Stock', value: data.stockOut ?? 0, change: 'Already dispatched (OUT)', key: 'stockOut', color: 'var(--accent-color)', icon: '🚛' }
             ]);
         } catch (err) { console.error(err); }
-    };
+    }, [apiUrl]);
 
-    const fetchRecentLogs = async () => {
+    const fetchRecentLogs = useCallback(async () => {
         try {
             const token = localStorage.getItem('ADMIN_TOKEN');
-            let url = `${apiUrl}/api/stats/list/recent?limit=50`;
-
-            if (isTodayOnly) {
-                const { startDate, endDate } = getTodayRange();
-                url += `&startDate=${startDate}&endDate=${endDate}`;
-            }
-
-            const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+            const res = await fetch(`${apiUrl}/api/stats/list/recent?limit=50`, { headers: { 'Authorization': `Bearer ${token}` } });
             const data = await res.json();
             
             if (!Array.isArray(data)) {
@@ -135,20 +116,10 @@ const Dashboard = () => {
             }));
             setRecentLogs(normalized);
         } catch (err) { console.error(err); }
-    };
-
-    const fetchActiveSessions = async () => {
-        try {
-            const token = localStorage.getItem('ADMIN_TOKEN');
-            const res = await fetch(`${apiUrl}/api/sessions/active`, { headers: { 'Authorization': `Bearer ${token}` } });
-            const data = await res.json();
-            setActiveSessionCount(Array.isArray(data) ? data.length : 0);
-        } catch (err) { console.error(err); }
-    };
+    }, [apiUrl]);
 
     useEffect(() => {
         fetchStats();
-        fetchActiveSessions();
         if (activeTab === 'LIVE') fetchRecentLogs();
 
         const socketOptions = import.meta.env.DEV
@@ -171,11 +142,11 @@ const Dashboard = () => {
         });
 
         socket.on('session_update', () => {
-            fetchActiveSessions();
+            fetchStats();
         });
 
         return () => socket.disconnect();
-    }, [apiUrl, activeTab, isTodayOnly]);
+    }, [apiUrl, activeTab, fetchRecentLogs, fetchStats]);
 
 
     const handleCardClick = (key) => {
@@ -331,43 +302,6 @@ const Dashboard = () => {
         });
     })();
 
-    // Totals for the *visible* list (Recent Logs)
-    const downloadCSV = () => {
-        if (!displayList.length) return showModal('warning', 'Export Empty', "There is no data to export right now.");
-        generateAndDownloadCSV(displayList, `inventory_${activeTab}.csv`);
-    };
-
-    const generateAndDownloadCSV = (data, filename) => {
-        try {
-            const headers = ["Timestamp", "Barcode", "Status", "Metre", "Weight", "Quality %"];
-            const rows = data.map(item => [
-                `"${item.time}"`,
-                item.barcode,
-                item.type,
-                item.details?.metre || 0,
-                item.details?.weight || 0,
-                item.details?.percentage || 0
-            ]);
-            const csvContent = "data:text/csv;charset=utf-8,"
-                + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
-            const encodedUri = encodeURI(csvContent);
-            const link = document.createElement("a");
-            link.setAttribute("href", encodedUri);
-            link.setAttribute("download", filename);
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-        } catch {
-            showModal('error', 'Export Failed', 'An error occurred while generating the CSV file.');
-        }
-    };
-
-    const formatPieceLengths = (pieces, totalMetre) => {
-        if (Array.isArray(pieces) && pieces.length > 1) {
-            return pieces.map((piece) => piece.length).join(' + ');
-        }
-        return totalMetre;
-    };
 
     const formatPieceDetails = (pieces, totalMetre) => {
         if (Array.isArray(pieces) && pieces.length > 1) {

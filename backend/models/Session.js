@@ -34,6 +34,10 @@ const sessionSchema = new mongoose.Schema({
     activeScanners: [{
         type: String // Scanner UUIDs
     }],
+    dispatchRolls: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'ClothRoll'
+    }],
     createdAt: {
         type: Date,
         default: Date.now

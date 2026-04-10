@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useConfig } from '../context/ConfigContext';
 import { IconSettings, IconCloud } from '../components/Icons';
 import { useNotification } from '../context/NotificationContext';
@@ -65,25 +65,7 @@ const Settings = () => {
         totalMetre: ''
     });
 
-    useEffect(() => {
-        fetchConfig();
-        fetchBackups();
-        fetchSystemInfo();
-    }, [apiUrl]);
-
-    useEffect(() => {
-        return () => {
-            if (templatePreviewUrl) {
-                try {
-                    URL.revokeObjectURL(templatePreviewUrl);
-                } catch (err) {
-                    console.debug('Template preview URL cleanup skipped:', err);
-                }
-            }
-        };
-    }, [templatePreviewUrl]);
-
-    const fetchConfig = async () => {
+    const fetchConfig = useCallback(async () => {
         try {
             const token = localStorage.getItem('ADMIN_TOKEN');
             const [backupRes, dcTemplateRes, dcTemplatesRes] = await Promise.all([
@@ -106,7 +88,6 @@ const Settings = () => {
                 setDcTemplate((prev) => ({
                     ...prev,
                     ...dcTemplateData,
-                    // Always default to printed layout
                     layoutMode: dcTemplateData.layoutMode || 'printed'
                 }));
                 setSelectedDcTemplateId(dcTemplateData.templateId || '');
@@ -121,7 +102,55 @@ const Settings = () => {
                 }
             }
         } catch (err) { console.error(err); }
-    };
+    }, [apiUrl]);
+
+    const fetchBackups = useCallback(async () => {
+        setLoadingBackups(true);
+        try {
+            const token = localStorage.getItem('ADMIN_TOKEN');
+            const res = await fetch(`${apiUrl}/api/admin/backups`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await res.json();
+            setBackups(Array.isArray(data) ? data : []);
+        } catch (err) { console.error(err); }
+        finally { setLoadingBackups(false); }
+    }, [apiUrl]);
+
+    const fetchSystemInfo = useCallback(async () => {
+        try {
+            const token = localStorage.getItem('ADMIN_TOKEN');
+            const resIp = await fetch(`${apiUrl}/api/admin/server-ip`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const dataIp = await resIp.json();
+            setServerIp(dataIp.ip);
+
+            const resScan = await fetch(`${apiUrl}/api/admin/scanners`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const dataScan = await resScan.json();
+            setScanners(dataScan);
+        } catch (err) { console.error(err); }
+    }, [apiUrl]);
+
+    useEffect(() => {
+        fetchConfig();
+        fetchBackups();
+        fetchSystemInfo();
+    }, [fetchConfig, fetchBackups, fetchSystemInfo]);
+
+    useEffect(() => {
+        return () => {
+            if (templatePreviewUrl) {
+                try {
+                    URL.revokeObjectURL(templatePreviewUrl);
+                } catch (err) {
+                    console.debug('Template preview URL cleanup skipped:', err);
+                }
+            }
+        };
+    }, [templatePreviewUrl]);
 
     const handleDcTemplateChange = (field, value) => {
         setDcTemplate((prev) => ({ ...prev, [field]: value }));
@@ -215,10 +244,16 @@ const Settings = () => {
         const pdfUrl = generateDCPdf(sampleDc, sampleRolls, templateToUse, { mode: 'bloburl' });
         if (!pdfUrl) return;  // silent fail — no popup
 
-        setTemplatePreviewUrl((prev) => {
-            if (prev) { try { URL.revokeObjectURL(prev); } catch (_) {} }
-            return pdfUrl;
-        });
+            setTemplatePreviewUrl((prev) => {
+                if (prev) {
+                    try {
+                        URL.revokeObjectURL(prev);
+                    } catch (error) {
+                        console.debug('Template preview cleanup skipped:', error);
+                    }
+                }
+                return pdfUrl;
+            });
     };
 
     const handlePreviewDcTemplate = () => generatePreview(dcTemplate);
@@ -345,38 +380,6 @@ const Settings = () => {
             }
         }
         setTemplatePreviewUrl('');
-    };
-
-    const fetchBackups = async () => {
-        setLoadingBackups(true);
-        try {
-            const token = localStorage.getItem('ADMIN_TOKEN');
-            const res = await fetch(`${apiUrl}/api/admin/backups`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            const data = await res.json();
-            setBackups(Array.isArray(data) ? data : []);
-        } catch (err) { console.error(err); }
-        finally { setLoadingBackups(false); }
-    };
-
-    const fetchSystemInfo = async () => {
-        try {
-            const token = localStorage.getItem('ADMIN_TOKEN');
-            // Fetch IP
-            const resIp = await fetch(`${apiUrl}/api/admin/server-ip`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            const dataIp = await resIp.json();
-            setServerIp(dataIp.ip);
-
-            // Fetch Scanners for count
-            const resScan = await fetch(`${apiUrl}/api/admin/scanners`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            const dataScan = await resScan.json();
-            setScanners(dataScan);
-        } catch (err) { console.error(err); }
     };
 
     const handleSavePath = async () => {

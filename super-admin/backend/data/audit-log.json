@@ -1,0 +1,38 @@
+{
+  "items": [
+    {
+      "auditId": "aed31300-3710-42df-a18b-d9770939cf58",
+      "action": "LOGIN",
+      "outcome": "SUCCESS",
+      "targetType": "AUTH",
+      "targetId": "super-admin",
+      "metadata": {
+        "username": "admin",
+        "role": "SUPER_ADMIN"
+      },
+      "actorId": "super-admin",
+      "actorUsername": "admin",
+      "actorRole": "SUPER_ADMIN",
+      "ip": "127.0.0.1",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
+      "createdAt": "2026-04-09T17:15:10.239Z"
+    },
+    {
+      "auditId": "cfdd1393-05aa-4f4d-8025-e6f2de9e3626",
+      "action": "LOGIN",
+      "outcome": "SUCCESS",
+      "targetType": "AUTH",
+      "targetId": "super-admin",
+      "metadata": {
+        "username": "admin",
+        "role": "SUPER_ADMIN"
+      },
+      "actorId": "super-admin",
+      "actorUsername": "admin",
+      "actorRole": "SUPER_ADMIN",
+      "ip": "127.0.0.1",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
+      "createdAt": "2026-04-09T17:14:43.281Z"
+    }
+  ]
+}

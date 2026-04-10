@@ -6,6 +6,12 @@ const Barcode = require('../models/Barcode');
 const DeliveryChallan = require('../models/DeliveryChallan');
 const ExcelJS = require('exceljs');
 const { detectMissingSequences } = require('../utils/missingSequenceService');
+const {
+    calculateDispatchTotals,
+    getSessionDispatchRollDocs,
+    getSessionDispatchRollIds,
+    syncDeliveryChallanFromSession
+} = require('../utils/dispatchBatch');
 
 function escapeRegex(value) {
     return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -26,6 +32,32 @@ function parseSequenceFromBatchCode(batchCode) {
     if (parts.length !== 3) return 0;
     const seq = parseInt(parts[2], 10);
     return Number.isFinite(seq) ? seq : 0;
+}
+
+async function getSessionActivityRollDocs(session) {
+    if (session.type === 'OUT') {
+        return getSessionDispatchRollDocs(session._id);
+    }
+
+    return ClothRoll.find({
+        'transactionHistory.sessionId': session._id
+    })
+        .select('barcode metre weight percentage pieces transactionHistory updatedAt createdAt')
+        .lean();
+}
+
+function getLatestSessionTransaction(item, sessionId) {
+    const history = Array.isArray(item?.transactionHistory) ? item.transactionHistory : [];
+    const targetSessionId = String(sessionId);
+
+    for (let index = history.length - 1; index >= 0; index -= 1) {
+        const tx = history[index];
+        if (String(tx?.sessionId) === targetSessionId) {
+            return tx;
+        }
+    }
+
+    return null;
 }
 
 async function backfillMissingBatchCodes() {
@@ -147,9 +179,11 @@ router.get('/active', async (req, res) => {
 
         // Populate scanned count for each session
         const sessionsWithCount = await Promise.all(sessions.map(async (session) => {
-            const scannedCount = await ClothRoll.countDocuments({
-                "transactionHistory.sessionId": session._id
-            });
+            const scannedCount = session.type === 'OUT'
+                ? (await getSessionDispatchRollIds(session._id)).length
+                : await ClothRoll.countDocuments({
+                    "transactionHistory.sessionId": session._id
+                });
             return {
                 ...session.toObject(),
                 scannedCount
@@ -372,46 +406,208 @@ router.get('/:id/preview', async (req, res) => {
         const { id } = req.params;
         const session = await Session.findById(id);
         if (!session) return res.status(404).json({ error: 'Batch not found' });
-
-        // Aggregate stats based on sessionId in transactionHistory
-        const stats = await ClothRoll.aggregate([
-            { $unwind: "$transactionHistory" },
-            { $match: { "transactionHistory.sessionId": session._id } },
-            {
-                $group: {
-                    _id: null,
-                    totalCount: { $sum: 1 },
-                    totalMetre: { $sum: "$metre" },
-                    totalWeight: { $sum: "$weight" }
-                }
-            }
-        ]);
-
-        const result = stats.length > 0 ? stats[0] : { totalCount: 0, totalMetre: 0, totalWeight: 0 };
-
-        // Fetch detailed items for this session
-        const items = await ClothRoll.find({ "transactionHistory.sessionId": session._id })
-            .select('barcode metre weight percentage pieces transactionHistory')
-            .lean();
-
-        // Process items to show relevant details (e.g. time of scan)
-        const detailedItems = items.map(item => {
-            const tx = item.transactionHistory.find(t => String(t.sessionId) === String(session._id));
-            return {
-                _id: item._id,
-                barcode: item.barcode,
-                metre: item.metre,
-                weight: item.weight,
-                percentage: item.percentage,
-                pieces: item.pieces || [],
-                scannedAt: tx ? tx.date : null,
-                scannedBy: tx ? tx.employeeName : 'Unknown'
+        const items = await getSessionActivityRollDocs(session);
+        const totals = session.type === 'OUT'
+            ? calculateDispatchTotals(items, 0)
+            : {
+                totalRolls: items.length,
+                totalMetre: Number(items.reduce((sum, item) => sum + (Number(item.metre) || 0), 0).toFixed(2))
             };
-        }).sort((a, b) => new Date(b.scannedAt) - new Date(a.scannedAt));
 
-        res.json({ success: true, stats: result, items: detailedItems });
+        const detailedItems = items.map((item) => ({
+            _id: item._id,
+            barcode: item.barcode,
+            metre: item.metre,
+            weight: item.weight,
+            percentage: item.percentage,
+            pieces: item.pieces || [],
+            scannedAt: getLatestSessionTransaction(item, session._id)?.date || item.updatedAt || item.createdAt || null,
+            scannedBy: getLatestSessionTransaction(item, session._id)?.employeeName || 'Batch Editor'
+        })).sort((a, b) => new Date(b.scannedAt) - new Date(a.scannedAt));
+
+        res.json({
+            success: true,
+            stats: {
+                totalCount: totals.totalRolls,
+                totalMetre: totals.totalMetre,
+                totalWeight: items.reduce((sum, item) => sum + (Number(item.weight) || 0), 0)
+            },
+            items: detailedItems,
+            rolls: items
+        });
 
     } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.get('/:id/roll-search', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const queryText = String(req.query.q || '').trim();
+
+        if (!queryText) {
+            return res.json([]);
+        }
+
+        const session = await Session.findById(id).select('type').lean();
+        if (!session) {
+            return res.status(404).json({ error: 'Batch not found' });
+        }
+
+        const currentIds = await getSessionDispatchRollIds(id);
+        const currentIdSet = new Set(currentIds);
+        const regex = new RegExp(escapeRegex(queryText), 'i');
+
+        const rolls = await ClothRoll.find({
+            barcode: { $regex: regex },
+            status: 'IN',
+            _id: { $nin: Array.from(currentIdSet) }
+        })
+            .select('barcode metre weight pieces status updatedAt')
+            .sort({ updatedAt: -1 })
+            .limit(20)
+            .lean();
+
+        res.json(rolls);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.put('/:id/dispatch-rolls', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { barcodes } = req.body;
+
+        if (!Array.isArray(barcodes)) {
+            return res.status(400).json({ error: 'Roll list is required' });
+        }
+
+        const session = await Session.findById(id);
+        if (!session) {
+            return res.status(404).json({ error: 'Batch not found' });
+        }
+
+        const linkedDc = await DeliveryChallan.findOne({ sourceBatchId: session._id }).select('_id dcNumber').lean();
+        const isDispatchedBatch = Boolean(linkedDc);
+
+        if (session.type !== 'OUT') {
+            return res.status(400).json({ error: 'Only dispatch batches can be edited here' });
+        }
+
+        const normalizedBarcodes = Array.from(new Set(
+            barcodes.map((code) => String(code || '').trim()).filter(Boolean)
+        ));
+
+        const desiredRolls = await ClothRoll.find({ barcode: { $in: normalizedBarcodes } })
+            .select('barcode metre weight pieces status dcId transactionHistory')
+            .lean();
+
+        if (desiredRolls.length !== normalizedBarcodes.length) {
+            const found = new Set(desiredRolls.map((roll) => roll.barcode));
+            const missing = normalizedBarcodes.filter((code) => !found.has(code));
+            return res.status(400).json({ error: `Some barcodes were not found: ${missing.join(', ')}` });
+        }
+
+        const currentRolls = await getSessionDispatchRollDocs(id);
+        const currentByBarcode = new Map(currentRolls.map((roll) => [String(roll.barcode), roll]));
+        const desiredByBarcode = new Map(desiredRolls.map((roll) => [String(roll.barcode), roll]));
+        const desiredBarcodeSet = new Set(normalizedBarcodes);
+
+        const addRolls = desiredRolls.filter((roll) => !currentByBarcode.has(roll.barcode));
+        const removeRolls = currentRolls.filter((roll) => !desiredBarcodeSet.has(roll.barcode));
+
+        for (const roll of addRolls) {
+            if (roll.status !== 'IN') {
+                return res.status(400).json({
+                    error: `Roll ${roll.barcode} is not available to add. Current status: ${roll.status}`
+                });
+            }
+        }
+
+        const now = new Date();
+        const bulkOps = [];
+
+        for (const roll of addRolls) {
+            bulkOps.push({
+                updateOne: {
+                    filter: { _id: roll._id },
+                    update: {
+                        $set: isDispatchedBatch
+                            ? { status: 'OUT', dcId: linkedDc._id }
+                            : { status: 'RESERVED' },
+                        $push: {
+                            transactionHistory: {
+                                status: isDispatchedBatch ? 'OUT' : 'RESERVED',
+                                details: isDispatchedBatch
+                                    ? `Added to dispatched batch${linkedDc?.dcNumber ? ` (${linkedDc.dcNumber})` : ''}`
+                                    : 'Added to dispatch batch',
+                                date: now,
+                                employeeName: req.user ? req.user.username : 'Batch Editor',
+                                sessionId: session._id
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        for (const roll of removeRolls) {
+            const update = {
+                $set: { status: 'IN' },
+                $unset: { dcId: '' },
+                $push: {
+                    transactionHistory: {
+                        status: 'IN',
+                        details: 'Removed from dispatch batch',
+                        date: now,
+                        employeeName: req.user ? req.user.username : 'Batch Editor',
+                        sessionId: session._id
+                    }
+                }
+            };
+            bulkOps.push({
+                updateOne: {
+                    filter: { _id: roll._id },
+                    update
+                }
+            });
+        }
+
+        if (bulkOps.length > 0) {
+            await ClothRoll.bulkWrite(bulkOps);
+        }
+
+        session.dispatchRolls = normalizedBarcodes
+            .map((code) => desiredByBarcode.get(code)?._id)
+            .filter(Boolean);
+        await session.save();
+
+        const dc = await syncDeliveryChallanFromSession(session._id);
+
+        if (req.io) {
+            req.io.emit('session_update', {
+                action: 'UPDATE',
+                sessionId: session._id,
+                source: 'dispatch-edit'
+            });
+            req.io.emit('dc_update', {
+                sessionId: session._id,
+                dcNumber: dc?.dcNumber || null,
+                timestamp: now
+            });
+        }
+
+        const refreshedRolls = await getSessionDispatchRollDocs(session._id);
+        res.json({
+            success: true,
+            session,
+            dc,
+            rolls: refreshedRolls
+        });
+    } catch (err) {
+        console.error('Failed to update dispatch batch:', err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -429,27 +625,20 @@ router.post('/end', async (req, res) => {
             return res.status(404).json({ error: 'Batch not found' });
         }
 
-        // Calculate Final Stats
-        const stats = await ClothRoll.aggregate([
-            { $unwind: "$transactionHistory" },
-            { $match: { "transactionHistory.sessionId": session._id } },
-            {
-                $group: {
-                    _id: null,
-                    count: { $sum: 1 },
-                    totalMetre: { $sum: "$metre" },
-                    totalWeight: { $sum: "$weight" }
-                }
-            }
-        ]);
-
-        const result = stats.length > 0 ? stats[0] : { count: 0, totalMetre: 0, totalWeight: 0 };
+        // Calculate Final Stats from the current batch contents.
+        const items = await getSessionActivityRollDocs(session);
+        const result = items.reduce((acc, item) => {
+            acc.count += 1;
+            acc.totalMetre += Number(item.metre) || 0;
+            acc.totalWeight += Number(item.weight) || 0;
+            return acc;
+        }, { count: 0, totalMetre: 0, totalWeight: 0 });
 
         session.status = 'COMPLETED';
         session.endedAt = new Date();
         session.totalItems = result.count;
-        session.totalMetre = result.totalMetre;
-        session.totalWeight = result.totalWeight;
+        session.totalMetre = Number(result.totalMetre.toFixed(2));
+        session.totalWeight = Number(result.totalWeight.toFixed(2));
 
         await session.save();
 
@@ -475,11 +664,7 @@ router.get('/:id/export/details', async (req, res) => {
         if (!session) return res.status(404).send('Batch not found');
 
         // Fetch items linked to this session
-        // Note: We need to match specific transactions to get the state AT THAT TIME ideally,
-        // but current state + filters is often enough. For accuracy, we look at transactionHistory.
-        const items = await ClothRoll.find({
-            "transactionHistory.sessionId": session._id
-        });
+        const items = await getSessionActivityRollDocs(session);
 
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet('Batch Details');
@@ -496,19 +681,16 @@ router.get('/:id/export/details', async (req, res) => {
         ];
 
         items.forEach(item => {
-            // Find the relevant transaction(s)
-            const txs = item.transactionHistory.filter(t => String(t.sessionId) === String(session._id));
-            txs.forEach(tx => {
-                worksheet.addRow({
-                    barcode: item.barcode,
-                    type: tx.status || session.type, // Fallback to session type if tx status missing
-                    size: session.targetSize, // Assuming session target size is the item size
-                    metre: item.metre,
-                    weight: item.weight,
-                    percentage: item.percentage,
-                    user: tx.employeeName || 'Unknown',
-                    time: tx.date ? new Date(tx.date).toLocaleString() : ''
-                });
+            const tx = getLatestSessionTransaction(item, session._id);
+            worksheet.addRow({
+                barcode: item.barcode,
+                type: tx?.status || session.type,
+                size: session.targetSize,
+                metre: item.metre,
+                weight: item.weight,
+                percentage: item.percentage,
+                user: tx?.employeeName || 'Unknown',
+                time: tx?.date ? new Date(tx.date).toLocaleString() : ''
             });
         });
 
@@ -532,18 +714,18 @@ router.get('/:id/export/summary', async (req, res) => {
         const session = await Session.findById(id);
         if (!session) return res.status(404).send('Batch not found');
 
-        const stats = await ClothRoll.aggregate([
-            { $unwind: "$transactionHistory" },
-            { $match: { "transactionHistory.sessionId": session._id } },
-            {
-                $group: {
-                    _id: "$transactionHistory.employeeName",
-                    count: { $sum: 1 },
-                    totalMetre: { $sum: "$metre" },
-                    totalWeight: { $sum: "$weight" }
-                }
-            }
-        ]);
+        const items = await getSessionActivityRollDocs(session);
+        const statsMap = new Map();
+        items.forEach((item) => {
+            const tx = getLatestSessionTransaction(item, session._id);
+            const employeeName = tx?.employeeName || 'Unknown';
+            const current = statsMap.get(employeeName) || { _id: employeeName, count: 0, totalMetre: 0, totalWeight: 0 };
+            current.count += 1;
+            current.totalMetre += Number(item.metre) || 0;
+            current.totalWeight += Number(item.weight) || 0;
+            statsMap.set(employeeName, current);
+        });
+        const stats = Array.from(statsMap.values());
 
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet('Batch Summary');
@@ -598,27 +780,22 @@ router.get('/:id/summary', async (req, res) => {
         const session = await Session.findById(id);
         if (!session) return res.status(404).json({ error: 'Batch not found' });
 
-        const stats = await ClothRoll.aggregate([
-            { $unwind: "$transactionHistory" },
-            { $match: { "transactionHistory.sessionId": session._id } },
-            {
-                $group: {
-                    _id: "$transactionHistory.employeeName",
-                    count: { $sum: 1 },
-                    totalMetre: { $sum: "$metre" },
-                    totalWeight: { $sum: "$weight" }
-                }
-            }
-        ]);
-
-        // Fetch detailed items for this session
-        const items = await ClothRoll.find({ "transactionHistory.sessionId": session._id })
-            .select('barcode metre weight percentage pieces transactionHistory')
-            .lean();
+        const items = await getSessionActivityRollDocs(session);
+        const statsMap = new Map();
+        items.forEach((item) => {
+            const tx = getLatestSessionTransaction(item, session._id);
+            const employeeName = tx?.employeeName || 'Unknown';
+            const current = statsMap.get(employeeName) || { _id: employeeName, count: 0, totalMetre: 0, totalWeight: 0 };
+            current.count += 1;
+            current.totalMetre += Number(item.metre) || 0;
+            current.totalWeight += Number(item.weight) || 0;
+            statsMap.set(employeeName, current);
+        });
+        const stats = Array.from(statsMap.values());
 
         // Process items to show relevant details
         const detailedItems = items.map(item => {
-            const tx = item.transactionHistory.find(t => String(t.sessionId) === String(session._id));
+            const tx = getLatestSessionTransaction(item, session._id);
             return {
                 _id: item._id,
                 barcode: item.barcode,
@@ -652,15 +829,11 @@ router.get('/:id/export/dc', async (req, res) => {
         const session = await Session.findById(id);
         if (!session) return res.status(404).send('Batch not found');
 
-        const items = await ClothRoll.find({
-            "transactionHistory.sessionId": session._id
-        });
+        const items = await getSessionActivityRollDocs(session);
 
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet('Download DC');
-        const exportedRolls = items
-            .filter(item => item.transactionHistory.some(t => String(t.sessionId) === String(session._id)))
-            .map(item => {
+        const exportedRolls = items.map(item => {
                 const validPieces = Array.isArray(item.pieces) && item.pieces.length > 0
                     ? item.pieces
                         .map((piece) => Number(typeof piece === 'number' ? piece : piece?.length))
@@ -819,22 +992,7 @@ router.get('/batch/active-out/list', async (req, res) => {
 
         // For each batch, get rolls and calculate totals
         const batchesWithRolls = await Promise.all(candidateBatches.map(async (batch) => {
-            const rolls = await ClothRoll.find({
-                status: 'RESERVED',
-                $or: [{ dcId: { $exists: false } }, { dcId: null }],
-                transactionHistory: {
-                    $elemMatch: {
-                        status: 'RESERVED',
-                        sessionId: batch._id
-                    }
-                }
-            }).lean();
-
-            const hasHistoricalDcForBatch = rolls.some((roll) =>
-                (roll.transactionHistory || []).some((tx) =>
-                    typeof tx.details === 'string' && tx.details.includes('Dispatched via DC-')
-                )
-            );
+            const rolls = await getSessionDispatchRollDocs(batch._id);
 
             const totalRolls = rolls.length;
             const totalMetre = rolls.reduce((sum, roll) => sum + (Number(roll.metre) || 0), 0);
@@ -858,7 +1016,6 @@ router.get('/batch/active-out/list', async (req, res) => {
                 type: batch.type,
                 targetSize: batch.targetSize,
                 createdAt: batch.createdAt,
-                hasHistoricalDcForBatch,
                 totalRolls,
                 totalMetre: totalMetre.toFixed(2),
                 totalPieces,
@@ -872,7 +1029,7 @@ router.get('/batch/active-out/list', async (req, res) => {
             };
         }));
 
-        const eligibleBatches = batchesWithRolls.filter(batch => batch.rollCount > 0 && !batch.hasHistoricalDcForBatch);
+        const eligibleBatches = batchesWithRolls.filter(batch => batch.rollCount > 0);
 
         res.json(eligibleBatches);
     } catch (err) {

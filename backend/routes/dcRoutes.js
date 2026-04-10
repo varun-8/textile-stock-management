@@ -5,6 +5,11 @@ const ClothRoll = require('../models/ClothRoll');
 const AuditLog = require('../models/AuditLog');
 const Session = require('../models/Session');
 const { detectMissingSequences } = require('../utils/missingSequenceService');
+const {
+    calculateDispatchTotals,
+    getSessionDispatchRollDocs,
+    syncDeliveryChallanFromSession
+} = require('../utils/dispatchBatch');
 
 // Get all Delivery Challans
 router.get('/', async (req, res) => {
@@ -105,16 +110,7 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ error: 'This completed batch has already undergone DC once' });
         }
 
-        const eligibleBatchRolls = await ClothRoll.find({
-            status: 'RESERVED',
-            $or: [{ dcId: { $exists: false } }, { dcId: null }],
-            transactionHistory: {
-                $elemMatch: {
-                    status: 'RESERVED',
-                    sessionId: sourceBatch._id
-                }
-            }
-        }).select('barcode metre weight pieces dcId status transactionHistory');
+        const eligibleBatchRolls = await getSessionDispatchRollDocs(sourceBatch._id);
 
         if (eligibleBatchRolls.length === 0) {
             return res.status(400).json({ error: 'No reserved rolls are available for this dispatch batch' });

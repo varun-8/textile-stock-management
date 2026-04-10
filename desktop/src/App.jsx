@@ -45,15 +45,12 @@ const ServerGuard = ({ children }) => {
         setServerReady(true);
         setLoadingLicense(false);
         clearInterval(pollRef.current);
-      } catch (err) {
+      } catch {
         setAttempts(prev => prev + 1);
         setLoadingLicense(false);
       }
     };
     
-    // Reset state when apiUrl changes
-    setServerReady(false);
-    setAttempts(0);
     clearInterval(pollRef.current);
     
     ping(); // Immediate first attempt
@@ -100,93 +97,101 @@ const ServerGuard = ({ children }) => {
   return children;
 };
 
+function AppShell() {
+  const { apiUrl } = useConfig();
+
+  return (
+    <ServerGuard key={apiUrl}>
+      <Router>
+        <Routes>
+          <Route path="/" element={<Login />} />
+          <Route path="/dashboard" element={
+            <ProtectedRoute>
+              <AppLayout>
+                <Dashboard />
+              </AppLayout>
+            </ProtectedRoute>
+          } />
+          <Route path="/dashboard/:type" element={
+            <ProtectedRoute>
+              <AppLayout>
+                <DetailedStats />
+              </AppLayout>
+            </ProtectedRoute>
+          } />
+
+          <Route path="/barcode" element={
+            <ProtectedRoute>
+              <AppLayout>
+                <BarcodeGenerator />
+              </AppLayout>
+            </ProtectedRoute>
+          } />
+          <Route path="/mobile" element={
+            <ProtectedRoute>
+              <MobileScanner />
+            </ProtectedRoute>
+          } />
+          <Route path="/scanners" element={
+            <ProtectedRoute>
+              <AppLayout>
+                <Scanners />
+              </AppLayout>
+            </ProtectedRoute>
+          } />
+          <Route path="/configuration" element={
+            <ProtectedRoute>
+              <AppLayout>
+                <Configuration />
+              </AppLayout>
+            </ProtectedRoute>
+          } />
+          <Route path="/employees" element={
+            <ProtectedRoute>
+              <AppLayout>
+                <Employees />
+              </AppLayout>
+            </ProtectedRoute>
+          } />
+          <Route path="/sessions" element={
+            <ProtectedRoute>
+              <AppLayout>
+                <Sessions />
+              </AppLayout>
+            </ProtectedRoute>
+          } />
+          <Route path="/dcs" element={
+            <ProtectedRoute>
+              <AppLayout>
+                <DeliveryChallans />
+              </AppLayout>
+            </ProtectedRoute>
+          } />
+          <Route path="/quotations" element={
+            <ProtectedRoute>
+              <AppLayout>
+                <Quotations />
+              </AppLayout>
+            </ProtectedRoute>
+          } />
+          <Route path="/settings" element={
+            <ProtectedRoute>
+              <AppLayout>
+                <Settings />
+              </AppLayout>
+            </ProtectedRoute>
+          } />
+        </Routes>
+      </Router>
+    </ServerGuard>
+  );
+}
+
 function App() {
   return (
     <ConfigProvider>
       <NotificationProvider>
-        <ServerGuard>
-          <Router>
-            <Routes>
-              <Route path="/" element={<Login />} />
-              <Route path="/dashboard" element={
-                <ProtectedRoute>
-                  <AppLayout>
-                    <Dashboard />
-                  </AppLayout>
-                </ProtectedRoute>
-              } />
-              <Route path="/dashboard/:type" element={
-                <ProtectedRoute>
-                  <AppLayout>
-                    <DetailedStats />
-                  </AppLayout>
-                </ProtectedRoute>
-              } />
-
-              <Route path="/barcode" element={
-                <ProtectedRoute>
-                  <AppLayout>
-                    <BarcodeGenerator />
-                  </AppLayout>
-                </ProtectedRoute>
-              } />
-              <Route path="/mobile" element={
-                <ProtectedRoute>
-                  <MobileScanner />
-                </ProtectedRoute>
-              } />
-              <Route path="/scanners" element={
-                <ProtectedRoute>
-                  <AppLayout>
-                    <Scanners />
-                  </AppLayout>
-                </ProtectedRoute>
-              } />
-              <Route path="/configuration" element={
-                <ProtectedRoute>
-                  <AppLayout>
-                    <Configuration />
-                  </AppLayout>
-                </ProtectedRoute>
-              } />
-              <Route path="/employees" element={
-                <ProtectedRoute>
-                  <AppLayout>
-                    <Employees />
-                  </AppLayout>
-                </ProtectedRoute>
-              } />
-              <Route path="/sessions" element={
-                <ProtectedRoute>
-                  <AppLayout>
-                    <Sessions />
-                  </AppLayout>
-                </ProtectedRoute>
-              } />
-              <Route path="/dcs" element={
-                <ProtectedRoute>
-                  <AppLayout>
-                    <DeliveryChallans />
-                  </AppLayout>
-                </ProtectedRoute>
-              } />
-              <Route path="/quotations" element={
-                <ProtectedRoute>
-                  <AppLayout>
-                    <Quotations />
-                  </AppLayout>
-                </ProtectedRoute>
-              } />
-              <Route path="/settings" element={
-                <ProtectedRoute>
-                  <AppLayout>
-                    <Settings />
-                  </AppLayout>
-                </ProtectedRoute>
-              } />
-            </Routes>
-          </Router>
-        </ServerGuard>
+        <AppShell />
       </NotificationProvider>
     </ConfigProvider>
   );

@@ -125,13 +125,17 @@ function renderPrintedHeaderScaffold(doc, template, documentMeta = {}) {
     if (leftLogo.startsWith('data:image/')) {
         try {
             doc.addImage(leftLogo, leftLogo.startsWith('data:image/png') ? 'PNG' : 'JPEG', textLeft - logoGap - logoSz, logoY, logoSz, logoSz);
-        } catch (_) {}
+        } catch (error) {
+            console.debug('Skipping invalid left logo image:', error);
+        }
     }
     const rightLogo = String(template.logoDataUrl2 || '');
     if (rightLogo.startsWith('data:image/')) {
         try {
             doc.addImage(rightLogo, rightLogo.startsWith('data:image/png') ? 'PNG' : 'JPEG', textRight + logoGap, logoY, logoSz, logoSz);
-        } catch (_) {}
+        } catch (error) {
+            console.debug('Skipping invalid right logo image:', error);
+        }
     }
 
     const numberLabel = documentMeta.numberLabel || 'DC No.';
@@ -188,6 +192,11 @@ function renderPrintedHeaderScaffold(doc, template, documentMeta = {}) {
         cx,
         curY
     };
+}
+
+function renderPrintedContinuationPage(doc, template, documentMeta) {
+    doc.addPage();
+    return renderPrintedHeaderScaffold(doc, template, documentMeta).curY;
 }
 
 function renderPrintedTemplate(doc, dcData, rollsList, template) {
@@ -351,8 +360,12 @@ function renderPrintedTemplate(doc, dcData, rollsList, template) {
     // ─── 3-Column Summary Table ───────────────────────────────────────────────
     // Jump to new page if not enough space (need at least 30mm)
     if (curY + 30 > bottomLimit) {
-        doc.addPage();
-        curY = renderPageScaffold();
+        curY = renderPrintedContinuationPage(doc, template, {
+            numberLabel: 'DC No.',
+            numberValue: dcData.dcNumber || '__________',
+            dateLabel: 'Date',
+            dateValue: dcData.createdAt
+        });
     } else {
         curY += 5;
     }
@@ -478,7 +491,8 @@ export const generateDCPdf = (dcData, rollsList, templateConfig = null, options 
             const format = isPng ? 'PNG' : 'JPEG';
             doc.addImage(logoDataUrl, format, 14, 12, 20, 20);
             textStartX = 38;
-        } catch (err) {
+        } catch (error) {
+            console.debug('Skipping invalid quotation logo image:', error);
             textStartX = 14;
         }
     }

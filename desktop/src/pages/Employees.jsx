@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useConfig } from '../context/ConfigContext';
 import { IconUsers, IconTrash, IconEye, IconEyeOff, IconEdit } from '../components/Icons';
 import { useNotification } from '../context/NotificationContext';
@@ -43,11 +43,7 @@ const Employees = () => {
     const [editingPinId, setEditingPinId] = useState(null);
     const [editPinValue, setEditPinValue] = useState('');
 
-    useEffect(() => {
-        fetchEmployees();
-    }, []);
-
-    const fetchEmployees = async () => {
+    const fetchEmployees = useCallback(async () => {
         setLoading(true);
         try {
             const token = localStorage.getItem('ADMIN_TOKEN');
@@ -66,7 +62,11 @@ const Employees = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }, [apiUrl]);
+
+    useEffect(() => {
+        fetchEmployees();
+    }, [fetchEmployees]);
 
     const handleAdd = async (e) => {
         e.preventDefault();

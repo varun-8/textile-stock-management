@@ -295,13 +295,6 @@ const DetailedStats = () => {
         }), { totalCount: 0, totalMetre: 0, totalWeight: 0 });
     }, [data]);
 
-    const formatPieceLengths = (pieces, totalMetre) => {
-        if (Array.isArray(pieces) && pieces.length > 1) {
-            return pieces.map(piece => piece.length).join(' + ');
-        }
-        return totalMetre.toFixed(2);
-    };
-
     const formatPieceDetails = (pieces, totalMetre) => {
         if (Array.isArray(pieces) && pieces.length > 1) {
             return pieces.map((piece, index) => `Piece ${index + 1}: ${piece.length}`).join('\n');

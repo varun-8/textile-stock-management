@@ -132,7 +132,9 @@ const Quotations = () => {
             if (pdfPreviewUrl) {
                 try {
                     URL.revokeObjectURL(pdfPreviewUrl);
-                } catch (_) {}
+                } catch (error) {
+                    console.debug('Quotation preview URL cleanup skipped:', error);
+                }
             }
         };
     }, [pdfPreviewUrl]);
@@ -329,7 +331,9 @@ const Quotations = () => {
                     if (pdfPreviewUrl) {
                         try {
                             URL.revokeObjectURL(pdfPreviewUrl);
-                        } catch (_) {}
+                        } catch (error) {
+                            console.debug('PDF preview URL cleanup skipped:', error);
+                        }
                     }
                     setPdfPreviewTitle(`Quotation ${quotation.quotationNumber} Preview`);
                     setPdfPreviewUrl(pdfUrl);
@@ -387,7 +391,9 @@ const Quotations = () => {
         if (pdfPreviewUrl) {
             try {
                 URL.revokeObjectURL(pdfPreviewUrl);
-            } catch (_) {}
+            } catch (error) {
+                console.debug('Quotation preview URL cleanup skipped:', error);
+            }
         }
 
         setPdfPreviewTitle(`Quotation ${quotation.quotationNumber} Preview`);
@@ -413,7 +419,9 @@ const Quotations = () => {
         if (pdfPreviewUrl) {
             try {
                 URL.revokeObjectURL(pdfPreviewUrl);
-            } catch (_) {}
+            } catch (error) {
+                console.debug('Quotation preview URL cleanup skipped:', error);
+            }
         }
         setPdfPreviewUrl('');
         setPdfPreviewTitle('Quotation PDF Preview');

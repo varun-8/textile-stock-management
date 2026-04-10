@@ -311,6 +311,13 @@ router.post('/transaction', async (req, res) => {
 
         await clothRoll.save();
 
+        if (type === 'OUT' && sessionId) {
+            await Session.updateOne(
+                { _id: sessionId },
+                { $addToSet: { dispatchRolls: clothRoll._id } }
+            );
+        }
+
         if (type === 'IN') {
             console.log('STOCK_IN_PIECES_SAVED', {
                 barcode: clothRoll.barcode,
@@ -478,6 +485,13 @@ router.post('/batch-transaction', async (req, res) => {
                 });
 
                 await clothRoll.save();
+
+                if (sessionId) {
+                    await Session.updateOne(
+                        { _id: sessionId },
+                        { $addToSet: { dispatchRolls: clothRoll._id } }
+                    );
+                }
 
                 // Audit Log
                 await AuditLog.create({

@@ -21,7 +21,7 @@ const sanitizeUrl = (raw) => {
             const url = new URL(value);
             protocol = url.protocol.replace(':', '');
             host = url.host;
-        } catch (e) {
+        } catch {
             host = value.replace(/^https?:\/\//, '');
         }
     }
