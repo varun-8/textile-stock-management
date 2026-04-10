@@ -2,6 +2,19 @@ const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
 const Barcode = require('../models/Barcode');
+const MissedScan = require('../models/MissedScan');
+const AuditLog = require('../models/AuditLog');
+
+function pushLifecycleEvent(doc, action, note, user) {
+    doc.lifecycleStatus = action;
+    doc.lifecycleHistory = Array.isArray(doc.lifecycleHistory) ? doc.lifecycleHistory : [];
+    doc.lifecycleHistory.push({
+        action,
+        note: note || '',
+        by: user || 'Admin',
+        at: new Date()
+    });
+}
 
 // Get next sequence for UI
 router.get('/sequence', async (req, res) => {
@@ -54,8 +67,16 @@ router.post('/generate', async (req, res) => {
                 sequence: seq,
                 full_barcode,
                 status: 'Unused',
+                lifecycleStatus: 'GENERATED',
+                printCount: 0,
                 paperSize: req.body.paperSize || 'a4',
-                batchId
+                batchId,
+                lifecycleHistory: [{
+                    action: 'GENERATED',
+                    note: 'Barcode generated',
+                    by: req.user?.username || 'Admin',
+                    at: new Date()
+                }]
             });
         }
 
@@ -64,7 +85,6 @@ router.post('/generate', async (req, res) => {
             const savedBarcodes = await Barcode.insertMany(newBarcodes);
 
             // Also Populate MissedScan (Pending Scan List)
-            const MissedScan = require('../models/MissedScan');
             const pendingScans = newBarcodes.map(b => ({
                 barcode: b.full_barcode,
                 year: b.year,
@@ -92,7 +112,38 @@ router.post('/generate', async (req, res) => {
                 });
             }
 
-            res.json({ success: true, barcodes: savedBarcodes });
+            const now = new Date();
+            await Barcode.bulkWrite(savedBarcodes.map((doc) => ({
+                updateOne: {
+                    filter: { _id: doc._id },
+                    update: {
+                        $set: {
+                            lifecycleStatus: 'PRINTED',
+                            printCount: 1,
+                            lastPrintedAt: now,
+                            lastPrintedBy: req.user?.username || 'Admin'
+                        },
+                        $push: {
+                            lifecycleHistory: {
+                                action: 'PRINTED',
+                                note: 'Initial barcode print',
+                                by: req.user?.username || 'Admin',
+                                at: now
+                            }
+                        }
+                    }
+                }
+            })));
+
+            await AuditLog.create({
+                action: 'BARCODE_GENERATE',
+                user: req.user?.username || 'Admin',
+                details: { year, size, quantity: qty, batchId },
+                ipAddress: req.ip
+            });
+
+            const printedBarcodes = await Barcode.find({ _id: { $in: savedBarcodes.map((doc) => doc._id) } }).lean();
+            res.json({ success: true, barcodes: printedBarcodes });
         } catch (err) {
             if (err.code === 11000) {
                 // Duplicate detected
@@ -106,6 +157,21 @@ router.post('/generate', async (req, res) => {
 
     } catch (err) {
         console.error("Barcode generation error:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.get('/lookup/:barcode', async (req, res) => {
+    try {
+        const { barcode } = req.params;
+        const barcodeDoc = await Barcode.findOne({ full_barcode: barcode }).lean();
+        if (!barcodeDoc) {
+            return res.status(404).json({ error: 'Barcode not found' });
+        }
+
+        const missingDoc = await MissedScan.findOne({ barcode }).lean();
+        res.json({ barcode: barcodeDoc, missing: missingDoc || null });
+    } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
@@ -139,6 +205,48 @@ router.get('/missing', async (req, res) => {
         }
 
         res.json({ missing, count: missing.length });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.post('/reprint', async (req, res) => {
+    try {
+        const { barcodes, paperSize } = req.body;
+        const list = Array.isArray(barcodes) ? Array.from(new Set(barcodes.map((item) => String(item || '').trim()).filter(Boolean))) : [];
+
+        if (list.length === 0) {
+            return res.status(400).json({ error: 'At least one barcode is required' });
+        }
+
+        const docs = await Barcode.find({ full_barcode: { $in: list } });
+        if (docs.length !== list.length) {
+            const found = new Set(docs.map((doc) => doc.full_barcode));
+            const missing = list.filter((code) => !found.has(code));
+            return res.status(404).json({ error: `Barcode(s) not found: ${missing.join(', ')}` });
+        }
+
+        const now = new Date();
+        for (const doc of docs) {
+            pushLifecycleEvent(doc, 'REPRINTED', 'Barcode label reprinted', req.user?.username || 'Admin');
+            doc.printCount = (Number(doc.printCount) || 0) + 1;
+            doc.lastPrintedAt = now;
+            doc.lastPrintedBy = req.user?.username || 'Admin';
+            doc.paperSize = paperSize || doc.paperSize || 'a4';
+            await doc.save();
+        }
+
+        await AuditLog.create({
+            action: 'BARCODE_GENERATE',
+            user: req.user?.username || 'Admin',
+            details: { count: docs.length, barcodes: list, reprint: true },
+            ipAddress: req.ip
+        });
+
+        res.json({
+            success: true,
+            barcodes: await Barcode.find({ full_barcode: { $in: list } }).lean()
+        });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

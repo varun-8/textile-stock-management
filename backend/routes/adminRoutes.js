@@ -604,6 +604,23 @@ router.put('/inventory/update', async (req, res) => {
 
         await clothRoll.save();
 
+        const barcodeDoc = await Barcode.findOne({ full_barcode: barcode });
+        if (barcodeDoc) {
+            const lifecycleStatus = clothRoll.status === 'IN' ? 'USED_IN_STOCK_IN' : 'USED_IN_DISPATCH';
+            barcodeDoc.status = 'Used';
+            barcodeDoc.lifecycleStatus = lifecycleStatus;
+            barcodeDoc.lastPrintedAt = barcodeDoc.lastPrintedAt || new Date();
+            barcodeDoc.lastPrintedBy = barcodeDoc.lastPrintedBy || 'Admin';
+            barcodeDoc.lifecycleHistory = Array.isArray(barcodeDoc.lifecycleHistory) ? barcodeDoc.lifecycleHistory : [];
+            barcodeDoc.lifecycleHistory.push({
+                action: lifecycleStatus,
+                note: `Inventory updated via desktop (${clothRoll.status})`,
+                by: req.user?.username || 'Admin',
+                at: new Date()
+            });
+            await barcodeDoc.save();
+        }
+
         await AuditLog.create({
             action: 'INVENTORY_EDIT',
             user: 'Admin',
@@ -663,6 +680,24 @@ router.post('/missing/audit-sequences', async (req, res) => {
         });
 
         res.json({ success: true, ...summary });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.get('/missing/list', async (req, res) => {
+    try {
+        const { status = 'PENDING', limit = 100 } = req.query;
+        const query = {};
+        if (status) {
+            query.status = status;
+        }
+
+        const items = await MissedScan.find(query)
+            .sort({ detectedAt: -1, resolvedAt: -1 })
+            .limit(Math.max(1, Math.min(Number(limit) || 100, 500)));
+
+        res.json(items);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -781,6 +816,19 @@ router.delete('/inventory/delete/:barcode', async (req, res) => {
         const validBarcode = await Barcode.findOne({ full_barcode: barcode });
 
         if (validBarcode) {
+            const barcodeDoc = await Barcode.findOne({ full_barcode: validBarcode.full_barcode });
+            if (barcodeDoc) {
+                barcodeDoc.lifecycleStatus = 'MISSING';
+                barcodeDoc.lifecycleHistory = Array.isArray(barcodeDoc.lifecycleHistory) ? barcodeDoc.lifecycleHistory : [];
+                barcodeDoc.lifecycleHistory.push({
+                    action: 'MISSING',
+                    note: 'Stock deleted and moved to missing',
+                    by: req.user?.username || 'Admin',
+                    at: new Date()
+                });
+                await barcodeDoc.save();
+            }
+
             // Re-add to MissedScan as PENDING
             try {
                 await MissedScan.create({

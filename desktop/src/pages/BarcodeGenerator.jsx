@@ -20,8 +20,11 @@ const BarcodeGenerator = () => {
     const [quantity, setQuantity] = useState(44);
     const [seqInfo, setSeqInfo] = useState({ lastSequence: 0, nextSequence: 1 });
     const [missingBarcodes, setMissingBarcodes] = useState([]);
+    const [pendingMissing, setPendingMissing] = useState([]);
     const [loading, setLoading] = useState(false);
     const [seqLoading, setSeqLoading] = useState(false);
+    const [reprintValue, setReprintValue] = useState('');
+    const [reprintLoading, setReprintLoading] = useState(false);
     const [history, setHistory] = useState([]);
     const [historyLoading, setHistoryLoading] = useState(false);
 
@@ -40,6 +43,7 @@ const BarcodeGenerator = () => {
         if (!size) return;
         fetchSequence();
         fetchMissing();
+        fetchPendingMissing();
         fetchHistory();
 
         const socketOptions = import.meta.env.DEV
@@ -54,6 +58,18 @@ const BarcodeGenerator = () => {
         });
         return () => socket.disconnect();
     }, [year, size, apiUrl]);
+
+    async function fetchPendingMissing() {
+        try {
+            const res = await fetch(`${apiUrl}/api/admin/missing/list?status=PENDING&limit=50`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await res.json();
+            setPendingMissing(Array.isArray(data) ? data : []);
+        } catch (err) {
+            console.error(err);
+        }
+    }
 
     const fetchSizes = async () => {
         try {
@@ -153,10 +169,45 @@ const BarcodeGenerator = () => {
             showNotification(`Success: ${data.barcodes.length} Barcodes generated.`, 'success');
             fetchSequence();
             fetchMissing();
+            fetchPendingMissing();
             fetchHistory();
         } catch (err) {
             showNotification(err.message, 'error');
         } finally { setLoading(false); }
+    };
+
+    const handleReprint = async (barcodes, forcedPaperSize = paperSize) => {
+        const list = Array.isArray(barcodes) ? barcodes : [barcodes];
+        const normalized = Array.from(new Set(list.map((item) => String(item || '').trim()).filter(Boolean)));
+        if (normalized.length === 0) {
+            showNotification('Enter at least one barcode to reprint', 'error');
+            return;
+        }
+
+        setReprintLoading(true);
+        try {
+            const res = await fetch(`${apiUrl}/api/barcode/reprint`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ barcodes: normalized, paperSize: forcedPaperSize })
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                throw new Error(data.error || 'Failed to reprint barcode');
+            }
+
+            generatePDF(data.barcodes, year, size, forcedPaperSize);
+            showNotification(`Reprinted ${normalized.length} barcode(s).`, 'success');
+            fetchHistory();
+            fetchPendingMissing();
+        } catch (err) {
+            showNotification(err.message, 'error');
+        } finally {
+            setReprintLoading(false);
+        }
     };
 
     const labelStyle = { display: 'block', fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.5rem' };
@@ -317,10 +368,36 @@ const BarcodeGenerator = () => {
                                     </>
                                 ) : (
                                     <>
-                                        <span>GENERATE PRODUCTION PDF</span>
-                                    </>
-                                )}
+                                    <span>GENERATE PRODUCTION PDF</span>
+                                </>
+                            )}
                             </button>
+
+                            <div style={{ marginTop: '1rem', padding: '1rem', borderRadius: '12px', border: '1px solid var(--border-color)', background: 'var(--bg-tertiary)' }}>
+                                <div style={{ fontSize: '0.75rem', fontWeight: '800', letterSpacing: '0.06em', color: 'var(--text-secondary)', marginBottom: '0.5rem', textTransform: 'uppercase' }}>
+                                    Reprint Barcode
+                                </div>
+                                <div style={{ display: 'flex', gap: '0.75rem' }}>
+                                    <input
+                                        type="text"
+                                        value={reprintValue}
+                                        onChange={(e) => setReprintValue(e.target.value)}
+                                        placeholder="Enter full barcode e.g. 26-42-0001"
+                                        style={{ ...inputStyle, flex: 1 }}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => handleReprint(reprintValue)}
+                                        disabled={reprintLoading || !reprintValue.trim()}
+                                        style={{ background: 'var(--accent-color)', color: 'white', border: 'none', borderRadius: '8px', padding: '0 1rem', fontWeight: '800', cursor: 'pointer' }}
+                                    >
+                                        {reprintLoading ? '...' : 'REPRINT'}
+                                    </button>
+                                </div>
+                                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
+                                    Reprint updates barcode lifecycle history but does not change stock state.
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -335,15 +412,52 @@ const BarcodeGenerator = () => {
                                 The system detected missing sequences in the current parameter set. These should be regenerated to maintain continuity.
                             </p>
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-                                {missingBarcodes.map(b => (
-                                    <span key={b.full_barcode} style={{
-                                        background: 'var(--bg-primary)', border: '1px solid var(--border-color)',
-                                        padding: '4px 10px', borderRadius: '6px', fontSize: '0.8rem',
-                                        fontFamily: 'monospace', fontWeight: '700', color: 'var(--text-primary)'
-                                    }}>
+                                {missingBarcodes.map((b) => (
+                                    <span
+                                        key={b.full_barcode}
+                                        style={{
+                                            background: 'var(--bg-primary)',
+                                            border: '1px solid var(--border-color)',
+                                            padding: '4px 10px',
+                                            borderRadius: '6px',
+                                            fontSize: '0.8rem',
+                                            fontFamily: 'monospace',
+                                            fontWeight: '700',
+                                            color: 'var(--text-primary)'
+                                        }}
+                                    >
                                         {b.full_barcode}
                                     </span>
                                 ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {pendingMissing.length > 0 && (
+                        <div style={{ marginTop: '1.5rem', padding: '1.2rem 1.5rem', borderRadius: '12px', border: '1px solid rgba(245, 158, 11, 0.25)', background: 'rgba(245, 158, 11, 0.08)' }}>
+                            <div style={{ fontSize: '0.75rem', fontWeight: '800', letterSpacing: '0.06em', color: 'var(--warning-color)', marginBottom: '0.5rem', textTransform: 'uppercase' }}>
+                                Pending Missing Queue
+                            </div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                                {pendingMissing.slice(0, 12).map((item) => (
+                                    <span
+                                        key={item.barcode}
+                                        style={{
+                                            padding: '6px 10px',
+                                            borderRadius: '999px',
+                                            background: 'var(--bg-primary)',
+                                            border: '1px solid var(--border-color)',
+                                            fontFamily: 'monospace',
+                                            fontSize: '0.78rem',
+                                            fontWeight: '700'
+                                        }}
+                                    >
+                                        {item.barcode}
+                                    </span>
+                                ))}
+                            </div>
+                            <div style={{ marginTop: '0.75rem', fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                                These are the gaps the system detected. Resolve them later from the Missing Logs screen.
                             </div>
                         </div>
                     )}
@@ -388,10 +502,11 @@ const BarcodeGenerator = () => {
                                             <td style={{ padding: '1rem 1.5rem', color: 'var(--text-secondary)' }}>{h.count}</td>
                                             <td style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>
                                                 <button
-                                                    onClick={() => generatePDF(h.barcodes, h.year, h.size, h.paperSize || 'a4')}
+                                                    onClick={() => handleReprint(h.barcodes.map((item) => item.full_barcode), h.paperSize || 'a4')}
+                                                    disabled={reprintLoading}
                                                     style={{ background: 'rgba(99, 102, 241, 0.1)', color: 'var(--accent-color)', border: 'none', padding: '0.5rem 1rem', borderRadius: '8px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' }}
                                                 >
-                                                    📥 Re-download PDF
+                                                    {reprintLoading ? 'Working...' : 'Reprint & PDF'}
                                                 </button>
                                             </td>
                                         </tr>

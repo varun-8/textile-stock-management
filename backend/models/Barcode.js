@@ -27,6 +27,41 @@ const barcodeSchema = new mongoose.Schema({
         enum: ['Unused', 'Used'],
         default: 'Unused'
     },
+    lifecycleStatus: {
+        type: String,
+        enum: ['GENERATED', 'PRINTED', 'REPRINTED', 'USED_IN_STOCK_IN', 'USED_IN_DISPATCH', 'MISSING', 'RESOLVED', 'IGNORED'],
+        default: 'GENERATED'
+    },
+    printCount: {
+        type: Number,
+        default: 0
+    },
+    lastPrintedAt: {
+        type: Date,
+        default: null
+    },
+    lastPrintedBy: {
+        type: String,
+        default: ''
+    },
+    lifecycleHistory: [{
+        action: {
+            type: String,
+            enum: ['GENERATED', 'PRINTED', 'REPRINTED', 'USED_IN_STOCK_IN', 'USED_IN_DISPATCH', 'MISSING', 'RESOLVED', 'IGNORED']
+        },
+        note: {
+            type: String,
+            default: ''
+        },
+        by: {
+            type: String,
+            default: ''
+        },
+        at: {
+            type: Date,
+            default: Date.now
+        }
+    }],
     paperSize: {
         type: String,
         enum: ['a4', 'a3'],

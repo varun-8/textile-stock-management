@@ -311,6 +311,22 @@ router.post('/transaction', async (req, res) => {
 
         await clothRoll.save();
 
+        if (type === 'IN' && barcode) {
+            const barcodeDoc = await Barcode.findOne({ full_barcode: barcode });
+            if (barcodeDoc) {
+                barcodeDoc.status = 'Used';
+                barcodeDoc.lifecycleStatus = 'USED_IN_STOCK_IN';
+                barcodeDoc.lifecycleHistory = Array.isArray(barcodeDoc.lifecycleHistory) ? barcodeDoc.lifecycleHistory : [];
+                barcodeDoc.lifecycleHistory.push({
+                    action: 'USED_IN_STOCK_IN',
+                    note: 'Roll entered stock',
+                    by: employeeName || 'Mobile Operator',
+                    at: new Date()
+                });
+                await barcodeDoc.save();
+            }
+        }
+
         if (type === 'OUT' && sessionId) {
             await Session.updateOne(
                 { _id: sessionId },

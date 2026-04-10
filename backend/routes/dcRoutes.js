@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const DeliveryChallan = require('../models/DeliveryChallan');
 const ClothRoll = require('../models/ClothRoll');
+const Barcode = require('../models/Barcode');
 const AuditLog = require('../models/AuditLog');
 const Session = require('../models/Session');
 const { detectMissingSequences } = require('../utils/missingSequenceService');
@@ -194,6 +195,26 @@ router.post('/', async (req, res) => {
         });
 
         await ClothRoll.bulkWrite(bulkOps);
+
+        await Barcode.updateMany(
+            { full_barcode: { $in: rollsToDispatch.map((roll) => roll.barcode) } },
+            {
+                $set: {
+                    status: 'Used',
+                    lifecycleStatus: 'USED_IN_DISPATCH',
+                    lastPrintedAt: new Date(),
+                    lastPrintedBy: req.user ? req.user.username : 'Admin DC Engine'
+                },
+                $push: {
+                    lifecycleHistory: {
+                        action: 'USED_IN_DISPATCH',
+                        note: `Dispatched via ${dcNumber}`,
+                        by: req.user ? req.user.username : 'Admin DC Engine',
+                        at: new Date()
+                    }
+                }
+            }
+        );
 
         // Sequence missing audit after DC generation.
         await detectMissingSequences({ triggeredBy: 'dc-generated' });

@@ -8,12 +8,17 @@ const auditLogSchema = new mongoose.Schema({
             'LOGIN',
             'LOGOUT',
             'BARCODE_GENERATE',
+            'BARCODE_GENERATED',
+            'BARCODE_REPRINTED',
             'STOCK_IN',
             'STOCK_OUT',
             'BACKUP',
             'RESTORE',
             'DELETE',
             'MARK_DAMAGED',
+            'MISSING_CREATE_ENTRY',
+            'MISSING_MARK_LOST',
+            'MISSING_IGNORE',
             'INVENTORY_EDIT',
             'ERROR'
         ]
