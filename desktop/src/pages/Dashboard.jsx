@@ -54,12 +54,12 @@ const Dashboard = () => {
     const navigate = useNavigate();
     const { apiUrl } = useConfig();
 
+    const [missingCount, setMissingCount] = useState(0);
     const [stats, setStats] = useState([
         { label: 'Total Inventory', value: '0', change: 'System Total', key: 'totalRolls', color: 'var(--text-secondary)', icon: '📦' },
         { label: 'In Stock', value: '0', change: 'Available (IN)', key: 'stockIn', color: 'var(--success-color)', icon: '🏭' },
         { label: 'Ready to Dispatch', value: '0', change: 'Reserved (RESERVED)', key: 'readyToDispatch', color: 'var(--accent-color)', icon: '📋' },
-        { label: 'Out Stock', value: '0', change: 'Dispatched (OUT)', key: 'stockOut', color: 'var(--accent-color)', icon: '🚛' },
-        { label: 'Missing Logs', value: '0', change: 'Action Required', key: 'missingCount', alert: true, color: 'var(--error-color)', icon: '⚠️' }
+        { label: 'Out Stock', value: '0', change: 'Dispatched (OUT)', key: 'stockOut', color: 'var(--accent-color)', icon: '🚛' }
     ]);
 
     const [recentLogs, setRecentLogs] = useState([]);
@@ -97,12 +97,12 @@ const Dashboard = () => {
             }
             const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
             const data = await res.json();
+            setMissingCount(data.missingCount || 0);
             setStats([
                 { label: 'Total Inventory', value: data.totalRolls, change: isTodayOnly ? "Today's Physical Stock" : 'IN + RESERVED in Godown', key: 'totalRolls', color: 'var(--text-secondary)', icon: '📦' },
                 { label: 'In Stock', value: data.inStock ?? data.stockIn, change: isTodayOnly ? "Today's Available" : 'Ready for use (IN)', key: 'stockIn', color: 'var(--success-color)', icon: '🏭' },
                 { label: 'Ready to Dispatch', value: data.readyToDispatch ?? 0, change: isTodayOnly ? "Today's Reserved" : 'Picked but not dispatched', key: 'readyToDispatch', color: 'var(--accent-color)', icon: '📋' },
-                { label: 'Out Stock', value: data.stockOut ?? 0, change: isTodayOnly ? "Today's Dispatch" : 'Already dispatched (OUT)', key: 'stockOut', color: 'var(--accent-color)', icon: '🚛' },
-                { label: 'Missing Logs', value: data.missingCount, change: isTodayOnly ? "Today's Gaps" : 'Need Resolution', key: 'missingCount', alert: data.missingCount > 0, color: 'var(--error-color)', icon: '⚠️' }
+                { label: 'Out Stock', value: data.stockOut ?? 0, change: isTodayOnly ? "Today's Dispatch" : 'Already dispatched (OUT)', key: 'stockOut', color: 'var(--accent-color)', icon: '🚛' }
             ]);
         } catch (err) { console.error(err); }
     };
@@ -400,77 +400,34 @@ const Dashboard = () => {
                         </h1>
                         <p style={{ fontSize: '0.75rem', fontWeight: '600', opacity: 0.6 }}>SYSTEM OPERATIONAL • {new Date().toDateString().toUpperCase()}</p>
                     </div>
-                    <div style={{ display: 'flex', gap: '0.5rem' }}>
-                        <button
-                            onClick={() => setIsTodayOnly(!isTodayOnly)}
-                            style={{
-                                background: 'transparent',
-                                color: isTodayOnly ? 'var(--accent-color)' : 'var(--text-secondary)',
-                                border: isTodayOnly ? '2px solid var(--accent-color)' : '1px solid var(--border-color)',
-                                padding: '0.4rem 1.2rem',
-                                borderRadius: '6px',
-                                fontSize: '0.75rem',
-                                fontFamily: '"Segoe UI", sans-serif',
-                                fontWeight: '600',
-                                cursor: 'pointer',
-                                transition: 'all 0.2s',
-                                letterSpacing: '0.02em',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '0.5rem'
-                            }}
-                        >
-                            <span style={{ fontSize: '1rem' }}>{isTodayOnly ? '●' : '○'}</span>
-                            {isTodayOnly ? 'Today\'s View' : 'All History'}
-                        </button>
-                        <button
-                            onClick={downloadCSV}
-                            style={{
-                                background: 'transparent',
-                                color: 'var(--text-primary)',
-                                border: '1px solid var(--border-color)',
-                                padding: '0.4rem 1.2rem',
-                                borderRadius: '6px',
-                                fontSize: '0.75rem',
-                                fontFamily: '"Segoe UI", sans-serif',
-                                fontWeight: '600',
-                                cursor: 'pointer',
-                                transition: 'all 0.2s',
-                                letterSpacing: '0.02em',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '0.5rem'
-                            }}
-                        >
-                            <span style={{ opacity: 0.7 }}>📥</span> Export Log
-                        </button>
 
-                        <div style={{ width: '1px', height: '20px', background: 'var(--border-color)', margin: '0 0.5rem' }}></div>
-
-                        <button
-                            onClick={() => navigate('/sessions')}
-                            style={{
-                                padding: '0.4rem 1.2rem',
-                                background: activeSessionCount > 0 ? 'var(--accent-bg)' : 'var(--bg-primary)',
-                                border: activeSessionCount > 0 ? '1px solid var(--accent-color)' : '1px solid var(--border-color)',
-                                borderRadius: '6px',
-                                fontSize: '0.75rem',
-                                fontWeight: '700',
-                                color: activeSessionCount > 0 ? 'var(--accent-color)' : 'var(--text-secondary)',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '0.5rem',
-                                cursor: 'pointer',
-                                transition: 'all 0.2s'
-                            }}
-                        >
-                            <IconSignal />
-                            {activeSessionCount > 0 ? `${activeSessionCount} ACTIVE BATCHES` : 'NO ACTIVE BATCHES'}
-                        </button>
-                    </div>
                 </div>
 
-                <div className="app-region-no-drag" style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                <div className="app-region-no-drag" style={{ display: 'flex', gap: '1.25rem', alignItems: 'center' }}>
+                    {missingCount > 0 && (
+                        <div 
+                            onClick={() => handleCardClick('missingCount')}
+                            style={{ 
+                                display: 'flex', 
+                                alignItems: 'center', 
+                                gap: '0.6rem',
+                                padding: '0.5rem 1rem',
+                                background: 'rgba(239, 68, 68, 0.12)',
+                                border: '1px solid rgba(239, 68, 68, 0.25)',
+                                borderRadius: '10px',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s',
+                                animation: 'pulse-soft 2s infinite ease-in-out'
+                            }}
+                            title="Missing Sequence Logs - Action Required"
+                        >
+                            <span style={{ fontSize: '1.1rem' }}>⚠️</span>
+                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                <span style={{ fontSize: '0.9rem', fontWeight: '900', color: 'var(--error-color)', lineHeight: 1.1 }}>{missingCount}</span>
+                                <span style={{ fontSize: '0.6rem', fontWeight: '800', color: 'var(--error-color)', opacity: 0.8, textTransform: 'uppercase', letterSpacing: '0.02em' }}>Missing</span>
+                            </div>
+                        </div>
+                    )}
                     <div style={{ position: 'relative' }}>
                         <input
                             type="text"

@@ -3,23 +3,46 @@ import React, { createContext, useState, useContext, useEffect } from 'react';
 
 const ConfigContext = createContext();
 
-const defaultProtocol = 'https';
-const defaultApiUrl = `${defaultProtocol}://localhost:5000`;
+const defaultProtocol = 'http';
+const defaultApiUrl = `${defaultProtocol}://localhost:5001`;
 
 // Normalize API URL while keeping production secure and local development simple.
 const sanitizeUrl = (raw) => {
     if (!raw) return defaultApiUrl;
 
-    const value = raw.trim();
+    let value = raw.trim();
     const hasProtocol = /^https?:\/\//i.test(value);
-    const parsed = hasProtocol ? new URL(value) : null;
+    
+    let protocol = defaultProtocol;
+    let host = value;
 
-    let protocol = hasProtocol ? parsed.protocol.replace(':', '') : defaultProtocol;
-    let cleaned = hasProtocol ? parsed.host : value.replace(/^https?:\/\//, '');
-    cleaned = cleaned.replace(/\/{2,}/g, '/');
-    if (!cleaned.includes(':')) cleaned = `${cleaned}:5000`;
+    if (hasProtocol) {
+        try {
+            const url = new URL(value);
+            protocol = url.protocol.replace(':', '');
+            host = url.host;
+        } catch (e) {
+            host = value.replace(/^https?:\/\//, '');
+        }
+    }
 
-    return `${protocol}://${cleaned}`;
+    // Ensure double slashes are removed from the host part
+    host = host.replace(/\/{2,}/g, '/');
+
+    // Ensure PORT if missing (default to 5001 for HTTP)
+    if (!host.includes(':')) {
+        host = `${host}:5001`;
+    }
+
+    // CRITICAL: Force consistency between protocol and port for local architecture.
+    if (host.includes(':5000') && protocol === 'http') {
+        protocol = 'https';
+    } else if (host.includes(':5001') && protocol === 'https') {
+        protocol = 'http';
+    }
+
+    const result = `${protocol}://${host}`;
+    return result;
 };
 
 export const ConfigProvider = ({ children }) => {
@@ -33,28 +56,9 @@ export const ConfigProvider = ({ children }) => {
     });
 
     const updateApiUrl = (newUrl) => {
-        const value = newUrl.trim();
-        if (!value) {
-            setApiUrl(defaultApiUrl);
-            localStorage.setItem('API_URL', defaultApiUrl);
-            return;
-        }
-        const hasProtocol = /^https?:\/\//i.test(value);
-        const parsed = hasProtocol ? new URL(value) : null;
-
-        let protocol = hasProtocol ? parsed.protocol.replace(':', '') : defaultProtocol;
-        let cleaned = hasProtocol ? parsed.host : value.replace(/^https?:\/\//, '');
-
-        // Remove double slash if user typed it by accident (e.g. stock-system.local//)
-        cleaned = cleaned.replace(/\/{2,}/g, '/');
-
-        // Ensure PORT if missing (assume 5000)
-        if (!cleaned.includes(':')) cleaned = `${cleaned}:5000`;
-
-        const formatted = `${protocol}://${cleaned}`;
-
-        setApiUrl(formatted);
-        localStorage.setItem('API_URL', formatted);
+        const safe = sanitizeUrl(newUrl);
+        setApiUrl(safe);
+        localStorage.setItem('API_URL', safe);
     };
 
     // Theme

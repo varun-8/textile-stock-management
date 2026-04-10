@@ -303,6 +303,22 @@ const WorkScreen = () => {
             setScanData({ ...json, barcode: formattedBarcode });
             setSessionMode(activeSessionMode);
 
+            // --- DUPLICATE DETECTION ---
+            const isDuplicate = 
+                (activeSessionMode === 'IN' && json.data?.status === 'IN') ||
+                (activeSessionMode === 'OUT' && (json.data?.status === 'OUT' || json.data?.status === 'RESERVED'));
+
+            if (isDuplicate) {
+                haptic.error();
+                const statusLabel = json.data?.status === 'RESERVED' ? 'ALREADY IN BATCH' : 
+                                  json.data?.status === 'IN' ? 'ALREADY IN STOCK' : 'ALREADY DISPATCHED';
+                showAlert(`🛑 ${statusLabel}\n\nThis barcode has already been processed.`, 'error');
+                
+                // Show info but block editing
+                setMode('DUPLICATE_ERROR');
+                return;
+            }
+
             if (json.status === 'EXISTING' && json.data) {
                 const existingPieces = Array.isArray(json.data.pieces) && json.data.pieces.length > 0
                     ? json.data.pieces.map(piece => String(piece.length ?? ''))
@@ -318,7 +334,7 @@ const WorkScreen = () => {
                 setForm(createDefaultForm());
             }
 
-            if (activeSessionMode === 'IN' && json.data?.status !== 'IN') {
+            if (activeSessionMode === 'IN') {
                 setTimeout(() => setMode('IN_FORM'), 300);
             } else {
                 setTimeout(() => setMode('ACTION'), 300);
@@ -810,7 +826,68 @@ const WorkScreen = () => {
                         </div>
 
                         <div style={{ flex: 1, padding: '0 20px', overflowY: 'auto' }}>
-                            {mode === 'ACTION' ? (
+                            {mode === 'DUPLICATE_ERROR' ? (
+                                <div style={{ display: 'grid', gap: '20px', textAlign: 'center', animation: 'fadeIn 0.4s ease' }}>
+                                    <div style={{
+                                        background: 'rgba(239, 68, 68, 0.1)',
+                                        border: '1px solid rgba(239, 68, 68, 0.2)',
+                                        borderRadius: '24px',
+                                        padding: '24px',
+                                        marginTop: '10px'
+                                    }}>
+                                        <div style={{ fontSize: '48px', marginBottom: '12px' }}>🛑</div>
+                                        <h2 style={{ color: 'white', fontSize: '22px', margin: '0 0 8px 0', fontWeight: '800' }}>Already Scanned</h2>
+                                        <p style={{ color: THEME.textMuted, fontSize: '14px', margin: 0, lineHeight: '1.5' }}>
+                                            This barcode has already been processed in the system and cannot be modified.
+                                        </p>
+                                    </div>
+
+                                    {/* Item Info (Read Only) */}
+                                    {scanData?.data && (
+                                        <div style={{
+                                            background: THEME.secondary,
+                                            borderRadius: '20px',
+                                            padding: '20px',
+                                            border: `1px solid ${THEME.border}`,
+                                            display: 'grid',
+                                            gridTemplateColumns: '1fr 1fr',
+                                            gap: '12px',
+                                            textAlign: 'left'
+                                        }}>
+                                            <div>
+                                                <div style={{ fontSize: '10px', color: THEME.textMuted, fontWeight: '700', textTransform: 'uppercase' }}>Metre</div>
+                                                <div style={{ color: 'white', fontSize: '18px', fontWeight: '800' }}>{scanData.data.metre} m</div>
+                                            </div>
+                                            <div style={{ textAlign: 'right' }}>
+                                                <div style={{ fontSize: '10px', color: THEME.textMuted, fontWeight: '700', textTransform: 'uppercase' }}>Weight</div>
+                                                <div style={{ color: 'white', fontSize: '18px', fontWeight: '800' }}>{scanData.data.weight} kg</div>
+                                            </div>
+                                            <div style={{ gridColumn: 'span 2', paddingTop: '10px', borderTop: `1px solid ${THEME.border}` }}>
+                                                <div style={{ fontSize: '10px', color: THEME.textMuted, fontWeight: '700', textTransform: 'uppercase' }}>Current Status</div>
+                                                <div style={{ 
+                                                    color: scanData.data.status === 'IN' ? THEME.success : THEME.error, 
+                                                    fontSize: '16px', 
+                                                    fontWeight: '800',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '6px',
+                                                    marginTop: '4px'
+                                                }}>
+                                                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'currentColor' }} />
+                                                    {scanData.data.status}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <ActionButton
+                                        onClick={reset}
+                                        label="BACK TO SCANNER"
+                                        icon="🔄"
+                                        color={THEME.accent}
+                                    />
+                                </div>
+                            ) : mode === 'ACTION' ? (
                                 <div style={{ display: 'grid', gap: '16px' }}>
                                     {scanData.gapDetected && (
                                         <div style={{ padding: '16px', background: 'rgba(245, 158, 11, 0.2)', color: THEME.warning, borderRadius: '16px', border: '1px solid rgba(245, 158, 11, 0.3)', fontSize: '13px', fontWeight: '600' }}>
@@ -855,9 +932,8 @@ const WorkScreen = () => {
                                     {sessionMode === 'IN' && (
                                         <ActionButton
                                             onClick={() => setMode('IN_FORM')}
-                                            disabled={scanData?.data?.status === 'IN'}
-                                            label={scanData?.data?.status === 'IN' ? "ALREADY IN STOCK" : scanData?.status === 'NEW' ? "STOCK IN" : "STOCK IN"}
-                                            sub={scanData?.data?.status === 'IN' ? "(Entry Exists)" : scanData?.status === 'NEW' ? "Enter details first" : null}
+                                            label="STOCK IN"
+                                            sub={scanData?.status === 'NEW' ? "Enter details first" : "Complete entry"}
                                             icon="📥"
                                             color={THEME.success}
                                         />
@@ -866,9 +942,9 @@ const WorkScreen = () => {
                                     {sessionMode === 'OUT' && (
                                         <ActionButton
                                             onClick={() => handleQuickStockOut(scanData.barcode)}
-                                            disabled={scanData?.data?.status === 'OUT' || !scanData?.data}
-                                            label={scanData?.data?.status === 'OUT' ? "ALREADY OUT OF STOCK" : !scanData?.data ? "NOT IN STOCK" : "STOCK OUT"}
-                                            sub={scanData?.data?.status === 'OUT' ? "(Already Checked Out)" : !scanData?.data ? "(Cannot stock out)" : null}
+                                            disabled={!scanData?.data}
+                                            label={!scanData?.data ? "NOT IN STOCK" : "STOCK OUT"}
+                                            sub={!scanData?.data ? "(Cannot stock out)" : "Confirm dispatch"}
                                             icon="📤"
                                             color={THEME.error}
                                         />
