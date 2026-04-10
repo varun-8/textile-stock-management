@@ -1,6 +1,6 @@
 {
-    "name": "Prodexa Inventory Scanner",
-    "short_name": "Prodexa",
+    "name": "Loom Track Inventory Scanner",
+    "short_name": "Loom Track",
     "id": "/pwa/",
     "description": "Mobile inventory management scanner - Works offline",
     "start_url": "/pwa/index.html",

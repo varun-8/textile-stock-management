@@ -9,7 +9,7 @@ const sourceCandidates = [
   path.resolve(projectRoot, 'android', 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk')
 ];
 const targetDir = path.resolve(projectRoot, '..', 'backend', 'public', 'pwa');
-const targetApk = path.resolve(targetDir, 'ProdexaMobile.apk');
+const targetApk = path.resolve(targetDir, 'LoomTrackMobile.apk');
 
 const sourceApk = sourceCandidates.find((candidate) => fs.existsSync(candidate));
 

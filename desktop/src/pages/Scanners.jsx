@@ -11,6 +11,7 @@ const Scanners = () => {
     const [setupToken, setSetupToken] = useState('');
     const [qrTarget, setQrTarget] = useState(null); // null, 'NEW', or scanner object
     const [serverIp, setServerIp] = useState('');
+    const [serverPort, setServerPort] = useState(5001);
     const [loading, setLoading] = useState(false);
     const [deleteConfirm, setDeleteConfirm] = useState(null);
     const [showInstallQr, setShowInstallQr] = useState(false);
@@ -27,6 +28,7 @@ const Scanners = () => {
         try {
             const res = await axios.get(`${apiUrl}/api/admin/server-ip`, { headers: authHeaders() });
             if (res.data.ip) setServerIp(res.data.ip);
+            if (res.data.httpsPort) setServerPort(Number(res.data.httpsPort) || 5001);
         } catch (err) {
             console.error("Failed to fetch Server IP", err);
             showNotification("Could not resolve Server LAN IP", 'error');
@@ -112,24 +114,22 @@ const Scanners = () => {
     const getPairingUrl = () => {
         if (!serverIp) return '';
         if (qrTarget === 'NEW' && !setupToken) return '';
-        // Use HTTPS port 5000 - avoids Chrome HTTPS-First upgrade issues on port 5001
-        const httpsUrl = `https://${serverIp}:5000`;
+        const lanUrl = `https://${serverIp}:${serverPort}`;
 
         const tokenToUse = (qrTarget && typeof qrTarget === 'object') ? qrTarget.fingerprint : setupToken;
-        // Pass server as HTTPS too so the PWA can call the API without mixed-content errors
-        const urlParams = `server=${encodeURIComponent(httpsUrl)}`;
+        const urlParams = `server=${encodeURIComponent(lanUrl)}`;
 
-        return `${httpsUrl}/pair?token=${tokenToUse}&${urlParams}&action=PAIR`;
+        return `${lanUrl}/pair?token=${tokenToUse}&${urlParams}&action=PAIR`;
     };
 
     const getInstallUrl = () => {
         if (!serverIp) return '';
-        return `https://${serverIp}:5000/pwa/ProdexaMobile.apk`;
+        return `https://${serverIp}:${serverPort}/pwa/LoomTrackMobile.apk`;
     };
 
     const getPwaUrl = () => {
         if (!serverIp) return '';
-        return `https://${serverIp}:5000/pwa/index.html`;
+        return `https://${serverIp}:${serverPort}/pwa/index.html`;
     };
 
     const verifyInstallApk = async () => {
@@ -516,7 +516,7 @@ const Scanners = () => {
 
                             <div style={{ marginTop: '1.25rem', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
                                 {installApkStatus === 'ready'
-                                    ? 'Publish APK to server path: /pwa/ProdexaMobile.apk'
+                                    ? 'Publish APK to server path: /pwa/LoomTrackMobile.apk'
                                     : 'PWA fallback: /pwa/index.html'}
                             </div>
 

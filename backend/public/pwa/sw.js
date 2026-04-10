@@ -1,4 +1,4 @@
-const CACHE_NAME = 'sl-scanner-v4';
+const CACHE_NAME = 'sl-scanner-v5';
 const ASSETS_TO_CACHE = [
     '/pwa/',
     '/pwa/index.html',

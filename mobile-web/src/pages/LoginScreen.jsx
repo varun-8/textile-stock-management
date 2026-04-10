@@ -53,7 +53,7 @@ const LoginScreen = () => {
                         />
                     </div>
 
-                    <h1 className="text-3xl font-bold text-textPrimary mb-2">PRODEXA</h1>
+                    <h1 className="text-3xl font-bold text-textPrimary mb-2">LOOM TRACK</h1>
                     <p className="text-textSecondary text-sm font-medium mb-8">Inventory for Sri Lakshmi Textiles</p>
 
                     {/* Device Info Card - Desktop Glass Style */}

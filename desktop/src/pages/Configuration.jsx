@@ -30,7 +30,7 @@ const SizeTable = memo(({ sizes, onDelete }) => {
                     {sizes.length === 0 ? (
                         <tr>
                             <td colSpan="5" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>
-                                <div style={{ fontSize: '2rem', marginBottom: '1rem', opacity: 0.5 }}>📏</div>
+                                <div style={{ fontSize: '0.9rem', marginBottom: '1rem', opacity: 0.7, fontWeight: '700' }}>SIZE</div>
                                 No size codes configured. Add a size on the right to get started.
                             </td>
                         </tr>
@@ -292,7 +292,7 @@ const Configuration = () => {
 
                             {error && (
                                 <div style={{ marginTop: '1.5rem', padding: '1rem', background: 'var(--error-bg)', color: 'var(--error-color)', borderRadius: '8px', fontSize: '0.85rem', fontWeight: '600' }}>
-                                    ⚠️ {error}
+                                    Error: {error}
                                 </div>
                             )}
                         </div>

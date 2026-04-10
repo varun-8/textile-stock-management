@@ -31,6 +31,55 @@ const SetupScreen = () => {
     const [scannerError, setScannerError] = useState('');
     const html5QrCodeRef = useRef(null);
 
+    const buildErrorMeta = (message, context = 'pairing') => {
+        const raw = String(message || '').trim();
+        const lower = raw.toLowerCase();
+
+        if (context === 'scanner') {
+            if (lower.includes('invalid pairing qr')) {
+                return {
+                    title: 'Invalid QR Code',
+                    message: 'This QR code is not a valid pairing code for this scanner.',
+                    hint: 'Open desktop Scanner Fleet and scan the Pair Device QR.'
+                };
+            }
+            if (lower.includes('install qr')) {
+                return {
+                    title: 'Wrong QR Type',
+                    message: 'You scanned the install QR instead of the pairing QR.',
+                    hint: 'Use the Pair Device QR from desktop to connect this scanner.'
+                };
+            }
+            return {
+                title: 'Scanner Error',
+                message: raw || 'Unable to scan QR code.',
+                hint: 'Hold device steady and ensure the full QR is visible in frame.'
+            };
+        }
+
+        if (lower.includes('network')) {
+            return {
+                title: 'Connection Error',
+                message: raw,
+                hint: 'Verify backend is reachable and scan a fresh pairing QR code.'
+            };
+        }
+
+        if (lower.includes('expired') || lower.includes('invalid')) {
+            return {
+                title: 'Pairing Link Invalid',
+                message: raw,
+                hint: 'Generate a new Pair Device QR from desktop and try again.'
+            };
+        }
+
+        return {
+            title: 'Pairing Failed',
+            message: raw || 'Unable to pair this device.',
+            hint: 'Retry with a fresh QR from desktop or use manual IP setup.'
+        };
+    };
+
     // 1. Auto-Pairing from URL (QR Scan)
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
@@ -40,11 +89,11 @@ const SetupScreen = () => {
         if (serverParam && tokenParam) {
             console.log('🔗 Deep Link Detected - Auto-triggering pairing');
             
-            // Normalize for native app: force http://ip:5001 to bypass SSL
+            // Normalize for native app: force http://ip:5000 to bypass SSL
             if (Capacitor.isNativePlatform() && serverParam.includes('://')) {
                 const ip = serverParam.replace(/https?:\/\//, '').split(':')[0];
                 if (ip) {
-                    serverParam = `http://${ip}:5001`;
+                    serverParam = `http://${ip}:5000`;
                     console.log('🔄 Normalized Deep Link Server URL for native:', serverParam);
                 }
             }
@@ -92,30 +141,14 @@ const SetupScreen = () => {
         const finalName = nameOverride || 'AUTO_ASSIGN';
 
         try {
-            // Clean the input IP/URL to get just the hostname/IP
-            const cleanHost = String(ip || '').replace(/https?:\/\//i, '').split(':')[0].split('/')[0];
+            // Clean the input IP/URL to get just the hostname/IP and Port
+            const matches = String(ip || '').match(/^https?:\/\/([^/:]+)(?::(\d+))?/i);
+            const cleanHost = matches ? matches[1] : String(ip || '').split(':')[0].split('/')[0];
+            const cleanPort = matches && matches[2] ? matches[2] : '5000';
             
-            // Attempt 1: HTTP (Port 5001)
-            const httpUrl = `http://${cleanHost}:5001`;
-            try {
-                await setupDevice(httpUrl, token, finalName);
-                finishPairing();
-                return;
-            } catch (err) {
-                // Silently try next port
-            }
-
-            // Attempt 2: HTTPS (Port 5000)
-            const httpsUrl = `https://${cleanHost}:5000`;
-            try {
-                await setupDevice(httpsUrl, token, finalName);
-                finishPairing();
-                return;
-            } catch (err) {
-                // Fail
-            }
-
-            handlePairError("Unable to reach server. Please check your network.");
+            const httpUrl = `http://${cleanHost}:${cleanPort}`;
+            await setupDevice(httpUrl, token, finalName);
+            finishPairing();
         } catch (err) {
             handlePairError(err.message || 'Connection Failed');
         }
@@ -141,7 +174,7 @@ const SetupScreen = () => {
         const normalized = text.startsWith('?') ? text.slice(1) : text;
         const queryLike = normalized.includes('token=') || normalized.includes('server=');
 
-        if (/ProdexaMobile(?:-debug)?\.apk/i.test(text) || /\/pwa\/.*\.apk/i.test(text)) {
+        if (/LoomTrackMobile(?:-debug)?\.apk/i.test(text) || /\/pwa\/.*\.apk/i.test(text)) {
             return { kind: 'install' };
         }
 
@@ -157,9 +190,9 @@ const SetupScreen = () => {
             if (serverFromParam) {
                 ip = serverFromParam.replace(/https?:\/\//, '').split(':')[0];
                 
-                // If native, normalization: force http://ip:5001
+                // If native, normalization: force http://ip:5000
                 if (Capacitor.isNativePlatform() && ip) {
-                    finalServerUrl = `http://${ip}:5001`;
+                    finalServerUrl = `http://${ip}:5000`;
                 }
             }
 
@@ -278,8 +311,15 @@ const SetupScreen = () => {
 
             {/* Error Display */}
             {error && (
-                <div style={errorMessageStyle}>
-                    ⚠️ {error}
+                <div style={errorCardStyle}>
+                    <div style={errorCardHeaderStyle}>
+                        <div style={errorBadgeStyle}>!</div>
+                        <div>
+                            <div style={errorTitleStyle}>{buildErrorMeta(error).title}</div>
+                            <div style={errorTextStyle}>{buildErrorMeta(error).message}</div>
+                        </div>
+                    </div>
+                    <div style={errorHintStyle}>{buildErrorMeta(error).hint}</div>
                 </div>
             )}
 
@@ -313,8 +353,15 @@ const SetupScreen = () => {
                         <div id="setup-qr-reader" style={{ width: '100%', borderRadius: '12px', overflow: 'hidden', background: '#000', minHeight: '260px' }} />
 
                         {scannerError && (
-                            <div style={{ marginTop: '10px', color: THEME.error, fontSize: '12px', fontWeight: '600' }}>
-                                {scannerError}
+                            <div style={{ ...errorCardStyle, marginTop: '12px', padding: '12px 14px', textAlign: 'left' }}>
+                                <div style={{ ...errorCardHeaderStyle, gap: '10px' }}>
+                                    <div style={{ ...errorBadgeStyle, width: '24px', height: '24px', fontSize: '12px' }}>!</div>
+                                    <div>
+                                        <div style={{ ...errorTitleStyle, fontSize: '12px' }}>{buildErrorMeta(scannerError, 'scanner').title}</div>
+                                        <div style={{ ...errorTextStyle, fontSize: '12px' }}>{buildErrorMeta(scannerError, 'scanner').message}</div>
+                                    </div>
+                                </div>
+                                <div style={{ ...errorHintStyle, marginTop: '8px', fontSize: '11px' }}>{buildErrorMeta(scannerError, 'scanner').hint}</div>
                             </div>
                         )}
 
@@ -406,10 +453,60 @@ const btnSecondaryStyle = {
     color: THEME.textMuted, fontWeight: '600', cursor: 'pointer', fontSize: '14px'
 };
 
-const errorMessageStyle = {
-    background: 'rgba(239, 68, 68, 0.1)', color: THEME.error, padding: '16px',
-    borderRadius: '12px', marginTop: '20px', fontSize: '14px', fontWeight: '600',
-    textAlign: 'center', border: `1px solid rgba(239, 68, 68, 0.2)`
+const errorCardStyle = {
+    width: '100%',
+    maxWidth: '360px',
+    marginTop: '20px',
+    borderRadius: '14px',
+    padding: '14px 16px',
+    background: 'linear-gradient(180deg, rgba(239, 68, 68, 0.16), rgba(239, 68, 68, 0.08))',
+    border: '1px solid rgba(239, 68, 68, 0.35)',
+    boxShadow: '0 10px 24px rgba(0, 0, 0, 0.25)'
+};
+
+const errorCardHeaderStyle = {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: '12px'
+};
+
+const errorBadgeStyle = {
+    width: '28px',
+    height: '28px',
+    borderRadius: '999px',
+    border: '1px solid rgba(239, 68, 68, 0.55)',
+    background: 'rgba(239, 68, 68, 0.25)',
+    color: '#fecaca',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '13px',
+    fontWeight: '800',
+    flexShrink: 0
+};
+
+const errorTitleStyle = {
+    color: '#fecaca',
+    fontSize: '13px',
+    fontWeight: '700',
+    letterSpacing: '0.02em',
+    marginBottom: '3px'
+};
+
+const errorTextStyle = {
+    color: '#fee2e2',
+    fontSize: '12px',
+    lineHeight: '1.4',
+    fontWeight: '500'
+};
+
+const errorHintStyle = {
+    marginTop: '10px',
+    color: '#fecaca',
+    fontSize: '11px',
+    lineHeight: '1.35',
+    paddingTop: '8px',
+    borderTop: '1px solid rgba(239, 68, 68, 0.28)'
 };
 
 const modalBackdropStyle = {

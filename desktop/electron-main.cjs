@@ -76,25 +76,35 @@ function resolveMongoBinary(isPackaged) {
     return { binaryPath, candidates };
 }
 
-function isPortInUse(port, host = '127.0.0.1') {
-    return new Promise((resolve, reject) => {
+function isPortInUse(port, host = '0.0.0.0') {
+    return new Promise((resolve) => {
         const server = net.createServer();
-
         server.once('error', (err) => {
             if (err.code === 'EADDRINUSE' || err.code === 'EACCES') {
                 resolve(true);
-                return;
+            } else {
+                resolve(true); // Treat other errors as "unavailable" to be safe
             }
-            reject(err);
         });
-
         server.once('listening', () => {
             server.close(() => resolve(false));
         });
-
         server.listen(port, host);
     });
 }
+
+async function findAvailablePort(startPort) {
+    let port = startPort;
+    while (await isPortInUse(port)) {
+        port++;
+        if (port > startPort + 20) throw new Error("Could not find an available port in range.");
+    }
+    return port;
+}
+
+// Store assigned ports globally for IPC access
+let assignedHttpPort = 5010;
+let assignedHttpsPort = 5011;
 
 async function startServices() {
     const isPackaged = app.isPackaged;
@@ -138,30 +148,30 @@ async function startServices() {
     // 2. Start Backend using Electron's built-in node
     if (fs.existsSync(backendScript)) {
         try {
-            if (await isPortInUse(5000)) {
-                console.log('Backend port 5000 already in use. Reusing existing backend instance.');
-            } else {
-                console.log('Starting Backend Node Server...');
-                // In packaged app, process.env gets stripped of many things. We must pass required items carefully.
-                backendProcess = spawn(process.execPath, [backendScript], {
-                    cwd: backendDir,
-                    env: {
-                        ...process.env,
-                        ELECTRON_RUN_AS_NODE: '1',
-                        MONGODB_URI: process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/textile-stock-management',
-                        TLS_KEY_PATH: process.env.TLS_KEY_PATH || tlsKeyPath,
-                        TLS_CERT_PATH: process.env.TLS_CERT_PATH || tlsCertPath,
-                        PORT: '5000',
-                        APP_USERNAME: process.env.APP_USERNAME || 'admin',
-                        APP_PASSWORD: process.env.APP_PASSWORD || 'password'
-                    }
-                });
+            assignedHttpPort = await findAvailablePort(5050);
+            assignedHttpsPort = await findAvailablePort(assignedHttpPort + 1);
 
-                // Helpful debugging if server crashes
-                backendProcess.stdout.on('data', data => console.log(`Backend: ${data}`));
-                backendProcess.stderr.on('data', data => console.error(`Backend Error: ${data}`));
-                backendProcess.on('error', (err) => console.error('Backend spawn error:', err));
-            }
+            console.log(`Starting Backend Node Server on Dynamic Ports: HTTP:${assignedHttpPort}, HTTPS:${assignedHttpsPort}`);
+            // In packaged app, process.env gets stripped of many things. We must pass required items carefully.
+            backendProcess = spawn(process.execPath, [backendScript], {
+                cwd: backendDir,
+                env: {
+                    ...process.env,
+                    ELECTRON_RUN_AS_NODE: '1',
+                    MONGODB_URI: process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/textile-stock-management',
+                    TLS_KEY_PATH: process.env.TLS_KEY_PATH || tlsKeyPath,
+                    TLS_CERT_PATH: process.env.TLS_CERT_PATH || tlsCertPath,
+                    HTTP_PORT: String(assignedHttpPort),
+                    PORT: String(assignedHttpsPort),
+                    APP_USERNAME: process.env.APP_USERNAME || 'admin',
+                    APP_PASSWORD: process.env.APP_PASSWORD || 'password'
+                }
+            });
+
+            // Helpful debugging if server crashes
+            backendProcess.stdout.on('data', data => console.log(`Backend: ${data}`));
+            backendProcess.stderr.on('data', data => console.error(`Backend Error: ${data}`));
+            backendProcess.on('error', (err) => console.error('Backend spawn error:', err));
         } catch (e) {
             console.error('Failed to start Backend:', e);
             dialog.showErrorBox('Initialization Error', `Backend startup failed:\n${e.message}`);
@@ -238,6 +248,13 @@ app.whenReady().then(async () => {
         if (canceled || !filePath) return false;
         require('fs').writeFileSync(filePath, content);
         return true;
+    });
+
+    ipcMain.handle('api:get-config', async () => {
+        return {
+            httpPort: assignedHttpPort,
+            httpsPort: assignedHttpsPort
+        };
     });
 
     ipcMain.handle('pdf:printOrSave', async (event, filename, bytes) => {

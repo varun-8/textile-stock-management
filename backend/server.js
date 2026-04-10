@@ -14,7 +14,7 @@ const cors = require('cors');
 const morgan = require('morgan');
 const errorHandler = require('./middleware/errorMiddleware');
 const { ensureInstallApk, startInstallApkGuardian } = require('./services/installApkService');
-const { issueAdminToken, requireAdminAuth, requireScannerAuth } = require('./middleware/authMiddleware');
+const { issueAdminToken, requireAdminAuth, requireScannerAuth, requireAnyAuth } = require('./middleware/authMiddleware');
 const { requireLicense } = require('./middleware/licenseMiddleware');
 
 let helmet = null;
@@ -72,10 +72,10 @@ const httpsOptions = {
     cert: fs.readFileSync(TLS_CERT_PATH)
 };
 
-const HTTP_PORT = parseInt(process.env.HTTP_PORT || '5001', 10);
-const HTTPS_PORT = parseInt(process.env.PORT || '5000', 10);
+const HTTP_PORT = parseInt(process.env.HTTP_PORT || '5000', 10);
+const HTTPS_PORT = parseInt(process.env.PORT || '5001', 10);
+const ENABLE_HTTPS_COMPAT_443 = String(process.env.ENABLE_HTTPS_COMPAT_443 || 'false').toLowerCase() === 'true';
 
-const httpsServer = https.createServer(httpsOptions, app);
 const httpServer = http.createServer(app);
 
 const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS || '')
@@ -117,7 +117,7 @@ const isOriginAllowed = (origin) => {
     return allowedOrigins.includes(origin);
 };
 
-const io = new Server(httpsServer, {
+const io = new Server(httpServer, {
     cors: {
         origin: true,
         methods: ['GET', 'POST']
@@ -127,7 +127,8 @@ const io = new Server(httpsServer, {
 // Middleware
 if (helmet) {
     app.use(helmet({
-        crossOriginResourcePolicy: false
+        crossOriginResourcePolicy: false,
+        hsts: false
     }));
 }
 app.use(cors({
@@ -251,7 +252,7 @@ app.use('/api/license', licenseRoutes);
 // New Endpoint: Get Server IP (for Desktop to generate QR)
 // Auth Routes (Open for pairing/login)
 app.use(requireLicense);
-app.use('/api/mobile', requireScannerAuth, mobileRoutes);
+app.use('/api/mobile', requireAnyAuth, mobileRoutes);
 app.use('/api/barcode', requireAdminAuth, barcodeRoutes);
 app.use('/api/stats', requireAdminAuth, statsRoutes);
 app.use('/api/admin', requireAdminAuth, adminRoutes);
@@ -308,12 +309,35 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 5000;
-httpsServer.listen(HTTPS_PORT, '0.0.0.0', () => {
-    const localIp = getLocalIp();
-    console.log(`HTTPS Server running on port ${HTTPS_PORT}`);
-    console.log(`- Local Access:   https://localhost:${HTTPS_PORT}`);
-    console.log(`- Network Access: https://${localIp}:${HTTPS_PORT} (Use this IP for Mobile)`);
-    console.log(`- Hostname:       https://stock-system.local:${HTTPS_PORT}`);
+const startHttpsServer = (port, label) => {
+    const server = https.createServer(httpsOptions, app);
+    server.on('error', (err) => {
+        console.error(`${label} HTTPS server failed on port ${port}:`, err.message);
+        if (label === 'Primary') {
+            console.error('Primary HTTPS port is unavailable. Another backend instance may already be running.');
+            process.exit(1);
+        }
+    });
+    server.listen(port, '0.0.0.0', () => {
+        const localIp = getLocalIp();
+        console.log(`${label} HTTPS Server running on port ${port}`);
+        console.log(`- Local Access:   https://localhost:${port}`);
+        console.log(`- Network Access: https://${localIp}:${port} (Use this IP for Mobile)`);
+        console.log(`- Hostname:       https://stock-system.local:${port}`);
+    });
+    return server;
+};
+
+startHttpsServer(HTTPS_PORT, 'Primary');
+
+if (ENABLE_HTTPS_COMPAT_443 && HTTPS_PORT !== 443) {
+    startHttpsServer(443, 'Compatibility');
+}
+
+httpServer.on('error', (err) => {
+    console.error(`HTTP server failed on port ${HTTP_PORT}:`, err.message);
+    console.error('HTTP port is unavailable. Another backend instance may already be running.');
+    process.exit(1);
 });
 
 httpServer.listen(HTTP_PORT, '0.0.0.0', () => {

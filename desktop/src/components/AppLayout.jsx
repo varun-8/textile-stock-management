@@ -8,7 +8,7 @@ import { DENSITY_NAME } from '../constants';
 const AppLayout = ({ children }) => {
     const navigate = useNavigate();
     const location = useLocation();
-    const { apiUrl } = useConfig();
+    const { apiUrl, companyName } = useConfig();
     const [isCollapsed, setIsCollapsed] = useState(false);
 
     const isActive = (path) => location.pathname === path;
@@ -66,7 +66,7 @@ const AppLayout = ({ children }) => {
                     overflow: 'hidden',
                     whiteSpace: 'nowrap'
                 }} className="app-region-drag">
-                    <img src={AppLogo} alt="Prodexa" style={{ width: isCollapsed ? '40px' : '56px', height: isCollapsed ? '40px' : '56px', transition: 'all 0.3s ease' }} />
+                    <img src={AppLogo} alt="Loom Track" style={{ width: isCollapsed ? '40px' : '56px', height: isCollapsed ? '40px' : '56px', transition: 'all 0.3s ease' }} />
                     <div style={{
                         display: 'flex',
                         flexDirection: 'column',
@@ -75,9 +75,9 @@ const AppLayout = ({ children }) => {
                         width: isCollapsed ? 0 : 'auto',
                         transition: 'opacity 0.2s ease, width 0.3s ease'
                     }}>
-                        <span style={{ fontWeight: '800', fontSize: '1.4rem', letterSpacing: '-0.02em', lineHeight: '1', color: 'var(--text-primary)' }}>Prodexa</span>
+                        <span style={{ fontWeight: '800', fontSize: '1.4rem', letterSpacing: '-0.02em', lineHeight: '1', color: 'var(--text-primary)' }}>Loom Track</span>
                         <span style={{ fontSize: '0.6rem', fontWeight: '600', color: 'var(--text-secondary)', opacity: 0.8, letterSpacing: '0.02em' }}>WAREHOUSE OPERATIONS</span>
-                        <span style={{ fontSize: '0.65rem', fontWeight: '700', color: 'var(--accent-color)', letterSpacing: '0.05em', marginTop: '2px' }}>SRI LAKSHMI TEXTILES</span>
+                        <span style={{ fontSize: '0.65rem', fontWeight: '700', color: 'var(--accent-color)', letterSpacing: '0.05em', marginTop: '2px', textTransform: 'uppercase' }}>{companyName}</span>
                     </div>
                 </div>
 

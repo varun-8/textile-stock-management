@@ -1,8 +1,8 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { useConfig } from '../context/ConfigContext';
 import { useNotification } from '../context/NotificationContext';
-import { IconEye, IconPlus, IconTruck, IconX, IconEdit } from '../components/Icons';
+import { IconEye, IconPlus, IconTruck, IconX } from '../components/Icons';
 import { DENSITY_NAME } from '../constants';
 import { generateQuotationPdf } from '../utils/pdfGenerator';
 
@@ -46,6 +46,7 @@ const Quotations = () => {
 
     const [quotations, setQuotations] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState('');
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [form, setForm] = useState(emptyForm);
     const [availableRolls, setAvailableRolls] = useState([]);
@@ -54,16 +55,18 @@ const Quotations = () => {
     const [densities, setDensities] = useState([]);
     const [pdfPreviewUrl, setPdfPreviewUrl] = useState('');
     const [pdfPreviewTitle, setPdfPreviewTitle] = useState('Quotation PDF Preview');
+    const previewIframeRef = useRef(null);
     const [dcTemplateConfig, setDcTemplateConfig] = useState(null);
-    const [expandedActionsId, setExpandedActionsId] = useState('');
     const [formErrors, setFormErrors] = useState({});
     const [submitError, setSubmitError] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [draftPrintPayload, setDraftPrintPayload] = useState(null);
+    const quotationFormId = 'quotation-create-form';
 
-    const token = localStorage.getItem('ADMIN_TOKEN');
-    const authHeaders = useMemo(() => ({
-        headers: { Authorization: `Bearer ${token}` }
-    }), [token]);
+    const authHeaders = () => {
+        const token = localStorage.getItem('ADMIN_TOKEN');
+        return token ? { headers: { Authorization: `Bearer ${token}` } } : { headers: {} };
+    };
 
     const activeTemplate = useMemo(() => ({
         ...DEFAULT_DC_TEMPLATE,
@@ -142,11 +145,14 @@ const Quotations = () => {
     const fetchQuotations = async () => {
         try {
             setLoading(true);
-            const res = await axios.get(`${apiUrl}/api/quotations`, authHeaders);
+            setLoadError('');
+            const res = await axios.get(`${apiUrl}/api/quotations`, authHeaders());
             setQuotations(Array.isArray(res.data) ? res.data : []);
         } catch (error) {
             console.error('Failed to fetch quotations:', error);
-            showNotification('Failed to load quotations', 'error');
+            const message = getApiErrorMessage(error, 'Failed to load quotations');
+            setLoadError(message);
+            showNotification(message, 'error');
         } finally {
             setLoading(false);
         }
@@ -166,7 +172,7 @@ const Quotations = () => {
 
     const fetchDcTemplateConfig = async () => {
         try {
-            const res = await axios.get(`${apiUrl}/api/admin/config/dc-template`, authHeaders);
+            const res = await axios.get(`${apiUrl}/api/admin/config/dc-template`, authHeaders());
             setDcTemplateConfig(res.data || null);
         } catch (error) {
             console.error('Failed to fetch DC template config:', error);
@@ -182,7 +188,7 @@ const Quotations = () => {
 
         try {
             setLoadingRolls(true);
-            const res = await axios.get(`${apiUrl}/api/quotations/available-rolls?density=${encodeURIComponent(densityValue)}`, authHeaders);
+            const res = await axios.get(`${apiUrl}/api/quotations/available-rolls?density=${encodeURIComponent(densityValue)}`, authHeaders());
             const rows = Array.isArray(res.data?.rolls) ? res.data.rolls : [];
             setAvailableRolls(rows);
 
@@ -243,6 +249,7 @@ const Quotations = () => {
         setFormErrors({});
         setSubmitError('');
         setIsSubmitting(false);
+        setDraftPrintPayload(null);
         setIsModalOpen(false);
     };
 
@@ -300,6 +307,14 @@ const Quotations = () => {
         setSubmitError('');
         setIsSubmitting(true);
 
+        if (!localStorage.getItem('ADMIN_TOKEN')) {
+            const message = 'Admin session expired. Please login again and retry.';
+            setSubmitError(message);
+            showNotification(message, 'error');
+            setIsSubmitting(false);
+            return;
+        }
+
         const payload = {
             partyName: form.partyName.trim(),
             partyAddress: form.partyAddress.trim(),
@@ -316,10 +331,10 @@ const Quotations = () => {
         try {
             let res;
             if (isEditMode) {
-                res = await axios.put(`${apiUrl}/api/quotations/${form.id}`, payload, authHeaders);
+                res = await axios.put(`${apiUrl}/api/quotations/${form.id}`, payload, authHeaders());
                 showNotification(`Quotation ${res.data?.quotation?.quotationNumber || ''} updated successfully`, 'success');
             } else {
-                res = await axios.post(`${apiUrl}/api/quotations`, payload, authHeaders);
+                res = await axios.post(`${apiUrl}/api/quotations`, payload, authHeaders());
                 showNotification(`Quotation ${res.data?.quotation?.quotationNumber || ''} created successfully`, 'success');
             }
 
@@ -366,6 +381,77 @@ const Quotations = () => {
         }
     };
 
+    const handlePreviewDraft = () => {
+        if (!form.partyName.trim()) {
+            showNotification('Enter Party Name before previewing.', 'error');
+            return;
+        }
+        if (!form.density) {
+            showNotification(`Select ${DENSITY_NAME} before previewing.`, 'error');
+            return;
+        }
+        if (selectedBarcodes.length === 0) {
+            showNotification('Select at least one roll to preview quotation.', 'error');
+            return;
+        }
+
+        const selectedSet = new Set(selectedBarcodes);
+        const rows = availableRolls
+            .filter((roll) => selectedSet.has(roll.barcode))
+            .map((roll) => ({
+                barcode: roll.barcode,
+                metre: Number(roll.metre || 0),
+                weight: Number(roll.weight || 0),
+                pieces: Array.isArray(roll.pieces)
+                    ? roll.pieces
+                    : new Array(Number(roll.pieces || 1)).fill({ length: 0 })
+            }));
+
+        const draftQuotation = {
+            quotationNumber: isEditMode ? (quotations.find((q) => q._id === form.id)?.quotationNumber || 'DRAFT') : 'DRAFT',
+            createdAt: new Date(),
+            partyName: form.partyName.trim(),
+            partyAddress: form.partyAddress.trim(),
+            validityDate: form.validityDate || null,
+            density: form.density,
+            totalRolls: rows.length,
+            notes: form.notes,
+            terms: form.terms,
+            status: 'ACTIVE'
+        };
+
+        const payload = {
+            partyName: form.partyName.trim(),
+            partyAddress: form.partyAddress.trim(),
+            validityDate: form.validityDate || null,
+            density: form.density,
+            barcodes: selectedBarcodes,
+            notes: form.notes,
+            terms: form.terms,
+            templateId: typeof dcTemplateConfig?.templateId === 'string' ? dcTemplateConfig.templateId : '',
+            templateName: typeof dcTemplateConfig?.templateName === 'string' ? dcTemplateConfig.templateName : '',
+            templateSnapshot: activeTemplate
+        };
+
+        const pdfUrl = generateQuotationPdf(draftQuotation, rows, activeTemplate, { mode: 'bloburl' });
+        if (!pdfUrl) {
+            showNotification('Unable to generate draft preview', 'error');
+            return;
+        }
+
+        if (pdfPreviewUrl) {
+            try {
+                URL.revokeObjectURL(pdfPreviewUrl);
+            } catch (error) {
+                console.debug('Quotation preview URL cleanup skipped:', error);
+            }
+        }
+
+        setPdfPreviewTitle(isEditMode ? 'Draft Update Preview' : 'Draft Quotation Preview');
+        setPdfPreviewUrl(pdfUrl);
+        setDraftPrintPayload({ payload });
+    };
+
     const handleViewPdf = async (quotation) => {
         const rows = Array.isArray(quotation.rolls) && quotation.rolls.length > 0
             ? quotation.rolls
@@ -398,6 +484,7 @@ const Quotations = () => {
 
         setPdfPreviewTitle(`Quotation ${quotation.quotationNumber} Preview`);
         setPdfPreviewUrl(pdfUrl);
+        setDraftPrintPayload(null);
     };
 
     const handleCancelQuotation = async (id) => {
@@ -406,12 +493,12 @@ const Quotations = () => {
         }
 
         try {
-            await axios.post(`${apiUrl}/api/quotations/${id}/cancel`, {}, authHeaders);
+            await axios.post(`${apiUrl}/api/quotations/${id}/cancel`, {}, authHeaders());
             showNotification('Quotation cancelled successfully', 'success');
             fetchQuotations();
         } catch (error) {
             console.error('Failed to cancel quotation:', error);
-            showNotification(error.response?.data?.error || 'Failed to cancel quotation', 'error');
+            showNotification(getApiErrorMessage(error, 'Failed to cancel quotation'), 'error');
         }
     };
 
@@ -425,17 +512,143 @@ const Quotations = () => {
         }
         setPdfPreviewUrl('');
         setPdfPreviewTitle('Quotation PDF Preview');
+        setDraftPrintPayload(null);
     };
 
-    const toggleRowActions = (id) => {
-        setExpandedActionsId((prev) => (prev === id ? '' : id));
+    const handlePrintPdfPreview = async () => {
+        if (!pdfPreviewUrl) {
+            showNotification('No preview available to print', 'error');
+            return;
+        }
+
+        try {
+            // If this is a draft preview in create flow, persist quotation before printing.
+            if (!isEditMode && draftPrintPayload?.payload) {
+                if (!localStorage.getItem('ADMIN_TOKEN')) {
+                    showNotification('Admin session expired. Please login again and retry.', 'error');
+                    return;
+                }
+
+                const createRes = await axios.post(`${apiUrl}/api/quotations`, draftPrintPayload.payload, authHeaders());
+                const createdQuotation = createRes.data?.quotation;
+                if (!createdQuotation) {
+                    showNotification('Failed to create quotation before print', 'error');
+                    return;
+                }
+
+                const createdRows = Array.isArray(createdQuotation.rolls) && createdQuotation.rolls.length > 0
+                    ? createdQuotation.rolls
+                    : (Array.isArray(createdQuotation.rollSnapshots)
+                        ? createdQuotation.rollSnapshots.map((r) => ({
+                            barcode: r.barcode,
+                            metre: r.metre,
+                            weight: r.weight,
+                            pieces: new Array(Number(r.pieces || 1)).fill({ length: 0 })
+                        }))
+                        : []);
+
+                const createdPdfUrl = generateQuotationPdf(
+                    createdQuotation,
+                    createdRows,
+                    createdQuotation.templateSnapshot || activeTemplate,
+                    { mode: 'bloburl' }
+                );
+
+                const createdPdfBlob = generateQuotationPdf(
+                    createdQuotation,
+                    createdRows,
+                    createdQuotation.templateSnapshot || activeTemplate,
+                    { mode: 'blob' }
+                );
+
+                if (createdPdfUrl) {
+                    if (pdfPreviewUrl) {
+                        try {
+                            URL.revokeObjectURL(pdfPreviewUrl);
+                        } catch (error) {
+                            console.debug('Quotation preview URL cleanup skipped:', error);
+                        }
+                    }
+                    setPdfPreviewTitle(`Quotation ${createdQuotation.quotationNumber} Preview`);
+                    setPdfPreviewUrl(createdPdfUrl);
+                }
+
+                setDraftPrintPayload(null);
+                closeModal();
+                await fetchQuotations();
+                showNotification(`Quotation ${createdQuotation.quotationNumber} created`, 'success');
+
+                if (createdPdfBlob && window.electronAPI?.printOrSavePdf) {
+                    const bytes = Array.from(new Uint8Array(await createdPdfBlob.arrayBuffer()));
+                    const filename = `${String(createdQuotation.quotationNumber || 'Quotation').replace(/\s+/g, '_')}.pdf`;
+                    const result = await window.electronAPI.printOrSavePdf(filename, bytes);
+                    if (result?.mode === 'printed') {
+                        showNotification('Print dialog opened', 'success');
+                    } else {
+                        showNotification('No printer available. Connect a printer and retry.', 'error');
+                    }
+                    return;
+                }
+
+                if (createdPdfUrl) {
+                    const popup = window.open(createdPdfUrl, '_blank', 'noopener,noreferrer');
+                    if (!popup) {
+                        showNotification('Unable to open print preview window. Allow popups and try again.', 'error');
+                        return;
+                    }
+                    popup.addEventListener('load', () => {
+                        popup.focus();
+                        popup.print();
+                    });
+                    return;
+                }
+            }
+
+            const frameWindow = previewIframeRef.current?.contentWindow;
+            if (frameWindow) {
+                frameWindow.focus();
+                frameWindow.print();
+                showNotification('Print dialog opened', 'success');
+                return;
+            }
+
+            if (window.electronAPI?.printOrSavePdf) {
+                const response = await fetch(pdfPreviewUrl);
+                const blob = await response.blob();
+                const bytes = Array.from(new Uint8Array(await blob.arrayBuffer()));
+                const filename = `${String(pdfPreviewTitle || 'Quotation_Preview')
+                    .replace(/[^a-zA-Z0-9_-]+/g, '_')
+                    .replace(/_+/g, '_')}.pdf`;
+                const result = await window.electronAPI.printOrSavePdf(filename, bytes);
+                if (result?.mode === 'printed') {
+                    showNotification('Print dialog opened', 'success');
+                } else {
+                    showNotification('No printer available. Connect a printer and retry.', 'error');
+                }
+                return;
+            }
+
+            const popup = window.open(pdfPreviewUrl, '_blank', 'noopener,noreferrer');
+            if (!popup) {
+                showNotification('Unable to open print preview window. Allow popups and try again.', 'error');
+                return;
+            }
+
+            popup.addEventListener('load', () => {
+                popup.focus();
+                popup.print();
+            });
+        } catch (error) {
+            console.error('Failed to print quotation preview:', error);
+            showNotification(getApiErrorMessage(error, 'Failed to print preview'), 'error');
+        }
     };
 
     return (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
             <header style={{
                 padding: '1.5rem 2rem',
-                background: 'var(--bg-primary)',
+                background: 'linear-gradient(180deg, var(--bg-primary), var(--bg-secondary))',
                 borderBottom: '1px solid var(--border-color)',
                 display: 'flex',
                 justifyContent: 'space-between',
@@ -459,7 +672,8 @@ const Quotations = () => {
                         display: 'flex',
                         alignItems: 'center',
                         gap: '0.5rem',
-                        cursor: 'pointer'
+                        cursor: 'pointer',
+                        boxShadow: '0 10px 24px rgba(99, 102, 241, 0.28)'
                     }}
                 >
                     <IconPlus size="18" /> CREATE QUOTATION
@@ -468,18 +682,38 @@ const Quotations = () => {
 
             <main style={{ flex: 1, padding: '2rem', overflowY: 'auto' }}>
                 <div className="card">
-                    <h2 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <h2 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: '0 0 1rem' }}>
                         <IconTruck size="18" /> Quotation History
                     </h2>
+                    <p style={{ margin: '0 0 1rem', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+                        Click any quotation row to open preview.
+                    </p>
 
                     {loading ? (
                         <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>Loading quotations...</div>
+                    ) : loadError ? (
+                        <div style={{
+                            margin: '0.2rem 0 1rem',
+                            padding: '1rem 1.1rem',
+                            borderRadius: '10px',
+                            border: '1px solid rgba(239, 68, 68, 0.35)',
+                            background: 'rgba(239, 68, 68, 0.08)',
+                            color: 'var(--error-color)',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            gap: '1rem'
+                        }}>
+                            <span>{loadError}</span>
+                            <button className="btn" onClick={fetchQuotations}>Retry</button>
+                        </div>
                     ) : quotations.length === 0 ? (
                         <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
                             No quotations generated yet.
                         </div>
                     ) : (
                         <div className="table-container" style={{
+                            marginTop: '0.35rem',
                             border: '1px solid var(--border-color)',
                             borderRadius: '12px',
                             overflow: 'hidden',
@@ -490,11 +724,10 @@ const Quotations = () => {
                                 <colgroup>
                                     <col style={{ width: '17%' }} />
                                     <col style={{ width: '12%' }} />
-                                    <col style={{ width: '24%' }} />
+                                    <col style={{ width: '29%' }} />
                                     <col style={{ width: '12%' }} />
                                     <col style={{ width: '10%' }} />
-                                    <col style={{ width: '10%' }} />
-                                    <col style={{ width: '15%' }} />
+                                    <col style={{ width: '20%' }} />
                                 </colgroup>
                                 <thead>
                                     <tr style={{ background: 'var(--table-header-bg)' }}>
@@ -504,18 +737,20 @@ const Quotations = () => {
                                         <th style={{ textAlign: 'center', padding: '0.9rem 1rem', fontSize: '0.75rem', letterSpacing: '0.06em', color: 'var(--text-secondary)' }}>{DENSITY_NAME}</th>
                                         <th style={{ textAlign: 'center', padding: '0.9rem 1rem', fontSize: '0.75rem', letterSpacing: '0.06em', color: 'var(--text-secondary)' }}>TOTAL ROLLS</th>
                                         <th style={{ textAlign: 'center', padding: '0.9rem 1rem', fontSize: '0.75rem', letterSpacing: '0.06em', color: 'var(--text-secondary)' }}>STATUS</th>
-                                        <th style={{ textAlign: 'center', padding: '0.9rem 1rem', fontSize: '0.75rem', letterSpacing: '0.06em', color: 'var(--text-secondary)' }}>ACTIONS</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {quotations.map((quotation, index) => {
                                         const isCancelled = quotation.status === 'CANCELLED';
-                                        const isActionsExpanded = expandedActionsId === quotation._id;
                                         return (
                                             <tr key={quotation._id} style={{
                                                 opacity: isCancelled ? 0.65 : 1,
-                                                background: index % 2 === 0 ? 'transparent' : 'var(--row-alt-bg)'
-                                            }}>
+                                                background: index % 2 === 0 ? 'transparent' : 'var(--row-alt-bg)',
+                                                cursor: 'pointer',
+                                                transition: 'background 0.2s ease'
+                                            }} onClick={() => handleViewPdf(quotation)}
+                                               onMouseOver={(e) => { e.currentTarget.style.background = 'var(--row-hover-bg)'; }}
+                                               onMouseOut={(e) => { e.currentTarget.style.background = index % 2 === 0 ? 'transparent' : 'var(--row-alt-bg)'; }}>
                                                 <td style={{
                                                     fontWeight: '700',
                                                     padding: '0.9rem 1rem',
@@ -547,51 +782,6 @@ const Quotations = () => {
                                                     }}>
                                                         {quotation.status}
                                                     </span>
-                                                </td>
-                                                <td style={{ padding: '0.9rem 1rem', borderTop: '1px solid var(--table-border-color)' }}>
-                                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.45rem' }}>
-                                                        <button
-                                                            className="btn"
-                                                            onClick={() => toggleRowActions(quotation._id)}
-                                                            style={{
-                                                                minWidth: '88px',
-                                                                padding: '0.4rem 0.7rem',
-                                                                fontSize: '0.8rem',
-                                                                background: 'var(--bg-tertiary)',
-                                                                color: 'var(--text-primary)',
-                                                                border: '1px solid var(--border-color)'
-                                                            }}
-                                                        >
-                                                            {isActionsExpanded ? 'Hide' : 'Show'}
-                                                        </button>
-
-                                                        {isActionsExpanded && (
-                                                            <div style={{
-                                                                display: 'flex',
-                                                                justifyContent: 'center',
-                                                                gap: '0.35rem',
-                                                                flexWrap: 'wrap',
-                                                                padding: '0.35rem',
-                                                                border: '1px solid var(--border-color)',
-                                                                borderRadius: '8px',
-                                                                background: 'var(--bg-primary)'
-                                                            }}>
-                                                                <button className="btn" onClick={() => handleViewPdf(quotation)} style={{ minWidth: '78px', padding: '0.42rem 0.55rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.35rem' }}>
-                                                                    <IconEye size="14" /> View PDF
-                                                                </button>
-                                                                {!isCancelled && (
-                                                                    <button className="btn" onClick={() => openEditModal(quotation)} style={{ minWidth: '64px', padding: '0.42rem 0.55rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.35rem' }}>
-                                                                        <IconEdit size="14" /> Edit
-                                                                    </button>
-                                                                )}
-                                                                {!isCancelled && (
-                                                                    <button className="btn" onClick={() => handleCancelQuotation(quotation._id)} style={{ minWidth: '70px', padding: '0.42rem 0.55rem', background: 'rgba(239, 68, 68, 0.1)', color: 'var(--error-color)' }}>
-                                                                        Cancel
-                                                                    </button>
-                                                                )}
-                                                            </div>
-                                                        )}
-                                                    </div>
                                                 </td>
                                             </tr>
                                         );
@@ -665,7 +855,7 @@ const Quotations = () => {
                             </button>
                         </div>
 
-                        <form onSubmit={handleSubmit} style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+                        <form id={quotationFormId} onSubmit={handleSubmit} style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
                             <div style={{
                                 width: '390px',
                                 padding: '1.5rem',
@@ -929,7 +1119,16 @@ const Quotations = () => {
                                 <button className="btn" type="button" onClick={closeModal} style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>Cancel</button>
                                 <button
                                     className="btn"
+                                    type="button"
+                                    onClick={handlePreviewDraft}
+                                    style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', fontWeight: '700', minWidth: '132px' }}
+                                >
+                                    PREVIEW
+                                </button>
+                                <button
+                                    className="btn"
                                     type="submit"
+                                    form={quotationFormId}
                                     style={{ background: 'var(--accent-color)', color: 'white', fontWeight: '700', minWidth: '178px', boxShadow: '0 8px 20px rgba(79, 70, 229, 0.35)', opacity: isSubmitting ? 0.7 : 1 }}
                                     disabled={isSubmitting || !form.partyName || !form.density || selectedBarcodes.length === 0}
                                 >
@@ -962,11 +1161,15 @@ const Quotations = () => {
                         background: 'rgba(15, 23, 42, 0.85)'
                     }}>
                         <h3 style={{ margin: 0, fontSize: '1rem', color: '#f8fafc' }}>{pdfPreviewTitle}</h3>
-                        <button className="btn" onClick={closePdfPreview}>Close</button>
+                        <div style={{ display: 'flex', gap: '0.6rem' }}>
+                            <button className="btn" onClick={handlePrintPdfPreview}>Print</button>
+                            <button className="btn" onClick={closePdfPreview}>Close</button>
+                        </div>
                     </div>
 
                     <div style={{ flex: 1, padding: '0.75rem' }}>
                         <iframe
+                            ref={previewIframeRef}
                             title="Quotation PDF Preview"
                             src={pdfPreviewUrl ? `${pdfPreviewUrl}#toolbar=0&navpanes=0&scrollbar=1` : ''}
                             style={{

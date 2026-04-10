@@ -56,10 +56,10 @@ const Dashboard = () => {
 
     const [missingCount, setMissingCount] = useState(0);
     const [stats, setStats] = useState([
-        { label: 'Total Inventory', value: '0', change: 'System Total', key: 'totalRolls', color: 'var(--text-secondary)', icon: '📦' },
-        { label: 'In Stock', value: '0', change: 'Available (IN)', key: 'stockIn', color: 'var(--success-color)', icon: '🏭' },
-        { label: 'Ready to Dispatch', value: '0', change: 'Reserved (RESERVED)', key: 'readyToDispatch', color: 'var(--accent-color)', icon: '📋' },
-        { label: 'Out Stock', value: '0', change: 'Dispatched (OUT)', key: 'stockOut', color: 'var(--accent-color)', icon: '🚛' }
+        { label: 'Total Inventory', value: '0', change: 'System Total', key: 'totalRolls', color: 'var(--text-secondary)', icon: 'INV' },
+        { label: 'In Stock', value: '0', change: 'Available (IN)', key: 'stockIn', color: 'var(--success-color)', icon: 'IN' },
+        { label: 'Ready to Dispatch', value: '0', change: 'Reserved (RESERVED)', key: 'readyToDispatch', color: 'var(--accent-color)', icon: 'RDY' },
+        { label: 'Out Stock', value: '0', change: 'Dispatched (OUT)', key: 'stockOut', color: 'var(--accent-color)', icon: 'OUT' }
     ]);
 
     const [recentLogs, setRecentLogs] = useState([]);
@@ -87,10 +87,10 @@ const Dashboard = () => {
             const data = await res.json();
             setMissingCount(data.missingCount || 0);
             setStats([
-                { label: 'Total Inventory', value: data.totalRolls, change: 'IN + RESERVED in Godown', key: 'totalRolls', color: 'var(--text-secondary)', icon: '📦' },
-                { label: 'In Stock', value: data.inStock ?? data.stockIn, change: 'Ready for use (IN)', key: 'stockIn', color: 'var(--success-color)', icon: '🏭' },
-                { label: 'Ready to Dispatch', value: data.readyToDispatch ?? 0, change: 'Picked but not dispatched', key: 'readyToDispatch', color: 'var(--accent-color)', icon: '📋' },
-                { label: 'Out Stock', value: data.stockOut ?? 0, change: 'Already dispatched (OUT)', key: 'stockOut', color: 'var(--accent-color)', icon: '🚛' }
+                { label: 'Total Inventory', value: data.totalRolls, change: 'IN + RESERVED in Godown', key: 'totalRolls', color: 'var(--text-secondary)', icon: 'INV' },
+                { label: 'In Stock', value: data.inStock ?? data.stockIn, change: 'Ready for use (IN)', key: 'stockIn', color: 'var(--success-color)', icon: 'IN' },
+                { label: 'Ready to Dispatch', value: data.readyToDispatch ?? 0, change: 'Picked but not dispatched', key: 'readyToDispatch', color: 'var(--accent-color)', icon: 'RDY' },
+                { label: 'Out Stock', value: data.stockOut ?? 0, change: 'Already dispatched (OUT)', key: 'stockOut', color: 'var(--accent-color)', icon: 'OUT' }
             ]);
         } catch (err) { console.error(err); }
     }, [apiUrl]);
@@ -355,7 +355,7 @@ const Dashboard = () => {
                             }}
                             title="Missing Sequence Logs - Action Required"
                         >
-                            <span style={{ fontSize: '1.1rem' }}>⚠️</span>
+                            <span style={{ fontSize: '1.1rem' }}>!</span>
                             <div style={{ display: 'flex', flexDirection: 'column' }}>
                                 <span style={{ fontSize: '0.9rem', fontWeight: '900', color: 'var(--error-color)', lineHeight: 1.1 }}>{missingCount}</span>
                                 <span style={{ fontSize: '0.6rem', fontWeight: '800', color: 'var(--error-color)', opacity: 0.8, textTransform: 'uppercase', letterSpacing: '0.02em' }}>Missing</span>
@@ -627,7 +627,7 @@ const Dashboard = () => {
                                     fontSize: '1.5rem',
                                     color: modalConfig.type === 'error' ? 'var(--error-color)' : (modalConfig.type === 'success' ? 'var(--success-color)' : 'var(--accent-color)')
                                 }}>
-                                    {modalConfig.type === 'error' ? '⚠️' : (modalConfig.type === 'success' ? '✅' : 'ℹ️')}
+                                    {modalConfig.type === 'error' ? '!' : (modalConfig.type === 'success' ? 'OK' : 'i')}
                                 </div>
                                 <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: '700' }}>{modalConfig.title}</h3>
                             </div>

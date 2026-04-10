@@ -5,7 +5,7 @@ import { useNotification } from '../context/NotificationContext';
 import { generateDCPdf } from '../utils/pdfGenerator';
 
 const Settings = () => {
-    const { apiUrl, updateApiUrl, theme, toggleTheme } = useConfig();
+    const { apiUrl, updateApiUrl, theme, toggleTheme, updateCompanyName } = useConfig();
     const { showNotification, showConfirm } = useNotification();
     const [activeTab, setActiveTab] = useState('general');
     const [backupPath, setBackupPath] = useState('');
@@ -41,8 +41,6 @@ const Settings = () => {
         showLotNo: true,
         showBillNo: true,
         showBillPreparedBy: true,
-        showVehicle: true,
-        showDriver: true,
         logoDataUrl: '',
         logoDataUrl2: '',
         companyNameSize: 16,
@@ -54,16 +52,6 @@ const Settings = () => {
     const [dcTemplateName, setDcTemplateName] = useState('Default Template');
     const [savingDcTemplate, setSavingDcTemplate] = useState(false);
     const [templatePreviewUrl, setTemplatePreviewUrl] = useState('');
-
-    // DC Template Preview Sample Data
-    const [previewSampleData, setPreviewSampleData] = useState({
-        dcNumber: '',
-        partyName: '',
-        vehicleNumber: '',
-        driverName: '',
-        totalRolls: '',
-        totalMetre: ''
-    });
 
     const fetchConfig = useCallback(async () => {
         try {
@@ -90,8 +78,10 @@ const Settings = () => {
                     ...dcTemplateData,
                     layoutMode: dcTemplateData.layoutMode || 'printed'
                 }));
-                setSelectedDcTemplateId(dcTemplateData.templateId || '');
                 setDcTemplateName(dcTemplateData.templateName || 'Default Template');
+                if (dcTemplateData.companyName) {
+                    updateCompanyName(dcTemplateData.companyName);
+                }
             }
 
             if (dcTemplatesRes.ok) {
@@ -154,6 +144,9 @@ const Settings = () => {
 
     const handleDcTemplateChange = (field, value) => {
         setDcTemplate((prev) => ({ ...prev, [field]: value }));
+        if (field === 'companyName') {
+            updateCompanyName(value);
+        }
     };
 
     const handleSelectDcTemplate = async (templateId) => {
@@ -174,6 +167,9 @@ const Settings = () => {
             }
             setSelectedDcTemplateId(data.templateId || templateId);
             setDcTemplateName(data.templateName || 'Untitled Template');
+            if (data.dcTemplate && data.dcTemplate.companyName) {
+                updateCompanyName(data.dcTemplate.companyName);
+            }
             setDcTemplate((prev) => ({ ...prev, ...(data.dcTemplate || {}) }));
         } catch (err) {
             showNotification(err.message || 'Failed to switch template', 'error');
@@ -198,8 +194,6 @@ const Settings = () => {
             showLotNo: true,
             showBillNo: true,
             showBillPreparedBy: true,
-            showVehicle: true,
-            showDriver: true,
             logoDataUrl: '',
             logoDataUrl2: '',
             companyNameSize: 16,
@@ -208,19 +202,15 @@ const Settings = () => {
         });
     };
 
-    const handlePreviewSampleDataChange = (field, value) => {
-        setPreviewSampleData((prev) => ({ ...prev, [field]: value }));
-    };
-
     // Core preview generator — called only by button click
     const generatePreview = (templateToUse) => {
         const sampleDc = {
-            dcNumber: previewSampleData.dcNumber || 'DC-PREVIEW',
+            dcNumber: 'DC-PREVIEW',
             createdAt: new Date().toISOString(),
             status: 'ACTIVE',
-            partyName: previewSampleData.partyName || 'Party Name',
-            vehicleNumber: previewSampleData.vehicleNumber || '',
-            driverName: previewSampleData.driverName || '',
+            partyName: 'Sample Party Name',
+            vehicleNumber: 'KA-01-AB-1234',
+            driverName: 'John Doe',
             totalRolls: 13,
             totalMetre: 410.5
         };
@@ -359,8 +349,6 @@ const Settings = () => {
             showLotNo: true,
             showBillNo: true,
             showBillPreparedBy: true,
-            showVehicle: true,
-            showDriver: true,
             logoDataUrl: '',
             logoDataUrl2: '',
             companyNameSize: 16,
@@ -637,7 +625,7 @@ const Settings = () => {
                                             cursor: 'pointer'
                                         }}
                                     >
-                                        ☀️ Light Mode
+                                        Light Mode
                                     </button>
                                     <button
                                         onClick={() => theme !== 'dark' && toggleTheme()}
@@ -648,7 +636,7 @@ const Settings = () => {
                                             cursor: 'pointer', color: 'var(--text-primary)'
                                         }}
                                     >
-                                        🌙 Dark Mode
+                                        Dark Mode
                                     </button>
                                 </div>
                             </div>
@@ -728,7 +716,7 @@ const Settings = () => {
 
                                 {/* Template Selector */}
                                 <div style={{ ...infoCardStyle, marginBottom: 0 }}>
-                                    <div style={{ fontWeight: '700', fontSize: '0.78rem', color: 'var(--accent-color)', marginBottom: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>🧩 Template Set</div>
+                                    <div style={{ fontWeight: '700', fontSize: '0.78rem', color: 'var(--accent-color)', marginBottom: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Template Set</div>
 
                                     <label style={labelStyle}>Select Template</label>
                                     <select
@@ -772,7 +760,7 @@ const Settings = () => {
 
                                 {/* Company Info */}
                                 <div style={{ ...infoCardStyle, marginBottom: 0 }}>
-                                    <div style={{ fontWeight: '700', fontSize: '0.78rem', color: 'var(--accent-color)', marginBottom: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>🏢 Company Identity</div>
+                                    <div style={{ fontWeight: '700', fontSize: '0.78rem', color: 'var(--accent-color)', marginBottom: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Company Identity</div>
 
                                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.3rem' }}>
                                         <label style={labelStyle}>Company Name</label>
@@ -837,7 +825,7 @@ const Settings = () => {
 
                                 {/* Logos */}
                                 <div style={{ ...infoCardStyle, marginBottom: 0 }}>
-                                    <div style={{ fontWeight: '700', fontSize: '0.78rem', color: 'var(--accent-color)', marginBottom: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>🖼️ Logos (Left &amp; Right of Company Name)</div>
+                                    <div style={{ fontWeight: '700', fontSize: '0.78rem', color: 'var(--accent-color)', marginBottom: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Logos (Left &amp; Right of Company Name)</div>
                                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                                         <div>
                                             <label style={labelStyle}>Left Logo</label>
@@ -864,7 +852,7 @@ const Settings = () => {
 
                                 {/* Optional Fields */}
                                 <div style={{ ...infoCardStyle, marginBottom: 0 }}>
-                                    <div style={{ fontWeight: '700', fontSize: '0.78rem', color: 'var(--accent-color)', marginBottom: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>⚙️ Optional Fields</div>
+                                    <div style={{ fontWeight: '700', fontSize: '0.78rem', color: 'var(--accent-color)', marginBottom: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Optional Fields</div>
                                     <label style={checkboxLabelStyle}>
                                         <input type="checkbox" checked={dcTemplate.showPartyAddress !== false} onChange={(e) => handleDcTemplateChange('showPartyAddress', e.target.checked)} />
                                         Party Address (enter at DC generation)
@@ -889,48 +877,19 @@ const Settings = () => {
                                         <input type="checkbox" checked={dcTemplate.showBillPreparedBy !== false} onChange={(e) => handleDcTemplateChange('showBillPreparedBy', e.target.checked)} />
                                         Bill Prepared By (enter at DC generation)
                                     </label>
-                                    <label style={checkboxLabelStyle}>
-                                        <input type="checkbox" checked={dcTemplate.showVehicle !== false} onChange={(e) => handleDcTemplateChange('showVehicle', e.target.checked)} />
-                                        Collect &amp; show Vehicle Number
-                                    </label>
-                                    <label style={{ ...checkboxLabelStyle, marginTop: '0.6rem' }}>
-                                        <input type="checkbox" checked={dcTemplate.showDriver !== false} onChange={(e) => handleDcTemplateChange('showDriver', e.target.checked)} />
-                                        Collect &amp; show Driver Name
-                                    </label>
                                 </div>
 
-                                {/* Sample data for preview */}
-                                <div style={{ ...infoCardStyle, marginBottom: 0 }}>
-                                    <div style={{ fontWeight: '700', fontSize: '0.78rem', color: 'var(--accent-color)', marginBottom: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>📋 Sample Data (preview only)</div>
-                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.7rem' }}>
-                                        <div>
-                                            <label style={labelStyle}>DC Number</label>
-                                            <input type="text" value={previewSampleData.dcNumber} onChange={(e) => handlePreviewSampleDataChange('dcNumber', e.target.value)} style={textInputStyle} placeholder="DC Number" />
-                                        </div>
-                                        <div>
-                                            <label style={labelStyle}>Party Name</label>
-                                            <input type="text" value={previewSampleData.partyName} onChange={(e) => handlePreviewSampleDataChange('partyName', e.target.value)} style={textInputStyle} placeholder="Customer name" />
-                                        </div>
-                                        <div>
-                                            <label style={labelStyle}>Vehicle Number</label>
-                                            <input type="text" value={previewSampleData.vehicleNumber} onChange={(e) => handlePreviewSampleDataChange('vehicleNumber', e.target.value)} style={textInputStyle} placeholder="Vehicle number" />
-                                        </div>
-                                        <div>
-                                            <label style={labelStyle}>Driver Name</label>
-                                            <input type="text" value={previewSampleData.driverName} onChange={(e) => handlePreviewSampleDataChange('driverName', e.target.value)} style={textInputStyle} placeholder="Driver name" />
-                                        </div>
-                                    </div>
-                                </div>
+
 
                                 {/* Action buttons */}
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', paddingBottom: '1rem' }}>
                                     <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '0.8rem', fontWeight: '700' }} onClick={handlePreviewDcTemplate}>
-                                        👁️ Preview Challan
+                                        Preview Challan
                                     </button>
                                     <div style={{ display: 'flex', gap: '0.5rem' }}>
                                         <button className="btn" style={{ flex: 1, justifyContent: 'center' }} onClick={handleResetDcTemplate}>Reset</button>
                                         <button className="btn btn-primary" style={{ flex: 2, justifyContent: 'center', fontWeight: '700' }} onClick={handleSaveDcTemplate} disabled={savingDcTemplate}>
-                                            {savingDcTemplate ? 'Saving...' : '💾 Save Template'}
+                                            {savingDcTemplate ? 'Saving...' : 'Save Template'}
                                         </button>
                                     </div>
                                 </div>
@@ -942,7 +901,7 @@ const Settings = () => {
                             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--bg-primary)', border: '1px solid var(--border-color)', borderRadius: '12px', overflow: 'hidden', minWidth: 0 }}>
                                 <div style={{ padding: '0.9rem 1.2rem', borderBottom: '1px solid var(--border-color)', background: 'var(--bg-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                     <div>
-                                        <div style={{ fontWeight: '700', fontSize: '0.9rem' }}>📄 Challan Preview</div>
+                                        <div style={{ fontWeight: '700', fontSize: '0.9rem' }}>Challan Preview</div>
                                         <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '2px' }}>Click "Preview Challan" button to refresh</div>
                                     </div>
                                     {templatePreviewUrl && (
@@ -959,7 +918,7 @@ const Settings = () => {
                                         />
                                     ) : (
                                         <div style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '2rem' }}>
-                                            <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🧾</div>
+                                            <div style={{ fontSize: '3rem', marginBottom: '1rem' }}></div>
                                             <div style={{ fontWeight: '600', marginBottom: '0.5rem' }}>No Preview Generated</div>
                                             <div style={{ fontSize: '0.85rem' }}>Fill in your details and click <strong>Preview Challan</strong> to see the exact PDF that will be generated.</div>
                                         </div>
@@ -1036,7 +995,7 @@ const Settings = () => {
                                                 style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer', zIndex: 10 }}
                                             />
                                             <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--accent-color)', fontWeight: 'bold', fontSize: '0.9rem', pointerEvents: 'none' }}>
-                                                📥 Click or Drop .json to Import/Restore
+                                                Click or Drop .json to Import/Restore
                                             </div>
                                         </div>
                                     </div>
@@ -1158,7 +1117,7 @@ const Settings = () => {
                                 }}>
                                     <div style={{ padding: '1.5rem', borderBottom: '1px solid rgba(239, 68, 68, 0.1)', background: 'var(--bg-secondary)' }}>
                                         <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--error-color)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                            <span>⚠️</span> Danger Zone
+                                            <span>!</span> Danger Zone
                                         </h3>
                                         <p style={{ margin: '0.5rem 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                                             System-wide data reset and permanent deletion.

@@ -305,8 +305,16 @@ router.post('/transaction', async (req, res) => {
             // ...
             // Existing Stock In logic is above
 
-            // Remove from Missed/Pending List as it is now found
-            await MissedScan.deleteOne({ barcode: barcode });
+            // Mark as RESOLVED instead of deleting to maintain history/audit trail
+            await MissedScan.findOneAndUpdate(
+                { barcode: barcode },
+                { 
+                    status: 'RESOLVED', 
+                    resolutionAction: 'MOBILE_FOUND', 
+                    resolvedAt: new Date(),
+                    resolvedBy: employeeName || 'Scanner'
+                }
+            );
         }
 
         await clothRoll.save();

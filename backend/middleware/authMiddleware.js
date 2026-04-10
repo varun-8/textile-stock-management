@@ -154,10 +154,39 @@ const requireScannerAuth = async (req, res, next) => {
     }
 };
 
+const requireAnyAuth = async (req, res, next) => {
+    try {
+        let token = getBearerToken(req);
+        if (!token && req.query.token) {
+            token = req.query.token;
+        }
+
+        if (token) {
+            try {
+                const decoded = verifyToken(token);
+                req.admin = decoded;
+                req.authType = 'ADMIN';
+                return next();
+            } catch (err) {
+                // If token exists but is invalid, we don't immediately fail
+                // We'll fall through to see if it's a valid scanner request
+            }
+        }
+
+        // Fallback to scanner authentication
+        // requireScannerAuth is async, so we await it
+        await requireScannerAuth(req, res, next);
+    } catch (err) {
+        console.error('[Auth] requireAnyAuth failed:', err.message);
+        res.status(401).json({ error: err.message || 'Authentication required' });
+    }
+};
+
 module.exports = {
     issueAdminToken,
     issuePairingToken,
     verifyToken,
     requireAdminAuth,
-    requireScannerAuth
+    requireScannerAuth,
+    requireAnyAuth
 };

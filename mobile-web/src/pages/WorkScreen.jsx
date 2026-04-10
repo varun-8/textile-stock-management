@@ -603,7 +603,7 @@ const WorkScreen = () => {
                             cursor: 'pointer', transition: 'all 0.3s ease'
                         }}
                     >
-                        BACK TO SESSIONS
+                        BACK TO BATCHES
                     </button>
                 </div>
             </div>

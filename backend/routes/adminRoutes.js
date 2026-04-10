@@ -20,7 +20,8 @@ const { getWorkspaceCode } = require('../utils/workspace');
 const { normalizePieces, totalFromPieces } = require('../utils/rollPieces');
 const { detectMissingSequences } = require('../utils/missingSequenceService');
 const { ensureInstallApk } = require('../services/installApkService');
-const HTTP_PORT = parseInt(process.env.HTTP_PORT || '5001', 10);
+const HTTP_PORT = parseInt(process.env.HTTP_PORT || '5000', 10);
+const HTTPS_PORT = parseInt(process.env.PORT || '5001', 10);
 
 // Get Audit Logs
 router.get('/audit-logs', async (req, res) => {
@@ -389,7 +390,7 @@ router.get('/server-ip', (req, res) => {
             if (lanIp) break;
         }
 
-        res.json({ ip: lanIp || 'localhost', httpPort: HTTP_PORT, httpsPort: parseInt(process.env.PORT || '5000', 10) });
+        res.json({ ip: lanIp || 'localhost', httpPort: HTTP_PORT, httpsPort: HTTPS_PORT });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -615,7 +616,7 @@ router.put('/inventory/update', async (req, res) => {
             barcodeDoc.lifecycleHistory.push({
                 action: lifecycleStatus,
                 note: `Inventory updated via desktop (${clothRoll.status})`,
-                by: req.user?.username || 'Admin',
+                by: req.admin?.username || 'Admin',
                 at: new Date()
             });
             await barcodeDoc.save();
@@ -647,7 +648,7 @@ router.patch('/missing/damaged/:barcode', async (req, res) => {
                 resolutionAction: 'MARK_DAMAGED',
                 resolutionNote: req.body?.note || 'Marked as damaged',
                 resolvedAt: new Date(),
-                resolvedBy: req.user?.username || 'Admin'
+                resolvedBy: req.admin?.username || 'Admin'
             },
             { new: true }
         );
@@ -670,11 +671,11 @@ router.patch('/missing/damaged/:barcode', async (req, res) => {
 
 router.post('/missing/audit-sequences', async (req, res) => {
     try {
-        const summary = await detectMissingSequences({ triggeredBy: req.user?.username || 'admin-audit' });
+        const summary = await detectMissingSequences({ triggeredBy: req.admin?.username || 'admin-audit' });
 
         await AuditLog.create({
             action: 'INVENTORY_EDIT',
-            user: req.user?.username || 'Admin',
+            user: req.admin?.username || 'Admin',
             details: { action: 'SEQUENCE_AUDIT_RUN', ...summary },
             ipAddress: req.ip
         });
@@ -716,7 +717,7 @@ router.patch('/missing/lost/:barcode', async (req, res) => {
                 resolutionAction: 'MARK_LOST',
                 resolutionNote: note,
                 resolvedAt: new Date(),
-                resolvedBy: req.user?.username || 'Admin'
+                resolvedBy: req.admin?.username || 'Admin'
             },
             { new: true }
         );
@@ -725,7 +726,7 @@ router.patch('/missing/lost/:barcode', async (req, res) => {
 
         await AuditLog.create({
             action: 'INVENTORY_EDIT',
-            user: req.user?.username || 'Admin',
+            user: req.admin?.username || 'Admin',
             details: { action: 'MISSING_MARK_LOST', barcode, note },
             ipAddress: req.ip
         });
@@ -749,7 +750,7 @@ router.patch('/missing/ignore/:barcode', async (req, res) => {
                 resolutionAction: 'IGNORE',
                 resolutionNote: note,
                 resolvedAt: new Date(),
-                resolvedBy: req.user?.username || 'Admin'
+                resolvedBy: req.admin?.username || 'Admin'
             },
             { new: true }
         );
@@ -758,7 +759,7 @@ router.patch('/missing/ignore/:barcode', async (req, res) => {
 
         await AuditLog.create({
             action: 'INVENTORY_EDIT',
-            user: req.user?.username || 'Admin',
+            user: req.admin?.username || 'Admin',
             details: { action: 'MISSING_IGNORE', barcode, note },
             ipAddress: req.ip
         });
@@ -782,7 +783,7 @@ router.patch('/missing/create-entry/:barcode', async (req, res) => {
                 resolutionAction: 'CREATE_ENTRY',
                 resolutionNote: note,
                 resolvedAt: new Date(),
-                resolvedBy: req.user?.username || 'Admin'
+                resolvedBy: req.admin?.username || 'Admin'
             },
             { new: true }
         );
@@ -791,7 +792,7 @@ router.patch('/missing/create-entry/:barcode', async (req, res) => {
 
         await AuditLog.create({
             action: 'INVENTORY_EDIT',
-            user: req.user?.username || 'Admin',
+            user: req.admin?.username || 'Admin',
             details: { action: 'MISSING_CREATE_ENTRY', barcode, note },
             ipAddress: req.ip
         });

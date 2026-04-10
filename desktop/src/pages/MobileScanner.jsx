@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import QRCode from "react-qr-code";
 import { useNavigate } from 'react-router-dom';
 import { useConfig } from '../context/ConfigContext';
@@ -10,11 +10,28 @@ const IconLink = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="non
 const MobileScanner = () => {
     const navigate = useNavigate();
     const { apiUrl } = useConfig();
-    const [connectMode, setConnectMode] = useState('PROD'); // PROD or EXPO
+    const [serverIp, setServerIp] = useState('');
+    const [serverPort, setServerPort] = useState(5001);
+    const [connectMode, setConnectMode] = useState('PROD');
 
-    // Extract IP from API URL (e.g., http://10.29.168.224:5000 -> 10.29.168.224)
-    const serverIp = apiUrl.replace('http://', '').split(':')[0];
-    const expoUrl = `exp://${serverIp}:8081`;
+    useEffect(() => {
+        const fetchIp = async () => {
+            try {
+                const res = await fetch(`${apiUrl}/api/admin/server-ip`, {
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('ADMIN_TOKEN')}` }
+                });
+                const data = await res.json();
+                if (data.ip) setServerIp(data.ip);
+                if (data.httpsPort) setServerPort(Number(data.httpsPort) || 5001);
+            } catch (err) {
+                console.error("Failed to fetch LAN IP:", err);
+            }
+        };
+        fetchIp();
+    }, [apiUrl]);
+
+    const displayUrl = serverIp ? `https://${serverIp}:${serverPort}` : apiUrl;
+    const expoUrl = serverIp ? `exp://${serverIp}:8081` : '';
 
     return (
         <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--bg-primary)', overflow: 'hidden' }}>
@@ -87,7 +104,7 @@ const MobileScanner = () => {
                         display: 'inline-block', marginBottom: '2.5rem'
                     }}>
                         <QRCode
-                            value={connectMode === 'EXPO' ? expoUrl : apiUrl}
+                            value={connectMode === 'EXPO' ? expoUrl : displayUrl}
                             size={200}
                             level="H"
                             fgColor="#0f172a"
@@ -99,7 +116,7 @@ const MobileScanner = () => {
                             {connectMode === 'EXPO' ? 'EXPO GO PROTOCOL' : 'API ENDPOINT'}
                         </div>
                         <div style={{ fontFamily: 'monospace', fontSize: '1.2rem', fontWeight: '700', color: connectMode === 'EXPO' ? '#ffffff' : 'var(--accent-color)' }}>
-                            {connectMode === 'EXPO' ? expoUrl : apiUrl}
+                            {connectMode === 'EXPO' ? expoUrl : displayUrl}
                         </div>
                     </div>
 

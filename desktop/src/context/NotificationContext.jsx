@@ -22,11 +22,11 @@ const Toast = ({ message, type, onClose }) => {
 
     const getIcon = () => {
         switch (type) {
-            case 'success': return '✅';
-            case 'error': return '❌';
-            case 'warning': return '⚠️';
-            case 'info': return 'ℹ️';
-            default: return '🔔';
+            case 'success': return 'OK';
+            case 'error': return 'ERR';
+            case 'warning': return '!';
+            case 'info': return 'i';
+            default: return 'N';
         }
     };
 
@@ -150,7 +150,7 @@ const ConfirmModal = ({ isOpen, title, message, onConfirm, onCancel, type }) => 
                         margin: '0 auto 1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center',
                         fontSize: '1.5rem'
                     }}>
-                        {type === 'danger' ? '⚠️' : '❓'}
+                        {type === 'danger' ? '!' : '?'}
                     </div>
                     <h3 style={{ margin: '0 0 0.5rem', fontSize: '1.25rem', fontWeight: '800', color: 'var(--text-primary)' }}>{title}</h3>
                     <p style={{ margin: 0, fontSize: '0.95rem', color: 'var(--text-secondary)', lineHeight: '1.5' }}>{message}</p>

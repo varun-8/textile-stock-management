@@ -7,9 +7,9 @@ const MobileContext = createContext();
 const DEFAULT_IP = (window.location.hostname && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1')
     ? window.location.hostname
     : 'stock-system.local';
-const DISCOVERY_TIMEOUT_MS = 1200;
-const DEV_HTTP_PORT = 5001;
-const DEV_HTTPS_PORT = 5000;
+const DEV_HTTP_PORT = 5000;
+const DEV_HTTPS_PORT = 5001;
+const DISCOVERY_TIMEOUT_MS = 1500;
 const SETUP_TIMEOUT_MS = 6000;
 
 const normalizeHost = (value) => {
@@ -34,7 +34,7 @@ const buildBaseUrls = (value) => {
             const parsed = new URL(normalizedBase);
             const host = parsed.hostname;
             if (host) {
-                // For Native Apps, ALWAYS try HTTP 5001 first to bypass self-signed cert issues
+                // For Native Apps, ALWAYS try HTTP 5000 first to bypass self-signed cert issues
                 if (isNative) {
                     candidates.push(`http://${host}:${DEV_HTTP_PORT}`);
                 }
@@ -53,13 +53,8 @@ const buildBaseUrls = (value) => {
     const host = normalizeHost(value);
     if (!host) return [];
 
-    const defaultCandidates = [
-        `http://${host}:${DEV_HTTP_PORT}`,
-        `http://${host}:${DEV_HTTPS_PORT}`,
-        `https://${host}:${DEV_HTTPS_PORT}`
-    ];
-
-    return isNative ? defaultCandidates : defaultCandidates.reverse();
+    // Fallback candidates are now limited to the provided hostname without hardcoded ports
+    return [];
 };
 
 const uniqueHosts = (values) => [...new Set(values.map(normalizeHost).filter(Boolean))];

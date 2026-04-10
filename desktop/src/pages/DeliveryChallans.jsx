@@ -43,6 +43,8 @@ const DeliveryChallans = () => {
     const [pdfPreviewTitle, setPdfPreviewTitle] = useState('PDF Preview');
     const [partySuggestions, setPartySuggestions] = useState([]);
     const [showPartySuggestions, setShowPartySuggestions] = useState(false);
+    const [loadError, setLoadError] = useState('');
+    const [modalError, setModalError] = useState('');
 
     // Form state
     const [partyName, setPartyName] = useState('');
@@ -72,14 +74,30 @@ const DeliveryChallans = () => {
         return activeTemplate;
     })();
 
+    const getApiErrorMessage = (error, fallbackMessage) => {
+        if (typeof error?.response?.data?.error === 'string' && error.response.data.error.trim()) {
+            return error.response.data.error.trim();
+        }
+        if (typeof error?.response?.data?.message === 'string' && error.response.data.message.trim()) {
+            return error.response.data.message.trim();
+        }
+        if (typeof error?.message === 'string' && error.message.trim()) {
+            return error.message.trim();
+        }
+        return fallbackMessage;
+    };
+
     const fetchDCs = async () => {
         try {
             setLoading(true);
+            setLoadError('');
             const res = await axios.get(`${apiUrl}/api/dc`, authHeaders);
             setDcs(res.data);
         } catch (error) {
             console.error('Failed to fetch DCs:', error);
-            showNotification('Failed to load Delivery Challans', 'error');
+            const message = getApiErrorMessage(error, 'Failed to load Delivery Challans');
+            setLoadError(message);
+            showNotification(message, 'error');
         } finally {
             setLoading(false);
         }
@@ -245,6 +263,7 @@ const DeliveryChallans = () => {
         setDriverName('');
         setPercentage('0');
         setSelectedBatch(null);
+        setModalError('');
         setIsCreateModalOpen(true);
         await Promise.all([fetchOutBatches(), fetchDcTemplateConfig(), fetchDcTemplates()]);
     };
@@ -277,15 +296,19 @@ const DeliveryChallans = () => {
     };
 
     const handlePreviewDC = async () => {
+        setModalError('');
         if (!partyName) {
+            setModalError('Party Name is required');
             return showNotification('Party Name is required', 'error');
         }
         if (!selectedBatch) {
+            setModalError('Select a batch for preview');
             return showNotification('Select a batch for preview', 'error');
         }
 
         const pct = parseFloat(percentage) || 0;
         if (pct < 0 || pct > 100) {
+            setModalError('Percentage must be between 0 and 100');
             return showNotification('Percentage must be between 0 and 100', 'error');
         }
 
@@ -297,6 +320,7 @@ const DeliveryChallans = () => {
             };
             const manualValidationError = validateManualFields(latestTemplate);
             if (manualValidationError) {
+                setModalError(manualValidationError);
                 return showNotification(manualValidationError, 'error');
             }
 
@@ -322,6 +346,7 @@ const DeliveryChallans = () => {
             const pdfUrl = generateDCPdf(tempDC, tempDC.rolls, latestTemplate, { mode: 'bloburl' });
             
             if (!pdfUrl) {
+                setModalError('Unable to generate preview');
                 showNotification('Unable to generate preview', 'error');
                 return;
             }
@@ -338,21 +363,27 @@ const DeliveryChallans = () => {
             setPdfPreviewUrl(pdfUrl);
         } catch (error) {
             console.error('Failed to generate preview:', error);
-            showNotification('Failed to generate preview', 'error');
+            const message = getApiErrorMessage(error, 'Failed to generate preview');
+            setModalError(message);
+            showNotification(message, 'error');
         }
     };
 
     const handleCreateDC = async (e) => {
         e?.preventDefault();
+        setModalError('');
         if (!partyName) {
+            setModalError('Party Name is required');
             return showNotification('Party Name is required', 'error');
         }
         if (!selectedBatch) {
+            setModalError('Select a batch for the DC');
             return showNotification('Select a batch for the DC', 'error');
         }
 
         const pct = parseFloat(percentage) || 0;
         if (pct < 0 || pct > 100) {
+            setModalError('Percentage must be between 0 and 100');
             return showNotification('Percentage must be between 0 and 100', 'error');
         }
 
@@ -364,6 +395,7 @@ const DeliveryChallans = () => {
             };
             const manualValidationError = validateManualFields(latestTemplate);
             if (manualValidationError) {
+                setModalError(manualValidationError);
                 return showNotification(manualValidationError, 'error');
             }
 
@@ -419,7 +451,9 @@ const DeliveryChallans = () => {
             fetchDCs(); // refresh list
         } catch (error) {
             console.error('Failed to create DC:', error);
-            showNotification(error.response?.data?.error || 'Failed to create DC', 'error');
+            const message = getApiErrorMessage(error, 'Failed to create DC');
+            setModalError(message);
+            showNotification(message, 'error');
         }
     };
 
@@ -432,7 +466,9 @@ const DeliveryChallans = () => {
             setPercentage('0');
         } catch (error) {
             console.error('Failed to fetch OUT batches:', error);
-            showNotification('Failed to load OUT batches', 'error');
+            const message = getApiErrorMessage(error, 'Failed to load OUT batches');
+            setModalError(message);
+            showNotification(message, 'error');
         } finally {
             setBatchLoading(false);
         }
@@ -484,12 +520,38 @@ const DeliveryChallans = () => {
         }
     };
 
+    const createDcFieldGroupStyle = {
+        marginTop: '0.9rem'
+    };
+
+    const createDcLabelStyle = {
+        display: 'block',
+        marginBottom: '0.45rem',
+        fontSize: '0.78rem',
+        fontWeight: '700',
+        letterSpacing: '0.04em',
+        textTransform: 'uppercase',
+        color: 'var(--text-secondary)'
+    };
+
+    const createDcInputStyle = {
+        width: '100%',
+        padding: '0.72rem 0.8rem',
+        borderRadius: '10px',
+        border: '1px solid var(--border-color)',
+        background: 'var(--bg-primary)',
+        color: 'var(--text-primary)',
+        fontSize: '0.9rem',
+        fontWeight: '500',
+        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.02)'
+    };
+
     return (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
             {/* Header */}
             <header style={{ 
                 padding: '1.5rem 2rem', 
-                background: 'var(--bg-primary)', 
+                background: 'linear-gradient(180deg, var(--bg-primary), var(--bg-secondary))', 
                 borderBottom: '1px solid var(--border-color)',
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center'
             }}>
@@ -506,7 +568,7 @@ const DeliveryChallans = () => {
                             borderRadius: '8px', fontWeight: '700',
                             display: 'flex', alignItems: 'center', gap: '0.5rem',
                             cursor: 'pointer',
-                            boxShadow: '0 4px 12px rgba(99, 102, 241, 0.2)'
+                            boxShadow: '0 10px 24px rgba(99, 102, 241, 0.28)'
                         }}
                     >
                         <IconPlus size="18" /> GENERATE NEW DC
@@ -523,12 +585,28 @@ const DeliveryChallans = () => {
                     
                     {loading ? (
                         <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>Loading Delivery Challans...</div>
+                    ) : loadError ? (
+                        <div style={{
+                            margin: '0.5rem 0 1rem',
+                            padding: '1rem 1.1rem',
+                            borderRadius: '10px',
+                            border: '1px solid rgba(239, 68, 68, 0.35)',
+                            background: 'rgba(239, 68, 68, 0.08)',
+                            color: 'var(--error-color)',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            gap: '1rem'
+                        }}>
+                            <span>{loadError}</span>
+                            <button className="btn" onClick={fetchDCs}>Retry</button>
+                        </div>
                     ) : dcs.length === 0 ? (
                         <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
                             No Delivery Challans generated yet.
                         </div>
                     ) : (
-                        <div className="panel" style={{ padding: 0, overflow: 'hidden', border: '1px solid var(--border-color)', borderRadius: '16px' }}>
+                        <div className="panel" style={{ padding: 0, overflow: 'hidden', border: '1px solid var(--border-color)', borderRadius: '16px', boxShadow: '0 16px 30px rgba(2, 6, 23, 0.1)' }}>
                             <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', fontSize: '0.9rem' }}>
                                 <colgroup>
                                     <col style={{ width: '20%' }} />
@@ -559,6 +637,7 @@ const DeliveryChallans = () => {
                                                     transition: 'background 0.2s ease',
                                                     cursor: 'pointer'
                                                 }}
+                                                title={`Open ${dc.dcNumber || 'DC'} preview`}
                                                 onMouseOver={(e) => {
                                                     e.currentTarget.style.background = 'var(--row-hover-bg)';
                                                 }}
@@ -654,32 +733,14 @@ const DeliveryChallans = () => {
                         {/* Modal Body */}
                         <div style={{ flex: 1, display: 'flex', overflow: 'hidden', background: 'var(--bg-secondary)' }}>
                             {/* Left Side: Form */}
-                            <div style={{ width: '350px', padding: '1.5rem', borderRight: '1px solid var(--border-color)', overflowY: 'auto', background: 'var(--bg-secondary)' }}>
-                                <div className="form-group" style={{ marginBottom: '1rem' }}>
-                                    <label>DC Template</label>
-                                    <select
-                                        className="input"
-                                        value={selectedTemplateId}
-                                        onChange={(e) => setSelectedTemplateId(e.target.value)}
-                                        disabled={dcTemplates.length === 0}
-                                    >
-                                        {dcTemplates.length === 0 ? (
-                                            <option value="">Default Template</option>
-                                        ) : (
-                                            dcTemplates.map((tpl) => (
-                                                <option key={tpl.id} value={tpl.id}>
-                                                    {tpl.name}
-                                                </option>
-                                            ))
-                                        )}
-                                    </select>
-                                </div>
-
-                                <div className="form-group">
-                                    <label>Party Name / Billed To *</label>
+                            <div style={{ width: '350px', padding: '1.25rem', borderRight: '1px solid var(--border-color)', overflowY: 'auto', background: 'var(--bg-secondary)' }}>
+                                <div style={{ padding: '1rem', border: '1px solid var(--border-color)', borderRadius: '12px', background: 'linear-gradient(180deg, var(--bg-primary) 0%, var(--bg-secondary) 100%)' }}>
+                                <div className="form-group" style={createDcFieldGroupStyle}>
+                                    <label style={createDcLabelStyle}>Party Name / Billed To *</label>
                                     <input
                                         type="text"
                                         className="input"
+                                        style={createDcInputStyle}
                                         value={partyName}
                                         onChange={e => handlePartyNameChange(e.target.value)}
                                         placeholder="Customer Name"
@@ -720,74 +781,90 @@ const DeliveryChallans = () => {
                                     )}
                                 </div>
                                 {selectedTemplateConfig.showPartyAddress && (
-                                    <div className="form-group" style={{ marginTop: '1rem' }}>
-                                        <label>Party Address *</label>
+                                    <div className="form-group" style={createDcFieldGroupStyle}>
+                                        <label style={createDcLabelStyle}>Party Address *</label>
                                         <textarea
                                             className="input"
+                                            style={{ ...createDcInputStyle, minHeight: '74px', lineHeight: '1.45' }}
                                             value={partyAddress}
                                             onChange={e => setPartyAddress(e.target.value)}
                                             placeholder="Customer Address"
                                             rows={2}
-                                            style={{ resize: 'vertical' }}
                                         />
                                     </div>
                                 )}
                                 {selectedTemplateConfig.showQuality && (
-                                    <div className="form-group" style={{ marginTop: '1rem' }}>
-                                        <label>Quality *</label>
-                                        <input type="text" className="input" value={quality} onChange={e => setQuality(e.target.value)} placeholder="Quality" />
+                                    <div className="form-group" style={createDcFieldGroupStyle}>
+                                        <label style={createDcLabelStyle}>Quality *</label>
+                                        <input type="text" className="input" style={createDcInputStyle} value={quality} onChange={e => setQuality(e.target.value)} placeholder="Quality" />
                                     </div>
                                 )}
                                 {selectedTemplateConfig.showFolding && (
-                                    <div className="form-group" style={{ marginTop: '1rem' }}>
-                                        <label>Folding *</label>
-                                        <input type="text" className="input" value={folding} onChange={e => setFolding(e.target.value)} placeholder="Folding" />
+                                    <div className="form-group" style={createDcFieldGroupStyle}>
+                                        <label style={createDcLabelStyle}>Folding *</label>
+                                        <input type="text" className="input" style={createDcInputStyle} value={folding} onChange={e => setFolding(e.target.value)} placeholder="Folding" />
                                     </div>
                                 )}
                                 {selectedTemplateConfig.showLotNo && (
-                                    <div className="form-group" style={{ marginTop: '1rem' }}>
-                                        <label>Lot No *</label>
-                                        <input type="text" className="input" value={lotNo} onChange={e => setLotNo(e.target.value)} placeholder="Lot Number" />
+                                    <div className="form-group" style={createDcFieldGroupStyle}>
+                                        <label style={createDcLabelStyle}>Lot No *</label>
+                                        <input type="text" className="input" style={createDcInputStyle} value={lotNo} onChange={e => setLotNo(e.target.value)} placeholder="Lot Number" />
                                     </div>
                                 )}
                                 {selectedTemplateConfig.showBillNo && (
-                                    <div className="form-group" style={{ marginTop: '1rem' }}>
-                                        <label>Bill No *</label>
-                                        <input type="text" className="input" value={billNo} onChange={e => setBillNo(e.target.value)} placeholder="Bill Number" />
+                                    <div className="form-group" style={createDcFieldGroupStyle}>
+                                        <label style={createDcLabelStyle}>Bill No *</label>
+                                        <input type="text" className="input" style={createDcInputStyle} value={billNo} onChange={e => setBillNo(e.target.value)} placeholder="Bill Number" />
                                     </div>
                                 )}
                                 {selectedTemplateConfig.showBillPreparedBy && (
-                                    <div className="form-group" style={{ marginTop: '1rem' }}>
-                                        <label>Bill Prepared By *</label>
-                                        <input type="text" className="input" value={billPreparedBy} onChange={e => setBillPreparedBy(e.target.value)} placeholder="Prepared By" />
+                                    <div className="form-group" style={createDcFieldGroupStyle}>
+                                        <label style={createDcLabelStyle}>Bill Prepared By *</label>
+                                        <input type="text" className="input" style={createDcInputStyle} value={billPreparedBy} onChange={e => setBillPreparedBy(e.target.value)} placeholder="Prepared By" />
                                     </div>
                                 )}
                                 {selectedTemplateConfig.showVehicle && (
-                                    <div className="form-group" style={{ marginTop: '1rem' }}>
-                                        <label>Vehicle Number</label>
-                                        <input type="text" className="input" value={vehicleNumber} onChange={e => setVehicleNumber(e.target.value)} placeholder="TN 38 XX 0000" />
+                                    <div className="form-group" style={createDcFieldGroupStyle}>
+                                        <label style={createDcLabelStyle}>Vehicle Number</label>
+                                        <input type="text" className="input" style={createDcInputStyle} value={vehicleNumber} onChange={e => setVehicleNumber(e.target.value)} placeholder="TN 38 XX 0000" />
                                     </div>
                                 )}
                                 {selectedTemplateConfig.showDriver && (
-                                    <div className="form-group" style={{ marginTop: '1rem' }}>
-                                        <label>Driver Name / Addl Info</label>
-                                        <input type="text" className="input" value={driverName} onChange={e => setDriverName(e.target.value)} placeholder="Optional" />
+                                    <div className="form-group" style={createDcFieldGroupStyle}>
+                                        <label style={createDcLabelStyle}>Driver Name / Addl Info</label>
+                                        <input type="text" className="input" style={createDcInputStyle} value={driverName} onChange={e => setDriverName(e.target.value)} placeholder="Optional" />
                                     </div>
                                 )}
 
-                                <div className="form-group" style={{ marginTop: '1rem' }}>
-                                    <label>Percentage Adjustment (%)</label>
+                                <div className="form-group" style={createDcFieldGroupStyle}>
+                                    <label style={createDcLabelStyle}>Percentage Adjustment (%)</label>
                                     <input 
                                         type="number" 
                                         step="0.01"
                                         min="0"
                                         max="100"
                                         className="input" 
+                                        style={createDcInputStyle}
                                         value={percentage} 
                                         onChange={e => setPercentage(e.target.value)} 
                                         placeholder="e.g. 5" 
                                     />
                                 </div>
+
+                                {modalError && (
+                                    <div style={{
+                                        marginTop: '0.95rem',
+                                        padding: '0.7rem 0.8rem',
+                                        borderRadius: '10px',
+                                        border: '1px solid rgba(239, 68, 68, 0.35)',
+                                        background: 'rgba(239, 68, 68, 0.08)',
+                                        color: 'var(--error-color)',
+                                        fontSize: '0.82rem',
+                                        fontWeight: '600'
+                                    }}>
+                                        {modalError}
+                                    </div>
+                                )}
                                 
                                 <div style={{ marginTop: '2rem', padding: '1.5rem', background: 'var(--bg-secondary)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
                                     <h3 style={{ margin: '0 0 1rem', fontSize: '1rem' }}>Selected Batch</h3>
@@ -811,8 +888,9 @@ const DeliveryChallans = () => {
                                             </div>
                                         </>
                                     ) : (
-                                        <span style={{ color: 'var(--text-secondary)' }}>Select a batch from the right →</span>
+                                        <span style={{ color: 'var(--text-secondary)' }}>Select a batch from the right side</span>
                                     )}
+                                </div>
                                 </div>
                             </div>
                             
@@ -848,7 +926,7 @@ const DeliveryChallans = () => {
                                                         )}
                                                     </div>
                                                     <div style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-                                                        📦 {batch.rollCount} rolls • 📏 {batch.totalMetre}m
+                                                        Rolls: {batch.rollCount} • Metre: {batch.totalMetre}m
                                                     </div>
                                                 </div>
                                             ))}

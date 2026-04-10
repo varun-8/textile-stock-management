@@ -54,7 +54,7 @@
   },
   "build": {
     "appId": "com.srilakshmitextiles.mobile",
-    "productName": "Prodexa Mobile",
+    "productName": "Loom Track Mobile",
     "asar": true,
     "files": [
       "dist/**/*",
@@ -86,7 +86,7 @@
       "allowElevation": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Prodexa Mobile",
+      "shortcutName": "Loom Track Mobile",
       "installerIcon": "icon.ico",
       "uninstallerIcon": "icon.ico",
       "installerHeaderIcon": "icon.ico",

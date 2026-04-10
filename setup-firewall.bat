@@ -1,6 +1,6 @@
 @echo off
 echo =======================================================
-echo Prodexa Network Firewall Setup
+echo Loom Track Network Firewall Setup
 echo =======================================================
 echo Requesting Administrative Privileges to open Port 5000...
 echo.
@@ -16,8 +16,8 @@ if %errorLevel% neq 0 (
 
 :: Run firewall commands
 echo [OK] Administrator rights verified. Adding rules...
-netsh advfirewall firewall add rule name="Prodexa Server" dir=in action=allow protocol=TCP localport=5000
-netsh advfirewall firewall add rule name="Prodexa Server" dir=out action=allow protocol=TCP localport=5000
+netsh advfirewall firewall add rule name="Loom Track Server" dir=in action=allow protocol=TCP localport=5000
+netsh advfirewall firewall add rule name="Loom Track Server" dir=out action=allow protocol=TCP localport=5000
 
 echo.
 echo [SUCCESS] Firewall rules added! Your mobile device should now be able to connect!

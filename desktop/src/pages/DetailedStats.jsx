@@ -50,9 +50,9 @@ const DetailedStats = () => {
             
             const newDetails = { ...prev.details, [field]: value };
             
-            if (field === 'weight') {
-                const m = parseFloat(newDetails.metre || 0);
-                const w = parseFloat(value || 0);
+            if (field === 'weight' || field === 'metre') {
+                const m = parseFloat(field === 'metre' ? value : newDetails.metre || 0);
+                const w = parseFloat(field === 'weight' ? value : newDetails.weight || 0);
                 if (!isNaN(m) && !isNaN(w) && m > 0 && w > 0) {
                     newDetails.percentage = ((w / m) * 1000).toFixed(2);
                 }
@@ -123,6 +123,15 @@ const DetailedStats = () => {
 
     const handleSaveEdit = async () => {
         if (!editItem) return;
+        
+        // Final sync if metre was manually edited and pieces weren't
+        let finalPieces = editItem.details.pieces;
+        let finalMetre = parseFloat(editItem.details.metre || 0);
+        
+        if (finalMetre > 0 && (!finalPieces || finalPieces.length === 0 || (finalPieces.length === 1 && !finalPieces[0].length))) {
+            finalPieces = [{ length: finalMetre, label: 'Piece 1' }];
+        }
+
         try {
             const isCreation = type === 'missingCount';
             const endpoint = isCreation ? `${apiUrl}/api/mobile/transaction` : `${apiUrl}/api/admin/inventory/update`;
@@ -130,8 +139,8 @@ const DetailedStats = () => {
 
             const payload = {
                 barcode: editItem.barcode,
-                metre: parseFloat(editItem.details.metre || 0),
-                pieces: Array.isArray(editItem.details.pieces) && editItem.details.pieces.length > 0 ? editItem.details.pieces : undefined,
+                metre: finalMetre,
+                pieces: finalPieces,
                 weight: parseFloat(editItem.details.weight || 0),
                 percentage: parseFloat(editItem.details.percentage || 100),
                 type: 'IN',
@@ -141,8 +150,15 @@ const DetailedStats = () => {
             if (payload.metre <= 0 || payload.weight <= 0) {
                 return alert("Metric Error: Metre and Weight must be positive numbers.");
             }
+            if (!payload.barcode || !payload.barcode.includes('-')) {
+                return alert("Format Error: Invalid Barcode. Format must be YY-SZ-XXXX");
+            }
 
             const token = localStorage.getItem('ADMIN_TOKEN');
+            if (!token) {
+                return alert("Auth Error: Session expired. Please log in again.");
+            }
+
             const res = await fetch(endpoint, {
                 method: method,
                 headers: { 
@@ -152,26 +168,39 @@ const DetailedStats = () => {
                 body: JSON.stringify(payload)
             });
 
-            const result = await res.json();
+            if (res.status === 401) {
+                const errData = await res.json().catch(() => ({}));
+                return alert(`Auth Error: ${errData.error || 'Identity Verification Failed'}. Please check your login session.`);
+            }
+
             if (res.ok) {
+                const result = await res.json();
                 if (isCreation) {
-                    await fetch(`${apiUrl}/api/admin/missing/create-entry/${encodeURIComponent(editItem.barcode)}`, {
-                        method: 'PATCH',
-                        headers: { 
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${token}`
-                        },
-                        body: JSON.stringify({ note: 'Handled via Industrial Entry' })
-                    });
+                    try {
+                        const patchRes = await fetch(`${apiUrl}/api/admin/missing/create-entry/${encodeURIComponent(editItem.barcode)}`, {
+                            method: 'PATCH',
+                            headers: { 
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${token}`
+                            },
+                            body: JSON.stringify({ note: 'Handled via Industrial Entry' })
+                        });
+                        if (!patchRes.ok) {
+                            console.warn("Failed to mark missing log as resolved, but transaction was successful.");
+                        }
+                    } catch (patchErr) {
+                        console.error("Resolution patch failed", patchErr);
+                    }
                 }
                 setEditItem(null);
                 setRefreshTick(x => x + 1);
             } else {
+                const result = await res.json().catch(() => ({error: "Unknown server error"}));
                 alert(result.error || "System rejected transaction.");
             }
         } catch (err) {
-            console.error(err);
-            alert("Network link failed.");
+            console.error("Save Error:", err);
+            alert(`Network failure: ${err.message || "Could not connect to server"}. Please check your connection or API settings.`);
         }
     };
 
@@ -202,10 +231,19 @@ const DetailedStats = () => {
                     url += `&${queryString}`;
                 }
 
-                const res = await fetch(url);
+                const token = localStorage.getItem('ADMIN_TOKEN');
+                const res = await fetch(url, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (res.status === 401) {
+                    setData([]);
+                    return;
+                }
+
                 const result = await res.json();
 
-                const normalized = result.map(item => ({
+                const normalized = (Array.isArray(result) ? result : []).map(item => ({
                     time: new Date(item.updatedAt || item.detectedAt || item.createdAt).toLocaleString(),
                     dateObj: new Date(item.updatedAt || item.detectedAt || item.createdAt),
                     barcode: item.barcode,
@@ -255,13 +293,13 @@ const DetailedStats = () => {
 
             if (!res.ok) {
                 const err = await res.json().catch(() => ({}));
-                throw new Error(err.error || 'Action failed');
+                throw new Error(err.error || `Action ${action} failed`);
             }
 
             setRefreshTick((x) => x + 1);
         } catch (err) {
-            console.error('Failed to resolve missing entry', err);
-            alert(err.message || 'Failed to resolve missing entry');
+            console.error('Resolution Error:', err);
+            alert(`Failed to resolve entry: ${err.message || "Network Error"}`);
         }
     };
 
@@ -282,8 +320,8 @@ const DetailedStats = () => {
             setRefreshTick((x) => x + 1);
             alert(`Audit complete: ${out.missingDetected} missing, ${out.created} created`);
         } catch (err) {
-            console.error('Sequence audit failed', err);
-            alert(err.message || 'Sequence audit failed');
+            console.error('Sequence audit failure', err);
+            alert(`Audit failed: ${err.message || "Network connectivity issue"}`);
         }
     };
 
@@ -340,6 +378,7 @@ const DetailedStats = () => {
             type === 'readyToDispatch' ? 'Dispatch Queue' :
             type === 'stockOut' ? 'Dispatch Logs' :
                 type === 'missingCount' ? 'Missing Logs' : 'Detailed View';
+    const isMissingPage = type === 'missingCount';
 
     return (
         <div style={{ padding: '0', height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--bg-primary)' }} className="animate-fade-in">
@@ -355,13 +394,13 @@ const DetailedStats = () => {
                     <button onClick={() => navigate('/dashboard')} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', fontSize: '1.5rem', cursor: 'pointer' }}>←</button>
                     <div style={{ width: '1px', height: '32px', background: 'var(--border-color)' }}></div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                        <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: `${themeColor}15`, color: themeColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem' }}>
-                            {type === 'stockIn' ? '📥' : type === 'readyToDispatch' ? '📋' : type === 'stockOut' ? '🚛' : '📦'}
+                        <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: isMissingPage ? 'rgba(239, 68, 68, 0.15)' : `${themeColor}15`, color: isMissingPage ? 'var(--error-color)' : themeColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem' }}>
+                            {type === 'stockIn' ? 'IN' : type === 'readyToDispatch' ? 'RDY' : type === 'stockOut' ? 'OUT' : isMissingPage ? '!' : 'INV'}
                         </div>
                         <div>
                             <h2 style={{ fontSize: '1.4rem', fontWeight: '800', margin: 0, letterSpacing: '-0.02em' }}>{pageTitle}</h2>
                             <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: '500' }}>
-                                {type === 'missingCount' ? 'Resolve sequence gaps' : 'Detailed operational metrics'}
+                                {isMissingPage ? 'Review unresolved sequence gaps and move valid stock back in.' : 'Detailed operational metrics'}
                             </div>
                         </div>
                     </div>
@@ -369,9 +408,14 @@ const DetailedStats = () => {
 
                 <div style={{ display: 'flex', gap: '1rem' }}>
                     {type === 'missingCount' && (
-                        <button onClick={runSequenceAudit} className="btn-accent" style={{ padding: '0.7rem 1.2rem', borderRadius: '10px', fontWeight: '700', border: 'none', background: 'var(--accent-color)', color: 'white', cursor: 'pointer' }}>
-                            Run Sequence Audit
-                        </button>
+                        <>
+                            <button onClick={() => setEditItem({ isManual: true, barcode: '', details: { metre: '', pieces: [{ length: '', label: 'Piece 1' }], weight: '', percentage: '100' } })} className="btn-secondary" style={{ padding: '0.7rem 1.2rem', borderRadius: '10px', fontWeight: '700', border: '1px solid var(--accent-color)', background: 'transparent', color: 'var(--accent-color)', cursor: 'pointer' }}>
+                                + Add Manual
+                            </button>
+                            <button onClick={runSequenceAudit} className="btn-accent" style={{ padding: '0.7rem 1.2rem', borderRadius: '10px', fontWeight: '700', border: 'none', background: 'var(--accent-color)', color: 'white', cursor: 'pointer' }}>
+                                Run Sequence Audit
+                            </button>
+                        </>
                     )}
                     <button onClick={handleExport} className="btn-secondary" style={{ padding: '0.7rem 1.2rem', borderRadius: '10px', fontWeight: '700', border: '1px solid var(--border-color)', background: 'var(--bg-tertiary)', cursor: 'pointer' }}>
                         Export CSV
@@ -382,17 +426,32 @@ const DetailedStats = () => {
             {/* --- Metrics --- */}
             <div style={{ padding: '2rem 2.5rem', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1.5rem' }}>
                 <MetricCard 
-                    label={type === 'missingCount' ? "Detected Gaps" : "Total Rolls"} 
+                    label={isMissingPage ? "Detected Gaps" : "Total Rolls"} 
                     value={summary.totalCount} 
-                    icon="📊" 
-                    color={type === 'missingCount' ? 'var(--error-color)' : 'var(--text-primary)'} 
+                    icon={isMissingPage ? 'ALERT' : 'STATS'} 
+                    color={isMissingPage ? 'var(--error-color)' : 'var(--text-primary)'} 
+                    highlighted={isMissingPage}
                 />
-                <MetricCard label="Total Metre" value={summary.totalMetre.toLocaleString()} unit="M" icon="📏" color="#10b981" />
-                <MetricCard label="Total Weight" value={summary.totalWeight.toLocaleString()} unit="KG" icon="⚖️" color="#6366f1" />
+                <MetricCard label="Total Metre" value={summary.totalMetre.toLocaleString()} unit="M" icon="M" color="#10b981" />
+                <MetricCard label="Total Weight" value={summary.totalWeight.toLocaleString()} unit="KG" icon="KG" color="#6366f1" />
             </div>
 
             {/* --- Filters --- */}
             <div style={{ padding: '0 2.5rem 2rem 2.5rem' }}>
+                {isMissingPage && (
+                    <div style={{
+                        marginBottom: '1rem',
+                        padding: '0.95rem 1rem',
+                        borderRadius: '12px',
+                        border: '1px solid rgba(239, 68, 68, 0.28)',
+                        background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.14), rgba(239, 68, 68, 0.04))',
+                        color: 'var(--text-primary)',
+                        fontSize: '0.85rem',
+                        fontWeight: '600'
+                    }}>
+                        Missing logs now use a single recovery action: <strong>Stock In</strong>. Lost and Ignore actions have been removed.
+                    </div>
+                )}
                 <div style={{ display: 'flex', gap: '1.5rem', padding: '1rem', background: 'var(--bg-secondary)', borderRadius: '12px', border: '1px solid var(--border-color)', alignItems: 'center' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
                         <span style={labelStyle}>Article:</span>
@@ -412,12 +471,19 @@ const DetailedStats = () => {
             </div>
 
             {/* --- Table --- */}
-            <div style={{ flex: 1, overflowY: 'auto', borderTop: '1px solid var(--border-color)', background: 'var(--bg-secondary)' }}>
+            <div style={{
+                flex: 1,
+                overflowY: 'auto',
+                borderTop: '1px solid var(--border-color)',
+                background: 'var(--bg-secondary)',
+                borderRadius: isMissingPage ? '18px 18px 0 0' : 0,
+                boxShadow: isMissingPage ? '0 -10px 28px rgba(2, 6, 23, 0.18)' : 'none'
+            }}>
                 {loading ? (
                     <div style={{ padding: '5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>Loading inventory data...</div>
                 ) : (
                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                        <thead style={{ position: 'sticky', top: 0, background: 'var(--bg-primary)', zIndex: 10 }}>
+                        <thead style={{ position: 'sticky', top: 0, background: isMissingPage ? 'linear-gradient(180deg, var(--bg-primary), var(--bg-secondary))' : 'var(--bg-primary)', zIndex: 10 }}>
                             <tr>
                                 <th style={thStyle}>BARCODE</th>
                                 <th style={thStyle}>ARTICLE</th>
@@ -426,7 +492,7 @@ const DetailedStats = () => {
                                 {type !== 'missingCount' && <th style={{ ...thStyle, textAlign: 'right' }}>PIECES</th>}
                                 {type !== 'missingCount' && <th style={{ ...thStyle, textAlign: 'right' }}>WEIGHT</th>}
                                 {type !== 'missingCount' && <th style={thStyle}>OPERATOR</th>}
-                                <th style={thStyle}>{type === 'missingCount' ? 'RESOLUTION ACTIONS' : 'TIMESTAMP'}</th>
+                                <th style={thStyle}>{type === 'missingCount' ? 'ACTION' : 'TIMESTAMP'}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -448,10 +514,8 @@ const DetailedStats = () => {
                                     {type !== 'missingCount' && <td style={tdStyle}>{row.employee || '-'}</td>}
                                     <td style={tdStyle}>
                                         {type === 'missingCount' ? (
-                                            <div style={{ display: 'flex', gap: '8px' }}>
-                                                <button onClick={(e) => { e.stopPropagation(); resolveMissing(row.barcode, 'MARK_LOST'); }} style={{ padding: '6px 10px', fontSize: '0.7rem', border: '1px solid var(--error-color)', color: 'var(--error-color)', background: 'transparent', borderRadius: '4px', cursor: 'pointer' }}>LOST</button>
-                                                <button onClick={(e) => { e.stopPropagation(); setEditItem({ barcode: row.barcode, details: { metre: '', pieces: [{ length: '', label: 'Piece 1' }], weight: '', percentage: '100' } }); }} style={{ padding: '6px 12px', fontSize: '0.7rem', background: 'var(--accent-color)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: '700' }}>STOCK IN</button>
-                                                <button onClick={(e) => { e.stopPropagation(); resolveMissing(row.barcode, 'IGNORE'); }} style={{ padding: '6px 10px', fontSize: '0.7rem', border: 'none', background: 'var(--bg-tertiary)', borderRadius: '4px', cursor: 'pointer' }}>IGNORE</button>
+                                            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-start' }}>
+                                                <button onClick={(e) => { e.stopPropagation(); setEditItem({ barcode: row.barcode, details: { metre: '', pieces: [{ length: '', label: 'Piece 1' }], weight: '', percentage: '100' } }); }} style={{ padding: '7px 14px', fontSize: '0.72rem', letterSpacing: '0.04em', background: 'var(--accent-color)', color: 'white', border: 'none', borderRadius: '999px', cursor: 'pointer', fontWeight: '800', boxShadow: '0 10px 18px rgba(99, 102, 241, 0.24)' }}>STOCK IN</button>
                                             </div>
                                         ) : (
                                             <span style={{ fontSize: '0.8rem', opacity: 0.6 }}>{row.time}</span>
@@ -481,8 +545,28 @@ const DetailedStats = () => {
                         <h3 style={{ marginBottom: '1.5rem' }}>Industrial Entry: {editItem.barcode}</h3>
                         <div style={{ display: 'grid', gap: '1rem' }}>
                             <div>
-                                <label style={labelStyle}>Total Metre (Calculated)</label>
-                                <input type="text" value={editItem.details.metre} readOnly style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-secondary)', opacity: 0.8 }} />
+                                <label style={labelStyle}>Barcode {editItem.isManual && '(New)'}</label>
+                                <input 
+                                    type="text" 
+                                    autoFocus={editItem.isManual}
+                                    value={editItem.barcode} 
+                                    readOnly={!editItem.isManual}
+                                    placeholder="YY-SZ-XXXX"
+                                    onChange={(e) => setEditItem({ ...editItem, barcode: e.target.value.toUpperCase() })}
+                                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border-color)', background: editItem.isManual ? 'var(--bg-primary)' : 'var(--bg-secondary)', fontWeight: 'bold' }} 
+                                />
+                            </div>
+                            <div>
+                                <label style={labelStyle}>Total Metre {editItem.details.pieces.length > 1 && '(Calculated)'}</label>
+                                <input 
+                                    type="text" 
+                                    autoFocus={!editItem.isManual}
+                                    inputMode="decimal"
+                                    value={editItem.details.metre} 
+                                    onChange={(e) => handleEditChange('metre', e.target.value)}
+                                    placeholder="Enter total metre"
+                                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-primary)' }} 
+                                />
                             </div>
                             <div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
@@ -495,13 +579,12 @@ const DetailedStats = () => {
                                             <input 
                                                 type="text" 
                                                 inputMode="decimal"
-                                                autoFocus={idx === 0}
                                                 value={p.length} 
                                                 onChange={e => handlePieceLengthChange(idx, e.target.value)} 
                                                 placeholder="Length" 
                                                 style={{ flex: 1, padding: '8px', borderRadius: '6px', border: '1px solid var(--border-color)' }} 
                                             />
-                                            <button onClick={() => removePieceRow(idx)} style={{ background: 'transparent', border: 'none' }}>🗑️</button>
+                                            <button onClick={() => removePieceRow(idx)} style={{ background: 'transparent', border: 'none' }}>Delete</button>
                                         </div>
                                     ))}
                                 </div>
@@ -528,8 +611,14 @@ const DetailedStats = () => {
     );
 };
 
-const MetricCard = ({ label, value, unit, icon, color }) => (
-    <div style={{ background: 'var(--bg-tertiary)', padding: '1.2rem', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
+const MetricCard = ({ label, value, unit, icon, color, highlighted = false }) => (
+    <div style={{
+        background: highlighted ? 'linear-gradient(135deg, rgba(239, 68, 68, 0.18), rgba(239, 68, 68, 0.05))' : 'var(--bg-tertiary)',
+        padding: '1.2rem',
+        borderRadius: '12px',
+        border: highlighted ? '1px solid rgba(239, 68, 68, 0.35)' : '1px solid var(--border-color)',
+        boxShadow: highlighted ? '0 12px 24px rgba(239, 68, 68, 0.14)' : 'none'
+    }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.8rem' }}>
             <span style={{ fontSize: '0.7rem', fontWeight: '800', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>{label}</span>
             <span>{icon}</span>

@@ -95,17 +95,17 @@ const SessionManager = () => {
             console.log('✅ PROMPT AVAILABLE - Calling prompt.prompt()');
             setShowMenu(false);
             setShowInstallBanner(false);
-            setInstallStatus({ type: 'installing', message: 'Installing Prodexa...' });
-
-            prompt.prompt();
-            console.log('✅ prompt.prompt() called - waiting for user choice');
-
-            const { outcome } = await prompt.userChoice;
-            console.log(`📦 User choice: ${outcome}`);
-
-            if (outcome === 'accepted') {
-                console.log('✅ INSTALL ACCEPTED');
-                setInstallStatus({ type: 'success', message: '✅ Prodexa installed successfully!' });
+            setInstallStatus({ type: 'installing', message: 'Installing Loom Track...' });
+            
+            // Wait 2s to show installation
+            await new Promise(r => setTimeout(r, 2000));
+            
+            if (deferredPrompt) {
+                deferredPrompt.prompt();
+                const { outcome } = await deferredPrompt.userChoice;
+                if (outcome === 'accepted') {
+                    setInstallStatus({ type: 'success', message: '✅ Loom Track installed successfully!' });
+                }
                 setTimeout(() => setInstallStatus(null), 3000);
             } else {
                 console.log('⏭️ User dismissed install');
@@ -159,7 +159,7 @@ const SessionManager = () => {
                 navigate('/work');
             }
         } catch (err) {
-            showNotification('Failed to join session', 'error');
+            showNotification('Failed to join batch', 'error');
         }
     };
 
@@ -184,7 +184,7 @@ const SessionManager = () => {
                 await handleJoin(data.session);
             }
         } catch (err) {
-            showNotification(err.response?.data?.error || 'Failed to create session', 'error');
+            showNotification(err.response?.data?.error || 'Failed to create batch', 'error');
         }
     };
 
@@ -220,7 +220,7 @@ const SessionManager = () => {
                 source: 'mobile'
             });
             if (!res.data?.success) {
-                showNotification(res.data?.error || 'Failed to end session', 'error');
+                showNotification(res.data?.error || 'Failed to end batch', 'error');
                 return;
             }
             setShowEndSummary(false);
@@ -230,7 +230,7 @@ const SessionManager = () => {
             fetchSessions();
         } catch (err) {
             console.error(err);
-            showNotification('Failed to end session', 'error');
+            showNotification('Failed to end batch', 'error');
         } finally {
             setClosingSession(false);
         }
@@ -363,10 +363,10 @@ const SessionManager = () => {
                                 borderRadius: '12px', display: 'flex', alignItems: 'center',
                                 justifyContent: 'center', boxShadow: '0 4px 12px rgba(99, 102, 241, 0.2)'
                             }}>
-                                <img src={`${import.meta.env.BASE_URL}logo.svg`} alt="Prodexa" style={{ width: '22px', height: '22px' }} />
+                                <img src={`${import.meta.env.BASE_URL}logo.svg`} alt="Loom Track" style={{ width: '22px', height: '22px' }} />
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                <span style={{ fontSize: '16px', fontWeight: '900', color: 'white', letterSpacing: '-0.02em', lineHeight: 1 }}>Prodexa</span>
+                                <span style={{ fontSize: '16px', fontWeight: '900', color: 'white', letterSpacing: '-0.02em', lineHeight: 1 }}>Loom Track</span>
                                 <span style={{ fontSize: '9px', fontWeight: '700', color: THEME.textMuted, letterSpacing: '0.05em', marginTop: '2px' }}>TEXTILE MANAGEMENT</span>
                             </div>
                         </div>
@@ -522,7 +522,7 @@ const SessionManager = () => {
                                                 boxShadow: '0 8px 20px rgba(99, 102, 241, 0.3)', cursor: 'pointer'
                                             }}
                                         >
-                                            JOIN SESSION
+                                            JOIN BATCH
                                         </button>
                                         <button
                                             onClick={() => openEndSummary(session)}
@@ -533,7 +533,7 @@ const SessionManager = () => {
                                                 fontSize: '13px', fontWeight: '800', cursor: 'pointer'
                                             }}
                                         >
-                                            END SESSION
+                                            END BATCH
                                         </button>
                                     </div>
                                 </div>
@@ -562,7 +562,7 @@ const SessionManager = () => {
                     }}
                 >
                     <span style={{ fontSize: '24px', fontWeight: '300' }}>+</span>
-                    START NEW SESSION
+                    START NEW BATCH
                 </button>
             </div>
 
@@ -910,7 +910,7 @@ const SessionManager = () => {
                     <div style={{ fontSize: '32px' }}>📲</div>
                     <div style={{ flex: 1 }}>
                         <div style={{ fontSize: '15px', fontWeight: '700', color: 'white', marginBottom: '2px' }}>
-                            Install Prodexa App
+                            Install Loom Track App
                         </div>
                         <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.85)' }}>
                             Quick access from home screen
@@ -1166,7 +1166,7 @@ styles.textContent = `
                     to {transform: translateX(-50%) translateY(0); opacity: 1; }
     }
                     `;
-if (!document.querySelector('style[data-prodexa-animations]')) {
-    styles.setAttribute('data-prodexa-animations', 'true');
+if (!document.querySelector('style[data-loomtrack-animations]')) {
+    styles.setAttribute('data-loomtrack-animations', 'true');
     document.head.appendChild(styles);
 }

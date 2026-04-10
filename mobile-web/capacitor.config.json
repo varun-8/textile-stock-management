@@ -1,6 +1,6 @@
 {
   "appId": "com.srilakshmitextiles.mobile",
-  "appName": "Prodexa Mobile",
+  "appName": "Loom Track Mobile",
   "webDir": "dist",
   "server": {
     "allowNavigation": [

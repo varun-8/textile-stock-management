@@ -302,7 +302,7 @@ const Employees = () => {
                                                         background: 'var(--bg-tertiary)', padding: '4px 8px', borderRadius: '4px',
                                                         fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-primary)', border: '1px solid var(--border-color)'
                                                     }}>
-                                                        📱 {emp.lastScanner}
+                                                        Device: {emp.lastScanner}
                                                     </span>
                                                 ) : <span style={{ opacity: 0.4, fontSize: '0.8rem' }}>-</span>}
                                             </td>
@@ -381,7 +381,7 @@ const Employees = () => {
 
                             {error && (
                                 <div style={{ marginTop: '1.5rem', padding: '1rem', background: 'var(--error-bg)', color: 'var(--error-color)', borderRadius: '8px', fontSize: '0.85rem', fontWeight: '600' }}>
-                                    ⚠️ {error}
+                                    Error: {error}
                                 </div>
                             )}
                         </div>

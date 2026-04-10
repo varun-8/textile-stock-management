@@ -49,6 +49,10 @@ const Sessions = () => {
     const [dispatchEditSaving, setDispatchEditSaving] = useState(false);
     const [dispatchEditError, setDispatchEditError] = useState('');
 
+    // Live Feed Edit State
+    const [editModeItem, setEditModeItem] = useState(null);
+    const [isSavingEdit, setIsSavingEdit] = useState(false);
+
     // Refs for Socket Listeners (To avoid constant reconnections)
     const liveViewRef = useRef(showLiveView);
     const liveSessionRef = useRef(liveSession);
@@ -78,7 +82,7 @@ const Sessions = () => {
         });
 
         socket.on('session_update', async (data) => {
-            console.log('📡 DESKTOP RECEIVED SESSION_UPDATE:', JSON.stringify(data));
+            console.log('DESKTOP RECEIVED SESSION_UPDATE:', JSON.stringify(data));
             fetchSessions();
             fetchHistory();
 
@@ -91,7 +95,7 @@ const Sessions = () => {
             const isSessionEnd = data && data.action === 'ENDED' && data.sessionId;
             const isDesktopInitiator = data.initiator === 'desktop';
 
-            console.log('🔍 CHECKING REPORT MODAL:', {
+            console.log('CHECKING REPORT MODAL:', {
                 isSessionEnd,
                 initiator: data?.initiator,
                 isDesktopInitiator,
@@ -99,7 +103,7 @@ const Sessions = () => {
             });
 
             if (isSessionEnd && isDesktopInitiator) {
-                console.log('✅ SHOWING REPORT - Session ended by desktop');
+                console.log('SHOWING REPORT - Session ended by desktop');
                 try {
                     const res = await fetch(`${apiUrl}/api/sessions/${data.sessionId}/summary`, {
                         headers: { 'Authorization': `Bearer ${token}` }
@@ -113,7 +117,7 @@ const Sessions = () => {
                     console.error("Failed to auto-load report", err);
                 }
             } else if (isSessionEnd) {
-                console.log('❌ NOT SHOWING REPORT - Session ended by:', data?.initiator || 'unknown (mobile/other)');
+                console.log('NOT SHOWING REPORT - Session ended by:', data?.initiator || 'unknown (mobile/other)');
             }
         });
 
@@ -270,6 +274,96 @@ const Sessions = () => {
             return pieces.map((piece) => piece.length).join(' + ');
         }
         return totalMetre ?? '-';
+    };
+
+    const handleSaveLiveEdit = async () => {
+        if (!editModeItem) return;
+
+        setIsSavingEdit(true);
+        try {
+            const res = await fetch(`${apiUrl}/api/admin/inventory/update`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    barcode: editModeItem.barcode,
+                    metre: parseFloat(editModeItem.details.metre || 0),
+                    weight: parseFloat(editModeItem.details.weight || 0),
+                    pieces: editModeItem.details.pieces,
+                    status: (liveSession?.type === 'IN' || reportData?.session?.type === 'IN') ? 'IN' : 'RESERVED'
+                })
+            });
+
+            const result = await res.json();
+            if (res.ok) {
+                // Update local state to reflect changes immediately
+                if (showLiveView) {
+                    setLiveScans(prev => prev.map(scan => 
+                        scan.barcode === editModeItem.barcode 
+                        ? { ...scan, details: { ...editModeItem.details } } 
+                        : scan
+                    ));
+                }
+                
+                if (showPreview) {
+                    setPreviewItems(prev => prev.map(item => 
+                        item.barcode === editModeItem.barcode 
+                        ? { ...item, metre: editModeItem.details.metre, weight: editModeItem.details.weight, pieces: editModeItem.details.pieces } 
+                        : item
+                    ));
+                    // Update stats too? It's complex, better to re-run calculations but for now just update item.
+                }
+
+                if (showReportModal) {
+                    setReportData(prev => ({
+                        ...prev,
+                        items: prev.items.map(item => 
+                            item.barcode === editModeItem.barcode 
+                            ? { ...item, metre: editModeItem.details.metre, weight: editModeItem.details.weight, pieces: editModeItem.details.pieces } 
+                            : item
+                        )
+                    }));
+                }
+
+                setEditModeItem(null);
+            } else {
+                alert(result.error || "Failed to update item");
+            }
+        } catch (err) {
+            console.error(err);
+            alert("Network error while saving");
+        } finally {
+            setIsSavingEdit(false);
+        }
+    };
+
+    const handleDeleteScan = async (barcode) => {
+        if (!window.confirm(`Are you sure you want to delete scan ${barcode}? This roll will be removed from stock and moved to missing.`)) {
+            return;
+        }
+
+        try {
+            const res = await fetch(`${apiUrl}/api/admin/inventory/delete/${barcode}`, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
+            if (res.ok) {
+                if (showLiveView) setLiveScans(prev => prev.filter(scan => scan.barcode !== barcode));
+                if (showPreview) setPreviewItems(prev => prev.filter(item => item.barcode !== barcode));
+                if (showReportModal) setReportData(prev => ({ ...prev, items: prev.items.filter(item => item.barcode !== barcode) }));
+            } else {
+                const data = await res.json();
+                alert(data.error || "Failed to delete scan");
+            }
+        } catch (err) {
+            console.error(err);
+            alert("Network error while deleting");
+        }
     };
 
     const handleCreateSession = async (e) => {
@@ -514,7 +608,7 @@ const Sessions = () => {
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1.5rem' }}>
                         {sessions.length === 0 && (
                             <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '4rem 2rem', border: '2px dashed var(--border-color)', borderRadius: '16px', background: 'transparent' }}>
-                                <div style={{ fontSize: '3rem', marginBottom: '1rem', opacity: 0.3 }}>📡</div>
+                                <div style={{ fontSize: '1rem', marginBottom: '1rem', opacity: 0.5, fontWeight: '700' }}>LIVE</div>
                                 <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1.1rem', color: 'var(--text-secondary)' }}>No Active Batches</h3>
                                 <p style={{ margin: 0, opacity: 0.6, fontSize: '0.9rem' }}>
                                     Start a new batch to begin scanning operations.
@@ -746,7 +840,7 @@ const Sessions = () => {
                                 {filteredHistory.length === 0 ? (
                                     <tr>
                                         <td colSpan="6" style={{ padding: '4rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
-                                            <div style={{ fontSize: '2rem', marginBottom: '1rem', opacity: 0.3 }}>📅</div>
+                                            <div style={{ fontSize: '1rem', marginBottom: '1rem', opacity: 0.5, fontWeight: '700' }}>DATE</div>
                                             No batch history found for selected range.
                                         </td>
                                     </tr>
@@ -798,14 +892,14 @@ const Sessions = () => {
                                                         style={{ padding: '6px 12px', fontSize: '0.8rem', background: 'var(--bg-primary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
                                                         title="Download Excel Summary"
                                                     >
-                                                        📊 Export
+                                                        Export
                                                     </button>
                                                     <button
                                                         onClick={() => handleViewReport(s._id)}
                                                         className="btn"
                                                         style={{ padding: '6px 12px', fontSize: '0.8rem', background: 'rgba(99, 102, 241, 0.1)', border: 'none', color: 'var(--accent-color)' }}
                                                     >
-                                                        👁️ View
+                                                        View
                                                     </button>
                                                 </div>
                                             </td>
@@ -1006,7 +1100,7 @@ const Sessions = () => {
                                 </div>
 
                                 <div>
-                                    <div style={{ fontSize: '0.7rem', fontWeight: '800', opacity: 0.5, marginBottom: '0.5rem' }}>SESSION TOTAL</div>
+                                    <div style={{ fontSize: '0.7rem', fontWeight: '800', opacity: 0.5, marginBottom: '0.5rem' }}>BATCH TOTAL</div>
                                     <div style={{ fontSize: '2.5rem', fontWeight: '800' }}>
                                         {liveSession.scannedCount || 0}
                                     </div>
@@ -1018,7 +1112,7 @@ const Sessions = () => {
                             <div style={{ flex: 1, padding: '0', overflowY: 'auto', background: 'var(--bg-primary)' }}>
                                 {liveScans.length === 0 ? (
                                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', opacity: 0.4 }}>
-                                        <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>📡</div>
+                                        <div style={{ fontSize: '1rem', marginBottom: '1rem', fontWeight: '700' }}>LIVE</div>
                                         <p>Waiting for incoming scans...</p>
                                     </div>
                                 ) : (
@@ -1032,6 +1126,7 @@ const Sessions = () => {
                                                 <th style={{ padding: '12px 20px', textAlign: 'right', fontSize: '0.75rem', opacity: 0.6 }}>WEIGHT</th>
                                                 <th style={{ padding: '12px 20px', textAlign: 'right', fontSize: '0.75rem', opacity: 0.6 }}>PIECES</th>
                                                 <th style={{ padding: '12px 20px', textAlign: 'right', fontSize: '0.75rem', opacity: 0.6 }}>USER</th>
+                                                <th style={{ padding: '12px 20px', textAlign: 'right', fontSize: '0.75rem', opacity: 0.6 }}>ACTIONS</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -1052,6 +1147,40 @@ const Sessions = () => {
                                                             : 1}
                                                     </td>
                                                     <td style={{ padding: '12px 20px', textAlign: 'right', opacity: 0.8 }}>{scan.user || 'Unknown'}</td>
+                                                    <td style={{ padding: '12px 20px', textAlign: 'right' }}>
+                                                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                                                            <button 
+                                                                onClick={() => setEditModeItem(JSON.parse(JSON.stringify(scan)))}
+                                                                style={{
+                                                                    background: 'transparent',
+                                                                    border: '1px solid var(--border-color)',
+                                                                    color: 'var(--accent-color)',
+                                                                    padding: '4px 8px',
+                                                                    borderRadius: '4px',
+                                                                    cursor: 'pointer',
+                                                                    fontSize: '0.75rem'
+                                                                }}
+                                                            >
+                                                                EDIT
+                                                            </button>
+                                                            <button 
+                                                                onClick={() => handleDeleteScan(scan.barcode)}
+                                                                style={{
+                                                                    background: 'rgba(239, 68, 68, 0.1)',
+                                                                    border: '1px solid transparent',
+                                                                    color: 'var(--error-color)',
+                                                                    padding: '4px 8px',
+                                                                    borderRadius: '4px',
+                                                                    cursor: 'pointer',
+                                                                    fontSize: '0.75rem'
+                                                                }}
+                                                                onMouseEnter={e => { e.currentTarget.style.background = 'var(--error-color)'; e.currentTarget.style.color = 'white'; }}
+                                                                onMouseLeave={e => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'; e.currentTarget.style.color = 'var(--error-color)'; }}
+                                                            >
+                                                                DELETE
+                                                            </button>
+                                                        </div>
+                                                    </td>
                                                 </tr>
                                             ))}
                                         </tbody>
@@ -1060,7 +1189,70 @@ const Sessions = () => {
                             </div>
                         </div>
                     </div>
-                    <style>{`
+                    {/* LIVE FEED EDIT MODAL (Nested overlay) */}
+            {editModeItem && (
+                <div style={{
+                    position: 'fixed', inset: 0, zIndex: 1200,
+                    background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center'
+                }}>
+                    <div className="panel animate-fade-in" style={{ width: '400px', padding: '2rem' }}>
+                        <div style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <h3 style={{ margin: 0 }}>Rectify Scan: {editModeItem.barcode}</h3>
+                            <button onClick={() => setEditModeItem(null)} style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer' }}>×</button>
+                        </div>
+
+                        <div style={{ display: 'grid', gap: '1.2rem' }}>
+                            <div>
+                                <label style={{ display: 'block', fontSize: '0.7rem', opacity: 0.6, marginBottom: '0.4rem', textTransform: 'uppercase' }}>METRE (TOTAL)</label>
+                                <input 
+                                    type="number" 
+                                    step="0.01"
+                                    value={editModeItem.details.metre} 
+                                    onChange={(e) => setEditModeItem({
+                                        ...editModeItem,
+                                        details: { ...editModeItem.details, metre: e.target.value }
+                                    })}
+                                    style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-primary)', color: 'white' }}
+                                />
+                            </div>
+                            <div>
+                                <label style={{ display: 'block', fontSize: '0.7rem', opacity: 0.6, marginBottom: '0.4rem', textTransform: 'uppercase' }}>WEIGHT (KG)</label>
+                                <input 
+                                    type="number" 
+                                    step="0.01"
+                                    value={editModeItem.details.weight} 
+                                    onChange={(e) => setEditModeItem({
+                                        ...editModeItem,
+                                        details: { ...editModeItem.details, weight: e.target.value }
+                                    })}
+                                    style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-primary)', color: 'white' }}
+                                />
+                            </div>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '1rem', marginTop: '2rem' }}>
+                            <button 
+                                className="btn btn-primary" 
+                                style={{ flex: 1 }}
+                                disabled={isSavingEdit}
+                                onClick={handleSaveLiveEdit}
+                            >
+                                {isSavingEdit ? 'Saving...' : 'Update Scan'}
+                            </button>
+                            <button 
+                                className="btn" 
+                                style={{ flex: 1, border: '1px solid var(--border-color)', background: 'transparent' }}
+                                onClick={() => setEditModeItem(null)}
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            <style>{`
                         .blink { animation: blinker 1.5s linear infinite; color: var(--error-color); margin-right: 6px; }
                         @keyframes blinker { 50% { opacity: 0; } }
                         .live-indicator { display: flex; alignItems: center; font-size: 0.75rem; font-weight: 800; letter-spacing: 1px; color: var(--error-color); background: rgba(239, 68, 68, 0.1); padding: 4px 10px; border-radius: 20px; border: 1px solid rgba(239, 68, 68, 0.2); }
@@ -1078,7 +1270,7 @@ const Sessions = () => {
                     <div className="panel animate-fade-in" style={{ width: '100%', maxWidth: '800px', maxHeight: '90vh', padding: '0', position: 'relative', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
                         <div style={{ padding: '2rem', textAlign: 'center', borderBottom: '1px solid var(--border-color)' }}>
-                            <div style={{ fontSize: '3rem', marginBottom: '0.5rem' }}>🏁</div>
+                            <div style={{ fontSize: '1rem', marginBottom: '0.5rem', fontWeight: '700' }}>END</div>
                             <h2 style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>End Batch?</h2>
                             <p style={{ opacity: 0.6 }}>Review the batch summary before closing.</p>
                         </div>
@@ -1113,6 +1305,7 @@ const Sessions = () => {
                                                 <th style={{ padding: '12px', textAlign: 'right', opacity: 0.7 }}>Pieces</th>
                                                 <th style={{ padding: '12px', textAlign: 'right', opacity: 0.7 }}>User</th>
                                                 <th style={{ padding: '12px', textAlign: 'right', opacity: 0.7 }}>Time</th>
+                                                <th style={{ padding: '12px', textAlign: 'right', opacity: 0.7 }}>Actions</th>
                                             </tr>
                                     </thead>
                                     <tbody>
@@ -1132,11 +1325,27 @@ const Sessions = () => {
                                                     <td style={{ padding: '10px 12px', textAlign: 'right', opacity: 0.6, fontSize: '0.8rem' }}>
                                                         {item.scannedAt ? new Date(item.scannedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}
                                                     </td>
+                                                    <td style={{ padding: '10px 12px', textAlign: 'right' }}>
+                                                        <div style={{ display: 'flex', gap: '5px', justifyContent: 'flex-end' }}>
+                                                            <button 
+                                                                onClick={() => setEditModeItem({barcode: item.barcode, details: {metre: item.metre, weight: item.weight, pieces: item.pieces}})}
+                                                                style={{ background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--accent-color)', padding: '2px 6px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.7rem' }}
+                                                            >
+                                                                EDIT
+                                                            </button>
+                                                            <button 
+                                                                onClick={() => handleDeleteScan(item.barcode)}
+                                                                style={{ background: 'rgba(239, 68, 68, 0.1)', border: 'none', color: 'var(--error-color)', padding: '2px 6px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.7rem' }}
+                                                            >
+                                                                DEL
+                                                            </button>
+                                                        </div>
+                                                    </td>
                                                 </tr>
                                             ))
                                         ) : (
                                             <tr>
-                                                <td colSpan="7" style={{ padding: '2rem', textAlign: 'center', opacity: 0.5 }}>No items found</td>
+                                                <td colSpan="8" style={{ padding: '2rem', textAlign: 'center', opacity: 0.5 }}>No items found</td>
                                             </tr>
                                         )}
                                     </tbody>
@@ -1239,6 +1448,7 @@ const Sessions = () => {
                                                 <th style={{ padding: '12px', textAlign: 'right', opacity: 0.7 }}>Pieces</th>
                                                 <th style={{ padding: '12px', textAlign: 'right', opacity: 0.7 }}>User</th>
                                                 <th style={{ padding: '12px', textAlign: 'right', opacity: 0.7 }}>Time</th>
+                                                <th style={{ padding: '12px', textAlign: 'right', opacity: 0.7 }}>Actions</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -1258,11 +1468,27 @@ const Sessions = () => {
                                                         <td style={{ padding: '10px 12px', textAlign: 'right', opacity: 0.6, fontSize: '0.8rem' }}>
                                                             {item.scannedAt ? new Date(item.scannedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}
                                                         </td>
+                                                        <td style={{ padding: '10px 12px', textAlign: 'right' }}>
+                                                            <div style={{ display: 'flex', gap: '5px', justifyContent: 'flex-end' }}>
+                                                                <button 
+                                                                    onClick={() => setEditModeItem({barcode: item.barcode, details: {metre: item.metre, weight: item.weight, pieces: item.pieces}})}
+                                                                    style={{ background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--accent-color)', padding: '2px 6px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.7rem' }}
+                                                                >
+                                                                    EDIT
+                                                                </button>
+                                                                <button 
+                                                                    onClick={() => handleDeleteScan(item.barcode)}
+                                                                    style={{ background: 'rgba(239, 68, 68, 0.1)', border: 'none', color: 'var(--error-color)', padding: '2px 6px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.7rem' }}
+                                                                >
+                                                                    DEL
+                                                                </button>
+                                                            </div>
+                                                        </td>
                                                     </tr>
                                                 ))
                                             ) : (
                                                 <tr>
-                                                    <td colSpan="7" style={{ padding: '2rem', textAlign: 'center', opacity: 0.5 }}>No items found</td>
+                                                    <td colSpan="8" style={{ padding: '2rem', textAlign: 'center', opacity: 0.5 }}>No items found</td>
                                                 </tr>
                                             )}
                                         </tbody>

@@ -692,11 +692,18 @@ export const generateQuotationPdf = (quotationData, rollsList, templateConfig = 
         doc.line(mL, curY, PW - mR, curY);
         curY += 2;
 
+        const totalRolls = Number(quotationData.totalRolls || rows.length || 0);
+        const totalMetre = rows.reduce((sum, roll) => sum + Number(roll?.metre || 0), 0);
+        const totalWeight = rows.reduce((sum, roll) => sum + Number(roll?.weight || 0), 0);
+
         autoTable(doc, {
             startY: curY,
             margin: { left: mL, right: mR },
             head: [['S.No', 'Barcode', 'Metre', 'Weight', 'Pieces']],
-            body: rows.map((roll, index) => {
+            body: (rows.length > 0 ? rows : [{}]).map((roll, index) => {
+                if (rows.length === 0) {
+                    return ['-', 'No rolls selected', '0.00', '0.00', '0'];
+                }
                 const piecesCount = Array.isArray(roll?.pieces) ? roll.pieces.length : Number(roll?.pieces || 1);
                 return [
                     index + 1,
@@ -711,12 +718,21 @@ export const generateQuotationPdf = (quotationData, rollsList, templateConfig = 
                 fillColor: hexToRgb(template.tableHeaderColor),
                 textColor: 255,
                 fontStyle: 'bold',
-                fontSize: 8.5
+                fontSize: 8.7,
+                lineWidth: 0,
+                halign: 'center'
             },
             styles: {
-                fontSize: 8,
-                cellPadding: 2.5,
+                fontSize: 8.1,
+                cellPadding: 2.8,
                 textColor: [30, 41, 59]
+            },
+            bodyStyles: {
+                lineColor: [203, 213, 225],
+                lineWidth: 0.2
+            },
+            alternateRowStyles: {
+                fillColor: [248, 250, 252]
             },
             columnStyles: {
                 0: { cellWidth: 14, halign: 'center' },
@@ -727,20 +743,35 @@ export const generateQuotationPdf = (quotationData, rollsList, templateConfig = 
         });
 
         const finalY = doc.lastAutoTable?.finalY || curY;
-        const totalRolls = Number(quotationData.totalRolls || rows.length || 0);
 
-        doc.setLineWidth(0.35);
-        setInk();
-        doc.rect(mL, finalY + 4, UW, 8);
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(9);
-        doc.text('Total Rolls', mL + 2, finalY + 9.3);
-        doc.setFont('helvetica', 'normal');
-        doc.text(`: ${totalRolls}`, mL + 24, finalY + 9.3);
+        const summaryY = finalY + 5;
+        const summaryGap = 3;
+        const summaryBoxW = (UW - summaryGap * 2) / 3;
+        const summaryItems = [
+            { label: 'Total Rolls', value: String(totalRolls) },
+            { label: 'Total Metre', value: totalMetre.toFixed(2) },
+            { label: 'Total Weight', value: totalWeight.toFixed(2) }
+        ];
 
-        let notesY = finalY + 16;
+        summaryItems.forEach((item, idx) => {
+            const boxX = mL + idx * (summaryBoxW + summaryGap);
+            setInk();
+            doc.setLineWidth(0.3);
+            doc.rect(boxX, summaryY, summaryBoxW, 10.5);
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(7.2);
+            doc.text(item.label.toUpperCase(), boxX + 2, summaryY + 3.7);
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(10);
+            doc.text(item.value, boxX + summaryBoxW - 2, summaryY + 8.1, { align: 'right' });
+        });
+
+        let notesY = summaryY + 14;
         const notes = String(quotationData.notes || '').trim();
         if (notes) {
+            setInk();
+            doc.setLineWidth(0.25);
+            doc.rect(mL, notesY - 3.5, UW, 10);
             doc.setFont('helvetica', 'bold');
             doc.text('Notes:', mL + 2, notesY);
             doc.setFont('helvetica', 'normal');
@@ -748,11 +779,18 @@ export const generateQuotationPdf = (quotationData, rollsList, templateConfig = 
             notesLines.forEach((line, idx) => {
                 doc.text(line, mL + 14, notesY + idx * 4);
             });
-            notesY += Math.max(6, notesLines.length * 4 + 2);
+            const notesHeight = Math.max(10, notesLines.length * 4 + 5.5);
+            setInk();
+            doc.setLineWidth(0.25);
+            doc.rect(mL, notesY - 3.5, UW, notesHeight);
+            notesY += notesHeight + 2;
         }
 
         const terms = String(quotationData.terms || '').trim();
         if (terms) {
+            setInk();
+            doc.setLineWidth(0.25);
+            doc.rect(mL, notesY - 3.5, UW, 10);
             doc.setFont('helvetica', 'bold');
             doc.text('Terms:', mL + 2, notesY);
             doc.setFont('helvetica', 'normal');
@@ -760,10 +798,18 @@ export const generateQuotationPdf = (quotationData, rollsList, templateConfig = 
             termLines.forEach((line, idx) => {
                 doc.text(line, mL + 14, notesY + idx * 4);
             });
+            const termsHeight = Math.max(10, termLines.length * 4 + 5.5);
+            setInk();
+            doc.setLineWidth(0.25);
+            doc.rect(mL, notesY - 3.5, UW, termsHeight);
         }
 
+        setInk();
+        doc.setLineWidth(0.25);
+        doc.line(mL, PH - 16, PW - mR, PH - 16);
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(7);
+        doc.setFontSize(7.2);
+        doc.text(`Generated: ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })}`, mL, PH - 11);
         doc.text('Authorised Signatory', PW - mR - 2, PH - 11, { align: 'right' });
 
         const filename = `${String(quotationData.quotationNumber || 'Quotation').replace(/\s+/g, '_')}.pdf`;

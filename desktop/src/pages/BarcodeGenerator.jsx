@@ -343,7 +343,7 @@ const BarcodeGenerator = () => {
                                         </button>
                                     </div>
                                     <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.8rem', fontWeight: '600' }}>
-                                        {paperSize === 'a3' ? '💡 A3 Sheet: Holds 44 barcodes per page' : '💡 A4 Sheet: Holds 24 barcodes per page'}
+                                        {paperSize === 'a3' ? 'Tip: A3 sheet holds 44 barcodes per page' : 'Tip: A4 sheet holds 24 barcodes per page'}
                                     </p>
                                 </div>
 
