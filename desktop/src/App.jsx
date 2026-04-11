@@ -26,29 +26,56 @@ import AppLayout from './components/AppLayout';
 
 // New ServerGuard component to ensure the backend is reachable before rendering the rest of the app.
 const ServerGuard = ({ children }) => {
-  const { apiUrl } = useConfig();
+  const { apiUrl, updateApiUrl } = useConfig();
   const [serverReady, setServerReady] = useState(false);
   const [attempts, setAttempts] = useState(0);
   const [licenseStatus, setLicenseStatus] = useState(null);
   const [loadingLicense, setLoadingLicense] = useState(true);
   const pollRef = useRef(null);
 
+  const fetchWithTimeout = async (url, timeoutMs = 2200) => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, {
+        method: 'GET',
+        cache: 'no-store',
+        signal: controller.signal
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
+  };
+
   useEffect(() => {
     const ping = async () => {
-      try {
-        const response = await fetch(`${apiUrl}/api/license/status`, {
-          method: 'GET',
-          signal: AbortSignal.timeout(2000)
-        });
-        const data = await response.json();
-        setLicenseStatus(data);
-        setServerReady(true);
-        setLoadingLicense(false);
-        clearInterval(pollRef.current);
-      } catch {
-        setAttempts(prev => prev + 1);
-        setLoadingLicense(false);
+      const candidates = Array.from(new Set([
+        apiUrl,
+        'http://localhost:5000',
+        'http://127.0.0.1:5000',
+        'https://localhost:5000',
+        'https://127.0.0.1:5000'
+      ]));
+
+      for (const base of candidates) {
+        try {
+          const response = await fetchWithTimeout(`${base}/api/license/status`);
+          const data = await response.json();
+          if (base !== apiUrl) {
+            updateApiUrl(base);
+          }
+          setLicenseStatus(data);
+          setServerReady(true);
+          setLoadingLicense(false);
+          clearInterval(pollRef.current);
+          return;
+        } catch (_) {
+          // Try next candidate.
+        }
       }
+
+      setAttempts(prev => prev + 1);
+      setLoadingLicense(false);
     };
     
     clearInterval(pollRef.current);
@@ -56,7 +83,7 @@ const ServerGuard = ({ children }) => {
     ping(); // Immediate first attempt
     pollRef.current = setInterval(ping, 1000);
     return () => clearInterval(pollRef.current);
-  }, [apiUrl]);
+  }, [apiUrl, updateApiUrl]);
 
   if (!serverReady || loadingLicense) {
     return (

@@ -107,7 +107,8 @@ function renderPrintedHeaderScaffold(doc, template, documentMeta = {}) {
     doc.setFontSize(addrSz);
     const addrLines = template.address ? doc.splitTextToSize(template.address, addrMaxW) : [];
     const addrLineH = addrSz * PT + 0.4;
-    const contentH = 0.5 + cNameSz * PT + (template.subTitle ? subSz * PT + 1.5 : 0) + (addrLines.length > 0 ? addrSz * PT + 1.5 + (addrLines.length - 1) * addrLineH : 0) + 0.5;
+    const contentH = 0.5 + cNameSz * PT + (template.subTitle ? subSz * PT + 1.5 : 0)
+        + (addrLines.length > 0 ? addrSz * PT + 1.5 + (addrLines.length - 1) * addrLineH : 0) + 0.5;
     const textExtraH = 6;
     const containerH = Math.max(contentH + textExtraH, 22);
     const containerY = curY;
@@ -129,6 +130,7 @@ function renderPrintedHeaderScaffold(doc, template, documentMeta = {}) {
             console.debug('Skipping invalid left logo image:', error);
         }
     }
+
     const rightLogo = String(template.logoDataUrl2 || '');
     if (rightLogo.startsWith('data:image/')) {
         try {
@@ -145,7 +147,9 @@ function renderPrintedHeaderScaffold(doc, template, documentMeta = {}) {
         : 11;
     const dateLabel = documentMeta.dateLabel || 'Date';
     const rawDate = documentMeta.dateValue;
-    const dateStr = rawDate ? new Date(rawDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '___________';
+    const dateStr = rawDate
+        ? new Date(rawDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })
+        : '___________';
 
     doc.setFontSize(8);
     doc.setFont('helvetica', 'bold');
@@ -162,12 +166,14 @@ function renderPrintedHeaderScaffold(doc, template, documentMeta = {}) {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(cNameSz);
     doc.text(template.companyName || 'COMPANY NAME', cx, ty, { align: 'center' });
+
     if (template.subTitle) {
         ty += subSz * PT + 1.5;
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(subSz);
         doc.text(template.subTitle, cx, ty, { align: 'center' });
     }
+
     if (addrLines.length > 0) {
         ty += addrSz * PT + 1.5;
         doc.setFont('helvetica', 'normal');
@@ -200,6 +206,11 @@ function renderPrintedContinuationPage(doc, template, documentMeta) {
 }
 
 function renderPrintedTemplate(doc, dcData, rollsList, template) {
+    // Legacy entrypoint retained for compatibility.
+    renderPrintedTemplateCompact(doc, dcData, rollsList, template);
+}
+
+function renderPrintedTemplateCompact(doc, dcData, rollsList, template) {
     const {
         setInk,
         mL,
@@ -220,10 +231,7 @@ function renderPrintedTemplate(doc, dcData, rollsList, template) {
     const safePct = Number.isFinite(pct) ? pct : 0;
     const factor = 1 + safePct / 100;
     const adjustedMetre = (value) => Number((Number(value || 0) * factor).toFixed(2));
-    const pieceLength = (piece) => {
-        const raw = typeof piece === 'number' ? piece : Number(piece?.length || 0);
-        return Number((raw * factor).toFixed(2));
-    };
+    const items = Array.isArray(rollsList) ? rollsList : [];
 
     let curY = baseHeaderY;
     doc.setFontSize(8);
@@ -234,21 +242,18 @@ function renderPrintedTemplate(doc, dcData, rollsList, template) {
     curY += 5;
 
     const pAddr = dcData.partyAddress || '';
-    if (template.showPartyAddress && pAddr) {
+    if (template.showPartyAddress) {
         doc.setFont('helvetica', 'bold');
         doc.text('Address', mL + 2, curY + 4);
         doc.setFont('helvetica', 'normal');
-        const pAddrLines = doc.splitTextToSize(`: ${pAddr}`, UW - 20);
-        pAddrLines.forEach((line, i) => {
-            doc.text(line, mL + 16, curY + 4 + i * 4);
-        });
-        curY += 4 + pAddrLines.length * 4;
-    } else if (template.showPartyAddress) {
-        doc.setFont('helvetica', 'bold');
-        doc.text('Address', mL + 2, curY + 4);
-        doc.setFont('helvetica', 'normal');
-        doc.text(': ________________________________', mL + 16, curY + 4);
-        curY += 7;
+        if (pAddr) {
+            const pAddrLines = doc.splitTextToSize(`: ${pAddr}`, UW - 20);
+            pAddrLines.forEach((line, i) => doc.text(line, mL + 16, curY + 4 + i * 4));
+            curY += 4 + pAddrLines.length * 4;
+        } else {
+            doc.text(': ________________________________', mL + 16, curY + 4);
+            curY += 7;
+        }
     }
 
     if (template.showQuality) {
@@ -271,176 +276,225 @@ function renderPrintedTemplate(doc, dcData, rollsList, template) {
     }
     curY += 9;
 
-    doc.setLineWidth(0.4);
+    doc.setLineWidth(0.35);
     doc.line(mL, curY, PW - mR, curY);
     const startY = curY + 1;
 
-    // ─── Tally Rendering: Balanced Sequential Columns ────────────────────────
-    const cellH = 4.3;
-    const colCount = 3;
-    const colW = UW / colCount;
-    const bottomLimit = PH - 45; // Leave room for footer
-    
-    // 1. Measure all blocks
-    const rollBlocks = rollsList.map((roll, idx) => {
-        const pieces = Array.isArray(roll.pieces) && roll.pieces.length > 0 ? roll.pieces : [{ length: roll.metre }];
-        return { roll, idx, pieces, height: (pieces.length + 2) * cellH + 2 };
-    });
+    const totalColCount = 4;
+    const rollColCount = 3;
+    const colW = UW / totalColCount;
+    const rollAreaW = colW * rollColCount;
+    const summaryX = mL + rollAreaW;
+    const summaryW = colW;
+    const bottomLimit = PH - 34;
+    const titleRowH = 5.6;
+    const detailRowH = 4.8;
+    const padX = 2.2;
+    const textOffsetY = 3.3;
+    const serialColW = 10;
 
-    // 2. Distribute into columns sequentially (Newspaper style)
-    // To be truly perfect, we divide the data so total heights are balanced.
-    const totalTallyH = rollBlocks.reduce((s, b) => s + b.height, 0);
-    const targetH = totalTallyH / colCount;
-    
-    const columns = [[], [], []];
-    let currentColumn = 0;
-    let accumulatedH = 0;
-    
-    rollBlocks.forEach(block => {
-        // If adding this block makes the column significantly taller than target, 
-        // and we are not on the last column, move to next.
-        if (currentColumn < colCount - 1 && accumulatedH + block.height / 2 > targetH) {
-            currentColumn++;
-            accumulatedH = 0;
-        }
-        columns[currentColumn].push(block);
-        accumulatedH += block.height;
-    });
+    const formatPieceValue = (piece) => {
+        const rawLength = typeof piece === 'number' ? piece : Number(piece?.length || 0);
+        const adjustedLength = Number((Number(rawLength || 0) * factor).toFixed(2));
+        return adjustedLength.toFixed(2);
+    };
 
-    // 3. Render Columns
-    let columnFinalYs = [startY, startY, startY];
-    
-    columns.forEach((colBlocks, colIdx) => {
-        let drawY = startY;
-        const gx = mL + colIdx * colW;
-        const sNoW = 7;
-        const rightX = gx + colW - 2;
+    const drawPageSummaryColumn = (pageSummaryRows, topY, endY) => {
+        const totalH = endY - topY;
+        if (totalH < 14) return;
 
-        colBlocks.forEach(block => {
-            const { roll, pieces } = block;
+        const titleH = 5;
+        const headerH = 5;
+        const splitX = summaryX + 11;
+        const snoCenterX = summaryX + ((splitX - summaryX) / 2);
+        const rows = Math.max(pageSummaryRows.length, 1);
+        const rowsAreaTopY = topY + titleH + headerH;
+        const rowsAreaH = Math.max(endY - rowsAreaTopY, 4);
+        const rowGap = rowsAreaH / (rows + 1);
+        const bodyFontSize = rowGap < 4 ? 7 : 8;
+        const baselineOffset = Math.max(2.2, rowGap * 0.25);
 
-            // Overflow check: If this block won't fit on current page, we need complex paging.
-            // For now, assume it fits (user has ~150mm usable height which is a lot for 18-20 rolls).
-            // If it exceeds bottomLimit, we move EVERYTHING to a new page (as in previous version)
-            if (drawY + block.height > bottomLimit) {
-                // This shouldn't happen with balanced groups unless data is huge, but handling just in case
-                // Ideally we'd addPage here, but for sequential columns it's complex.
-            }
+        setInk();
+        doc.setLineWidth(0.25);
+        doc.rect(summaryX, topY, summaryW, totalH);
+        doc.line(summaryX, topY + titleH, summaryX + summaryW, topY + titleH);
+        doc.line(summaryX, topY + titleH + headerH, summaryX + summaryW, topY + titleH + headerH);
+        doc.line(splitX, topY + titleH, splitX, endY);
 
-            setInk(); doc.setLineWidth(0.3);
-            // Header Row
-            doc.rect(gx, drawY, colW, cellH);
-            doc.setFont('helvetica', 'bold'); doc.setFontSize(6.5);
-            doc.text(String(roll.barcode || ''), gx + sNoW + 1, drawY + cellH - 1.2);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8);
+        doc.text('ROLL SUMMARY', summaryX + (summaryW / 2), topY + 3.6, { align: 'center' });
+        doc.text('S.No', snoCenterX, topY + titleH + 3.4, { align: 'center' });
+        doc.text('Total Mtrs', summaryX + summaryW - 1.5, topY + titleH + 3.4, { align: 'right' });
 
-            let pieceY = drawY + cellH;
-            pieces.forEach((p, pi) => {
-                doc.rect(gx, pieceY, colW, cellH);
-                doc.line(gx + sNoW, pieceY, gx + sNoW, pieceY + cellH);
-                doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
-                doc.text(String(pi + 1), gx + sNoW / 2, pieceY + cellH - 1.2, { align: 'center' });
-                const pLen = pieceLength(p);
-                doc.text(Number(pLen).toFixed(2), rightX, pieceY + cellH - 1.2, { align: 'right' });
-                pieceY += cellH;
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(bodyFontSize);
+        pageSummaryRows.forEach((row, idx) => {
+            const y = rowsAreaTopY + ((idx + 1) * rowGap) + baselineOffset;
+            doc.text(String(row.serialNo), snoCenterX, y, { align: 'center' });
+            doc.text(row.totalMtrs, summaryX + summaryW - 1.5, y, { align: 'right' });
+        });
+    };
+
+    let drawY = startY;
+    let cursor = 0;
+
+    while (cursor < items.length) {
+        const pageTopY = drawY;
+        const pageSummaryRows = [];
+        let isFirstGroupOnPage = true;
+
+        while (cursor < items.length) {
+            const group = items.slice(cursor, cursor + rollColCount);
+            const normalized = Array.from({ length: rollColCount }, (_, idx) => {
+                const roll = group[idx] || null;
+                if (!roll) return null;
+                const absoluteIndex = cursor + idx;
+                const pieces = Array.isArray(roll?.pieces) && roll.pieces.length > 0
+                    ? roll.pieces
+                    : [{ length: roll?.metre || 0 }];
+                return {
+                    roll,
+                    absoluteIndex,
+                    pieceValues: pieces.map((piece) => formatPieceValue(piece)),
+                    totalText: Number(adjustedMetre(roll?.metre || 0)).toFixed(2)
+                };
             });
 
-            // Subtotal Row
-            doc.rect(gx, pieceY, colW, cellH);
-            doc.setFont('helvetica', 'bold'); doc.setFontSize(7);
-            doc.text(Number(adjustedMetre(roll.metre)).toFixed(2), rightX, pieceY + cellH - 1.2, { align: 'right' });
-            
-            drawY = pieceY + cellH + 2; 
-        });
-        columnFinalYs[colIdx] = drawY;
-    });
+            const maxPieceRows = normalized.reduce((max, entry) => {
+                if (!entry) return max;
+                return Math.max(max, entry.pieceValues.length);
+            }, 1);
 
-    // Summary Table start point: Max Y of all columns
-    curY = Math.max(...columnFinalYs);
+            const totalRows = maxPieceRows + 1;
+            const groupHeight = titleRowH + (totalRows * detailRowH);
 
-    // ─── 3-Column Summary Table ───────────────────────────────────────────────
-    // Jump to new page if not enough space (need at least 30mm)
-    if (curY + 30 > bottomLimit) {
-        curY = renderPrintedContinuationPage(doc, template, {
-            numberLabel: 'DC No.',
-            numberValue: dcData.dcNumber || '__________',
-            dateLabel: 'Date',
-            dateValue: dcData.createdAt
-        });
-    } else {
-        curY += 5;
+            if (!isFirstGroupOnPage && drawY + groupHeight > bottomLimit) {
+                break;
+            }
+
+            setInk();
+            doc.setLineWidth(0.25);
+            if (isFirstGroupOnPage) doc.line(mL, drawY, mL + rollAreaW, drawY);
+            doc.line(mL, drawY + groupHeight, mL + rollAreaW, drawY + groupHeight);
+            doc.line(mL, drawY, mL, drawY + groupHeight);
+            doc.line(mL + rollAreaW, drawY, mL + rollAreaW, drawY + groupHeight);
+
+            for (let c = 1; c < rollColCount; c++) {
+                const vx = mL + (c * colW);
+                doc.line(vx, drawY, vx, drawY + groupHeight);
+            }
+            for (let c = 0; c < rollColCount; c++) {
+                const gx = mL + (c * colW);
+                doc.line(gx + serialColW, drawY, gx + serialColW, drawY + groupHeight);
+            }
+
+            doc.line(mL, drawY + titleRowH, mL + rollAreaW, drawY + titleRowH);
+            for (let r = 1; r < totalRows; r++) {
+                const hy = drawY + titleRowH + (r * detailRowH);
+                doc.line(mL, hy, mL + rollAreaW, hy);
+            }
+
+            normalized.forEach((entry, colIdx) => {
+                if (!entry) return;
+                const gx = mL + (colIdx * colW);
+                const barcodeText = String(entry.roll?.barcode || '').trim();
+                const valueCellCenterX = gx + serialColW + ((colW - serialColW) / 2);
+
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(8);
+                doc.text(String(entry.absoluteIndex + 1), gx + (serialColW / 2), drawY + 3.9, { align: 'center' });
+                doc.text(barcodeText || `ROLL ${entry.absoluteIndex + 1}`, valueCellCenterX, drawY + 3.9, { align: 'center' });
+
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(7.6);
+                for (let r = 0; r < maxPieceRows; r++) {
+                    const lineY = drawY + titleRowH + (r * detailRowH) + textOffsetY;
+                    const lineValue = entry.pieceValues[r];
+                    if (!lineValue) continue;
+                    doc.text(String(r + 1), gx + (serialColW / 2), lineY, { align: 'center' });
+                    doc.text(lineValue, valueCellCenterX, lineY, { align: 'center' });
+                }
+
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(7.8);
+                const totalY = drawY + titleRowH + (maxPieceRows * detailRowH) + textOffsetY;
+                doc.text(String(entry.pieceValues.length), gx + (serialColW / 2), totalY, { align: 'center' });
+                doc.text(entry.totalText, valueCellCenterX, totalY, { align: 'center' });
+
+                pageSummaryRows.push({
+                    serialNo: entry.absoluteIndex + 1,
+                    totalMtrs: entry.totalText
+                });
+            });
+
+            isFirstGroupOnPage = false;
+            drawY += groupHeight;
+            cursor += rollColCount;
+        }
+
+        drawPageSummaryColumn(pageSummaryRows, pageTopY, drawY);
+
+        if (cursor < items.length) {
+            drawY = renderPrintedContinuationPage(doc, template, {
+                numberLabel: 'DC No.',
+                numberValue: dcData.dcNumber || '__________',
+                dateLabel: 'Date',
+                dateValue: dcData.createdAt
+            });
+        }
     }
 
-    const summaryY = curY;
-    const sumColW = UW / 3;
-    const itemsPerCol = Math.ceil(rollsList.length / 3);
-    
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5);
-    doc.text('ROLL SUMMARY', mL, summaryY - 1);
-    
-    for (let c = 0; c < 3; c++) {
-        const sx = mL + c * sumColW;
-        const colRolls = rollsList.slice(c * itemsPerCol, (c + 1) * itemsPerCol);
-        
-        // Header
-        doc.setLineWidth(0.4); setInk();
-        doc.rect(sx, curY, sumColW, 5);
-        doc.line(sx + 12, curY, sx + 12, curY + 5);
-        doc.text('S.No', sx + 2, curY + 3.5);
-        doc.text('Total Mtrs', sx + sumColW - 2, curY + 3.5, { align: 'right' });
-        
-        let sy = curY + 5;
-        doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
-        colRolls.forEach((r, idx) => {
-            const actualIdx = c * itemsPerCol + idx + 1;
-            doc.rect(sx, sy, sumColW, 4.5);
-            doc.line(sx + 12, sy, sx + 12, sy + 4.5);
-            doc.text(String(actualIdx), sx + 2, sy + 3.2);
-            doc.text(Number(adjustedMetre(r.metre)).toFixed(2), sx + sumColW - 2, sy + 3.2, { align: 'right' });
-            sy += 4.5;
-        });
-    }
-
-    // Final Footer baseline
+    curY = drawY + 3;
     const footerY = PH - 35;
-    const grandMetre = rollsList.reduce((s, r) => s + adjustedMetre(r?.metre || 0), 0);
-    const totalPieces = rollsList.reduce((s, r) => s + (Array.isArray(r?.pieces) && r.pieces.length > 0 ? r.pieces.length : 1), 0);
+    const grandMetre = items.reduce((sum, roll) => sum + adjustedMetre(roll?.metre || 0), 0);
+    const totalPieces = items.reduce((sum, roll) => sum + (Array.isArray(roll?.pieces) && roll.pieces.length > 0 ? roll.pieces.length : 1), 0);
 
     setInk();
-    // Footer container to separate totals/signature from the roll summary section.
     doc.setLineWidth(0.45);
     doc.line(mL, footerY - 2, PW - mR, footerY - 2);
     doc.setLineWidth(0.3);
     doc.line(mL, footerY - 2, mL, footerY + 25);
     doc.line(PW - mR, footerY - 2, PW - mR, footerY + 25);
 
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
     const footerLabelX = mL + 2;
     const footerColonX = mL + 34;
     const footerValueX = mL + 38;
 
     doc.text('Total Meter', footerLabelX, footerY + 4);
     doc.text(':', footerColonX, footerY + 4);
-    doc.setFont('helvetica', 'normal'); doc.text(grandMetre.toFixed(2), footerValueX, footerY + 4);
+    doc.setFont('helvetica', 'normal');
+    doc.text(grandMetre.toFixed(2), footerValueX, footerY + 4);
 
-    doc.setFont('helvetica', 'bold'); doc.text('Total Pieces', footerLabelX, footerY + 10);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Total Pieces', footerLabelX, footerY + 10);
     doc.text(':', footerColonX, footerY + 10);
-    doc.setFont('helvetica', 'normal'); doc.text(String(totalPieces), footerValueX, footerY + 10);
+    doc.setFont('helvetica', 'normal');
+    doc.text(String(totalPieces), footerValueX, footerY + 10);
 
-    doc.setFont('helvetica', 'bold'); doc.text('Total Roll', footerLabelX, footerY + 16);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Total Roll', footerLabelX, footerY + 16);
     doc.text(':', footerColonX, footerY + 16);
-    doc.setFont('helvetica', 'normal'); doc.text(String(rollsList.length), footerValueX, footerY + 16);
+    doc.setFont('helvetica', 'normal');
+    doc.text(String(items.length), footerValueX, footerY + 16);
 
     if (template.showBillNo) {
-        doc.setFont('helvetica', 'bold'); doc.text('Bill No :', cx - 18, footerY + 4);
-        doc.setFont('helvetica', 'normal'); doc.text(dcData.billNo || '______________', cx + 3, footerY + 4);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Bill No :', cx - 18, footerY + 4);
+        doc.setFont('helvetica', 'normal');
+        doc.text(dcData.billNo || '______________', cx + 3, footerY + 4);
     }
     if (template.showBillPreparedBy) {
-        doc.setFont('helvetica', 'bold'); doc.text('Bill Prepared by :', cx - 18, footerY + 13);
-        doc.setFont('helvetica', 'normal'); doc.text(dcData.billPreparedBy || '______________', cx + 12, footerY + 13);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Bill Prepared by :', cx - 18, footerY + 13);
+        doc.setFont('helvetica', 'normal');
+        doc.text(dcData.billPreparedBy || '______________', cx + 12, footerY + 13);
     }
 
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5);
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
     doc.text('Authorised Signatory', PW - mR - 2, footerY + 24, { align: 'right' });
 }
 

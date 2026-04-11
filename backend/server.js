@@ -47,9 +47,9 @@ if (!process.env.JWT_SECRET) {
 // Load TLS certificates
 const TLS_KEY_PATH = process.env.TLS_KEY_PATH || './stock-system.local-key.pem';
 const TLS_CERT_PATH = process.env.TLS_CERT_PATH || './stock-system.local.pem';
-
-if (!fs.existsSync(TLS_KEY_PATH) || !fs.existsSync(TLS_CERT_PATH)) {
-    throw new Error('TLS certificate files are missing. Set TLS_KEY_PATH and TLS_CERT_PATH.');
+const hasTlsFiles = fs.existsSync(TLS_KEY_PATH) && fs.existsSync(TLS_CERT_PATH);
+if (!hasTlsFiles) {
+    console.warn('[TLS] Certificate files are missing. HTTPS will be disabled until TLS_KEY_PATH and TLS_CERT_PATH are configured.');
 }
 
 try {
@@ -67,10 +67,12 @@ try {
 
 startInstallApkGuardian();
 
-const httpsOptions = {
-    key: fs.readFileSync(TLS_KEY_PATH),
-    cert: fs.readFileSync(TLS_CERT_PATH)
-};
+const httpsOptions = hasTlsFiles
+    ? {
+        key: fs.readFileSync(TLS_KEY_PATH),
+        cert: fs.readFileSync(TLS_CERT_PATH)
+    }
+    : null;
 
 const HTTP_PORT = parseInt(process.env.HTTP_PORT || '5000', 10);
 const HTTPS_PORT = parseInt(process.env.PORT || '5001', 10);
@@ -310,6 +312,9 @@ io.on('connection', (socket) => {
 
 const PORT = process.env.PORT || 5000;
 const startHttpsServer = (port, label) => {
+    if (!httpsOptions) {
+        return null;
+    }
     const server = https.createServer(httpsOptions, app);
     server.on('error', (err) => {
         console.error(`${label} HTTPS server failed on port ${port}:`, err.message);
@@ -330,7 +335,7 @@ const startHttpsServer = (port, label) => {
 
 startHttpsServer(HTTPS_PORT, 'Primary');
 
-if (ENABLE_HTTPS_COMPAT_443 && HTTPS_PORT !== 443) {
+if (httpsOptions && ENABLE_HTTPS_COMPAT_443 && HTTPS_PORT !== 443) {
     startHttpsServer(443, 'Compatibility');
 }
 

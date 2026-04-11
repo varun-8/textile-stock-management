@@ -43,9 +43,22 @@ const getBackupDir = () => {
     } catch (err) {
         console.error('Error reading config:', err);
     }
-    const fullPath = path.isAbsolute(backupPath) ? backupPath : path.join(__dirname, '..', backupPath);
-    fs.ensureDirSync(fullPath);
-    return fullPath;
+    const configuredPath = path.isAbsolute(backupPath) ? backupPath : path.join(__dirname, '..', backupPath);
+
+    try {
+        fs.ensureDirSync(configuredPath);
+        return configuredPath;
+    } catch (err) {
+        const fallbackPath = path.join(__dirname, '..', 'backups');
+        try {
+            fs.ensureDirSync(fallbackPath);
+            console.warn(`[Backup] Backup path not writable (${configuredPath}). Using fallback: ${fallbackPath}`);
+            return fallbackPath;
+        } catch (fallbackErr) {
+            console.error('[Backup] Unable to create configured or fallback backup directory.', fallbackErr);
+            throw fallbackErr;
+        }
+    }
 };
 
 const performBackup = async (type = 'AUTO') => {

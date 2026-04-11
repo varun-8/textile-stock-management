@@ -110,7 +110,6 @@ const deliveryChallanSchema = new mongoose.Schema({
 });
 
 // Indexes for fast lookups
-deliveryChallanSchema.index({ dcNumber: 1 }, { unique: true });
 deliveryChallanSchema.index({ createdAt: -1 });
 deliveryChallanSchema.index({ partyName: 1 });
 deliveryChallanSchema.index({ sourceBatchId: 1 }, { unique: true, sparse: true });

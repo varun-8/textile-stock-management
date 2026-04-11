@@ -76,7 +76,7 @@ function resolveMongoBinary(isPackaged) {
     return { binaryPath, candidates };
 }
 
-function isPortInUse(port, host = '0.0.0.0') {
+function isPortInUse(port) {
     return new Promise((resolve) => {
         const server = net.createServer();
         server.once('error', (err) => {
@@ -89,7 +89,9 @@ function isPortInUse(port, host = '0.0.0.0') {
         server.once('listening', () => {
             server.close(() => resolve(false));
         });
-        server.listen(port, host);
+
+        // Bind without an explicit host so conflicts on IPv4/IPv6/any-interface are detected.
+        server.listen(port);
     });
 }
 
