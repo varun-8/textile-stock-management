@@ -1,0 +1,16 @@
+{
+	"appId": "com.srilakshmitextiles.mobile",
+	"appName": "Prodexa Mobile",
+	"webDir": "dist",
+	"server": {
+		"allowNavigation": [
+			"*"
+		],
+		"cleartext": true
+	},
+	"plugins": {
+		"CapacitorHttp": {
+			"enabled": true
+		}
+	}
+}

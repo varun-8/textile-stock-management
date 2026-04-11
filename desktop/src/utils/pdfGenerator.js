@@ -76,6 +76,7 @@ function renderPrintedTemplate(doc, dcData, rollsList, template) {
     const safePct = Number.isFinite(pct) ? pct : 0;
     const factor = 1 + safePct / 100;
     const adjustedMetre = (value) => Number((Number(value || 0) * factor).toFixed(2));
+<<<<<<< Updated upstream
     const pieceLength = (piece) => {
         const raw = typeof piece === 'number' ? piece : Number(piece?.length || 0);
         return Number((raw * factor).toFixed(2));
@@ -86,6 +87,15 @@ function renderPrintedTemplate(doc, dcData, rollsList, template) {
         setInk();
         doc.setLineWidth(0.6);
         doc.rect(mL, mT, UW, PH - mT - 8);
+=======
+    let curY = baseHeaderY;
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'bold');
+    doc.text('To M/s.', mL + 2, curY + 4);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`: ${dcData.partyName || '________________________________'}`, mL + 16, curY + 4);
+    curY += 5;
+>>>>>>> Stashed changes
 
         let curY = mT + 5;
         // Top Row: GSTIN, Title, Phone
@@ -198,11 +208,34 @@ function renderPrintedTemplate(doc, dcData, rollsList, template) {
     const colW = UW / colCount;
     const startY = renderPageScaffold();
     const bottomLimit = PH - 45; // Leave room for footer
-    
+    const titleRowH = 6;
+    const detailFontSize = 6.8;
+    const detailLineH = 3.8;
+    const blockGap = 2.2;
+
+    const formatPieceLine = (piece, pieceIndex, factor) => {
+        const rawLength = typeof piece === 'number' ? piece : Number(piece?.length || 0);
+        const adjustedLength = Number((Number(rawLength || 0) * factor).toFixed(2));
+        return `${pieceIndex + 1}: ${adjustedLength.toFixed(2)}m`;
+    };
+
+    const buildPieceSummary = (roll, factor) => {
+        const pieces = Array.isArray(roll?.pieces) && roll.pieces.length > 0
+            ? roll.pieces
+            : [{ length: roll?.metre || 0 }];
+        const parts = pieces.map((piece, pieceIndex) => formatPieceLine(piece, pieceIndex, factor));
+        return `Pieces: ${parts.join('  |  ')}`;
+    };
+
     // 1. Measure all blocks
     const rollBlocks = rollsList.map((roll, idx) => {
         const pieces = Array.isArray(roll.pieces) && roll.pieces.length > 0 ? roll.pieces : [{ length: roll.metre }];
-        return { roll, idx, pieces, height: (pieces.length + 2) * cellH + 2 };
+        const pieceSummary = buildPieceSummary(roll, factor);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(detailFontSize);
+        const summaryLines = doc.splitTextToSize(pieceSummary, colW - 6);
+        const blockHeight = titleRowH + 2 + (summaryLines.length * detailLineH) + 4;
+        return { roll, idx, pieces, summaryLines, height: blockHeight };
     });
 
     // 2. Distribute into columns sequentially (Newspaper style)
@@ -231,11 +264,9 @@ function renderPrintedTemplate(doc, dcData, rollsList, template) {
     columns.forEach((colBlocks, colIdx) => {
         let drawY = startY;
         const gx = mL + colIdx * colW;
-        const sNoW = 7;
-        const rightX = gx + colW - 2;
 
         colBlocks.forEach(block => {
-            const { roll, pieces } = block;
+            const { roll, pieces, idx } = block;
 
             // Overflow check: If this block won't fit on current page, we need complex paging.
             // For now, assume it fits (user has ~150mm usable height which is a lot for 18-20 rolls).
@@ -245,29 +276,40 @@ function renderPrintedTemplate(doc, dcData, rollsList, template) {
                 // Ideally we'd addPage here, but for sequential columns it's complex.
             }
 
-            setInk(); doc.setLineWidth(0.3);
-            // Header Row
-            doc.rect(gx, drawY, colW, cellH);
-            doc.setFont('helvetica', 'bold'); doc.setFontSize(6.5);
-            doc.text(String(roll.barcode || ''), gx + sNoW + 1, drawY + cellH - 1.2);
+            setInk();
+            doc.setLineWidth(0.3);
 
-            let pieceY = drawY + cellH;
-            pieces.forEach((p, pi) => {
-                doc.rect(gx, pieceY, colW, cellH);
-                doc.line(gx + sNoW, pieceY, gx + sNoW, pieceY + cellH);
-                doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
-                doc.text(String(pi + 1), gx + sNoW / 2, pieceY + cellH - 1.2, { align: 'center' });
-                const pLen = pieceLength(p);
-                doc.text(Number(pLen).toFixed(2), rightX, pieceY + cellH - 1.2, { align: 'right' });
-                pieceY += cellH;
+            const blockHeight = block.height;
+            const barcode = String(roll.barcode || '').trim();
+            const totalMtrs = Number(adjustedMetre(roll.metre)).toFixed(2);
+            const piecesLabel = `Pieces ${pieces.length}`;
+
+            doc.rect(gx, drawY, colW, blockHeight);
+            doc.line(gx, drawY + titleRowH, gx + colW, drawY + titleRowH);
+
+            const headerSplit = gx + 12;
+            const headerRightSplit = gx + colW - 14;
+            doc.line(headerSplit, drawY, headerSplit, drawY + titleRowH);
+            doc.line(headerRightSplit, drawY, headerRightSplit, drawY + titleRowH);
+
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(6.5);
+            doc.text(String(idx + 1), gx + 2, drawY + 4.2);
+            doc.text(barcode, gx + 14, drawY + 4.2);
+            doc.text(totalMtrs, gx + colW - 2, drawY + 4.2, { align: 'right' });
+
+            const detailStartY = drawY + titleRowH + 4;
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(detailFontSize);
+            doc.text(piecesLabel, gx + 2, detailStartY);
+
+            doc.setFont('helvetica', 'normal');
+            const detailsTextX = gx + 2 + 14;
+            block.summaryLines.forEach((line, lineIdx) => {
+                doc.text(line, detailsTextX, detailStartY + 1.8 + (lineIdx * detailLineH));
             });
 
-            // Subtotal Row
-            doc.rect(gx, pieceY, colW, cellH);
-            doc.setFont('helvetica', 'bold'); doc.setFontSize(7);
-            doc.text(Number(adjustedMetre(roll.metre)).toFixed(2), rightX, pieceY + cellH - 1.2, { align: 'right' });
-            
-            drawY = pieceY + cellH + 2; 
+            drawY += blockHeight + blockGap;
         });
         columnFinalYs[colIdx] = drawY;
     });
@@ -358,6 +400,303 @@ function renderPrintedTemplate(doc, dcData, rollsList, template) {
     doc.text('Authorised Signatory', PW - mR - 2, footerY + 24, { align: 'right' });
 }
 
+function renderPrintedTemplateCompact(doc, dcData, rollsList, template) {
+    const {
+        setInk,
+        mL,
+        mR,
+        UW,
+        PW,
+        PH,
+        cx,
+        curY: baseHeaderY
+    } = renderPrintedHeaderScaffold(doc, template, {
+        numberLabel: 'DC No.',
+        numberValue: dcData.dcNumber || '__________',
+        dateLabel: 'Date',
+        dateValue: dcData.createdAt
+    });
+
+    const pct = Number(dcData?.appliedPercentage || 0);
+    const safePct = Number.isFinite(pct) ? pct : 0;
+    const factor = 1 + safePct / 100;
+    const adjustedMetre = (value) => Number((Number(value || 0) * factor).toFixed(2));
+    const items = Array.isArray(rollsList) ? rollsList : [];
+
+    let curY = baseHeaderY;
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'bold');
+    doc.text('To M/s.', mL + 2, curY + 4);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`: ${dcData.partyName || '________________________________'}`, mL + 16, curY + 4);
+    curY += 5;
+
+    const pAddr = dcData.partyAddress || '';
+    if (template.showPartyAddress) {
+        doc.setFont('helvetica', 'bold');
+        doc.text('Address', mL + 2, curY + 4);
+        doc.setFont('helvetica', 'normal');
+        if (pAddr) {
+            const pAddrLines = doc.splitTextToSize(`: ${pAddr}`, UW - 20);
+            pAddrLines.forEach((line, i) => doc.text(line, mL + 16, curY + 4 + i * 4));
+            curY += 4 + pAddrLines.length * 4;
+        } else {
+            doc.text(': ________________________________', mL + 16, curY + 4);
+            curY += 7;
+        }
+    }
+
+    if (template.showQuality) {
+        doc.setFont('helvetica', 'bold');
+        doc.text('Quality', mL + 2, curY + 4);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`: ${dcData.quality || '______________________'}`, mL + 17, curY + 4);
+    }
+    if (template.showFolding) {
+        doc.setFont('helvetica', 'bold');
+        doc.text('Folding', cx - 26, curY + 4);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`: ${dcData.folding || '__________________'}`, cx - 11, curY + 4);
+    }
+    if (template.showLotNo) {
+        doc.setFont('helvetica', 'bold');
+        doc.text('Lot No', PW - mR - 40, curY + 4);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`: ${dcData.lotNo || '__________'}`, PW - mR - 28, curY + 4);
+    }
+    curY += 9;
+
+    doc.setLineWidth(0.35);
+    doc.line(mL, curY, PW - mR, curY);
+    const startY = curY + 1;
+
+    const totalColCount = 4;
+    const rollColCount = 3;
+    const colW = UW / totalColCount;
+    const rollAreaW = colW * rollColCount;
+    const summaryX = mL + rollAreaW;
+    const summaryW = colW;
+    const bottomLimit = PH - 34;
+    const titleRowH = 5.6;
+    const detailRowH = 4.8;
+    const groupGap = 0;
+    const padX = 2.2;
+    const textOffsetY = 3.3;
+    const serialColW = 10;
+
+    const formatPieceValue = (piece) => {
+        const rawLength = typeof piece === 'number' ? piece : Number(piece?.length || 0);
+        const adjustedLength = Number((Number(rawLength || 0) * factor).toFixed(2));
+        return adjustedLength.toFixed(2);
+    };
+
+    const drawPageSummaryColumn = (pageSummaryRows, topY, endY) => {
+        const totalH = endY - topY;
+        if (totalH < 14) {
+            return;
+        }
+
+        const titleH = 5;
+        const headerH = 5;
+        const splitX = summaryX + 11;
+        const snoCenterX = summaryX + ((splitX - summaryX) / 2);
+        const rows = Math.max(pageSummaryRows.length, 1);
+        const rowsAreaTopY = topY + titleH + headerH;
+        const rowsAreaH = Math.max(endY - rowsAreaTopY, 4);
+        const rowGap = rowsAreaH / (rows + 1);
+        const bodyFontSize = rowGap < 4 ? 7 : 8;
+        const baselineOffset = Math.max(2.2, rowGap * 0.25);
+
+        setInk();
+        doc.setLineWidth(0.25);
+        doc.rect(summaryX, topY, summaryW, totalH);
+        doc.line(summaryX, topY + titleH, summaryX + summaryW, topY + titleH);
+        doc.line(summaryX, topY + titleH + headerH, summaryX + summaryW, topY + titleH + headerH);
+        doc.line(splitX, topY + titleH, splitX, endY);
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8);
+        doc.text('ROLL SUMMARY', summaryX + (summaryW / 2), topY + 3.6, { align: 'center' });
+        doc.text('S.No', snoCenterX, topY + titleH + 3.4, { align: 'center' });
+        doc.text('Total Mtrs', summaryX + summaryW - 1.5, topY + titleH + 3.4, { align: 'right' });
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(bodyFontSize);
+        pageSummaryRows.forEach((row, idx) => {
+            const y = rowsAreaTopY + ((idx + 1) * rowGap) + baselineOffset;
+            doc.text(String(row.serialNo), snoCenterX, y, { align: 'center' });
+            doc.text(row.totalMtrs, summaryX + summaryW - 1.5, y, { align: 'right' });
+        });
+    };
+
+    let drawY = startY;
+    let cursor = 0;
+
+    while (cursor < items.length) {
+        const pageTopY = drawY;
+        const pageSummaryRows = [];
+        let isFirstGroupOnPage = true;
+
+        while (cursor < items.length) {
+            const group = items.slice(cursor, cursor + rollColCount);
+            const normalized = Array.from({ length: rollColCount }, (_, idx) => {
+                const roll = group[idx] || null;
+                if (!roll) {
+                    return null;
+                }
+                const absoluteIndex = cursor + idx;
+                const pieces = Array.isArray(roll?.pieces) && roll.pieces.length > 0
+                    ? roll.pieces
+                    : [{ length: roll?.metre || 0 }];
+                return {
+                    roll,
+                    absoluteIndex,
+                    pieceValues: pieces.map((piece) => formatPieceValue(piece)),
+                    totalText: Number(adjustedMetre(roll?.metre || 0)).toFixed(2)
+                };
+            });
+
+            const maxPieceRows = normalized.reduce((max, entry) => {
+                if (!entry) return max;
+                return Math.max(max, entry.pieceValues.length);
+            }, 1);
+            const totalRows = maxPieceRows + 1;
+            const groupHeight = titleRowH + (totalRows * detailRowH);
+
+            if (!isFirstGroupOnPage && drawY + groupHeight > bottomLimit) {
+                break;
+            }
+
+            setInk();
+            doc.setLineWidth(0.25);
+            if (isFirstGroupOnPage) {
+                doc.line(mL, drawY, mL + rollAreaW, drawY);
+            }
+            doc.line(mL, drawY + groupHeight, mL + rollAreaW, drawY + groupHeight);
+            doc.line(mL, drawY, mL, drawY + groupHeight);
+            doc.line(mL + rollAreaW, drawY, mL + rollAreaW, drawY + groupHeight);
+
+            for (let c = 1; c < rollColCount; c++) {
+                const vx = mL + (c * colW);
+                doc.line(vx, drawY, vx, drawY + groupHeight);
+            }
+            for (let c = 0; c < rollColCount; c++) {
+                const gx = mL + (c * colW);
+                doc.line(gx + serialColW, drawY, gx + serialColW, drawY + groupHeight);
+            }
+
+            doc.line(mL, drawY + titleRowH, mL + rollAreaW, drawY + titleRowH);
+            for (let r = 1; r < totalRows; r++) {
+                const hy = drawY + titleRowH + (r * detailRowH);
+                doc.line(mL, hy, mL + rollAreaW, hy);
+            }
+
+            normalized.forEach((entry, colIdx) => {
+                if (!entry) return;
+                const gx = mL + (colIdx * colW);
+                const barcodeText = String(entry.roll?.barcode || '').trim();
+                const valueCellCenterX = gx + serialColW + ((colW - serialColW) / 2);
+
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(8);
+                doc.text(String(entry.absoluteIndex + 1), gx + (serialColW / 2), drawY + 3.9, { align: 'center' });
+                doc.text(barcodeText || `ROLL ${entry.absoluteIndex + 1}`, valueCellCenterX, drawY + 3.9, { align: 'center' });
+
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(7.6);
+                for (let r = 0; r < maxPieceRows; r++) {
+                    const lineY = drawY + titleRowH + (r * detailRowH) + textOffsetY;
+                    const lineValue = entry.pieceValues[r];
+                    if (!lineValue) continue;
+                    doc.text(String(r + 1), gx + (serialColW / 2), lineY, { align: 'center' });
+                    doc.text(lineValue, valueCellCenterX, lineY, { align: 'center' });
+                }
+
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(7.8);
+                const totalY = drawY + titleRowH + (maxPieceRows * detailRowH) + textOffsetY;
+                doc.text(String(entry.pieceValues.length), gx + (serialColW / 2), totalY, { align: 'center' });
+                doc.text(entry.totalText, valueCellCenterX, totalY, { align: 'center' });
+
+                pageSummaryRows.push({
+                    serialNo: entry.absoluteIndex + 1,
+                    totalMtrs: entry.totalText
+                });
+            });
+
+            isFirstGroupOnPage = false;
+            drawY += groupHeight + groupGap;
+            cursor += rollColCount;
+        }
+
+        drawPageSummaryColumn(pageSummaryRows, pageTopY, drawY);
+
+        if (cursor < items.length) {
+            drawY = renderPrintedContinuationPage(doc, template, {
+                numberLabel: 'DC No.',
+                numberValue: dcData.dcNumber || '__________',
+                dateLabel: 'Date',
+                dateValue: dcData.createdAt
+            });
+        }
+    }
+
+    curY = drawY + 3;
+
+    const footerY = PH - 35;
+    const grandMetre = items.reduce((sum, roll) => sum + adjustedMetre(roll?.metre || 0), 0);
+    const totalPieces = items.reduce((sum, roll) => sum + (Array.isArray(roll?.pieces) && roll.pieces.length > 0 ? roll.pieces.length : 1), 0);
+
+    setInk();
+    doc.setLineWidth(0.45);
+    doc.line(mL, footerY - 2, PW - mR, footerY - 2);
+    doc.setLineWidth(0.3);
+    doc.line(mL, footerY - 2, mL, footerY + 25);
+    doc.line(PW - mR, footerY - 2, PW - mR, footerY + 25);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    const footerLabelX = mL + 2;
+    const footerColonX = mL + 34;
+    const footerValueX = mL + 38;
+
+    doc.text('Total Meter', footerLabelX, footerY + 4);
+    doc.text(':', footerColonX, footerY + 4);
+    doc.setFont('helvetica', 'normal');
+    doc.text(grandMetre.toFixed(2), footerValueX, footerY + 4);
+
+    doc.setFont('helvetica', 'bold');
+    doc.text('Total Pieces', footerLabelX, footerY + 10);
+    doc.text(':', footerColonX, footerY + 10);
+    doc.setFont('helvetica', 'normal');
+    doc.text(String(totalPieces), footerValueX, footerY + 10);
+
+    doc.setFont('helvetica', 'bold');
+    doc.text('Total Roll', footerLabelX, footerY + 16);
+    doc.text(':', footerColonX, footerY + 16);
+    doc.setFont('helvetica', 'normal');
+    doc.text(String(items.length), footerValueX, footerY + 16);
+
+    if (template.showBillNo) {
+        doc.setFont('helvetica', 'bold');
+        doc.text('Bill No :', cx - 18, footerY + 4);
+        doc.setFont('helvetica', 'normal');
+        doc.text(dcData.billNo || '______________', cx + 3, footerY + 4);
+    }
+    if (template.showBillPreparedBy) {
+        doc.setFont('helvetica', 'bold');
+        doc.text('Bill Prepared by :', cx - 18, footerY + 13);
+        doc.setFont('helvetica', 'normal');
+        doc.text(dcData.billPreparedBy || '______________', cx + 12, footerY + 13);
+    }
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.text('Authorised Signatory', PW - mR - 2, footerY + 24, { align: 'right' });
+}
+
 function finalizePdf(doc, filename, options = {}) {
     const mode = options.mode || 'save';
     if (mode === 'bloburl') {
@@ -394,7 +733,7 @@ export const generateDCPdf = (dcData, rollsList, templateConfig = null, options 
     let textStartX = 14;
 
     if (template.layoutMode === 'printed') {
-        renderPrintedTemplate(doc, dcData, rollsList, template);
+        renderPrintedTemplateCompact(doc, dcData, rollsList, template);
         const filename = `${String(dcData.dcNumber || 'DC').replace(/\s+/g, '_')}_Challan.pdf`;
         return finalizePdf(doc, filename, options);
     }
