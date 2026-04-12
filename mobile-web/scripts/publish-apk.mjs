@@ -9,7 +9,8 @@ const sourceCandidates = [
   path.resolve(projectRoot, 'android', 'app', 'build', 'outputs', 'apk', 'release', 'app-release.apk')
 ];
 const targetDir = path.resolve(projectRoot, '..', 'backend', 'public', 'pwa');
-const targetApk = path.resolve(targetDir, 'LoomTrackMobile.apk');
+const targetApk = path.resolve(targetDir, 'LoomTrack.apk');
+const compatTargetApk = path.resolve(targetDir, 'LoomTrack.apk');
 
 const sourceApk = sourceCandidates.find((candidate) => fs.existsSync(candidate));
 
@@ -25,6 +26,8 @@ if (!fs.existsSync(targetDir)) {
 }
 
 fs.copyFileSync(sourceApk, targetApk);
+fs.copyFileSync(sourceApk, compatTargetApk);
 const stat = fs.statSync(targetApk);
 console.log(`Published APK to ${targetApk}`);
+console.log(`Published APK to ${compatTargetApk}`);
 console.log(`Size: ${(stat.size / (1024 * 1024)).toFixed(2)} MB`);

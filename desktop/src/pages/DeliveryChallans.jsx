@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { io } from 'socket.io-client';
 import { useConfig } from '../context/ConfigContext';
@@ -87,7 +87,7 @@ const DeliveryChallans = () => {
         return fallbackMessage;
     };
 
-    const fetchDCs = async () => {
+    const fetchDCs = useCallback(async () => {
         try {
             setLoading(true);
             setLoadError('');
@@ -101,10 +101,10 @@ const DeliveryChallans = () => {
         } finally {
             setLoading(false);
         }
-    };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [apiUrl, showNotification]);
 
     // Reconnect only when the API host changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     useEffect(() => {
         const socketOptions = import.meta.env.DEV
             ? { transports: ['polling'], upgrade: false }
@@ -116,7 +116,7 @@ const DeliveryChallans = () => {
         });
 
         return () => socket.disconnect();
-    }, [apiUrl]);
+    }, [apiUrl, fetchDCs]);
 
     const buildPartyDirectory = (records) => {
         const directory = new Map();

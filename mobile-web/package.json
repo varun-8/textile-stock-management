@@ -54,7 +54,7 @@
   },
   "build": {
     "appId": "com.srilakshmitextiles.mobile",
-    "productName": "Loom Track Mobile",
+    "productName": "LoomTrack",
     "asar": true,
     "files": [
       "dist/**/*",
@@ -86,7 +86,7 @@
       "allowElevation": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Loom Track Mobile",
+      "shortcutName": "LoomTrack",
       "installerIcon": "icon.ico",
       "uninstallerIcon": "icon.ico",
       "installerHeaderIcon": "icon.ico",

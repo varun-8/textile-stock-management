@@ -7,10 +7,10 @@ const MobileContext = createContext();
 const DEFAULT_IP = (window.location.hostname && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1')
     ? window.location.hostname
     : 'stock-system.local';
-const DEV_HTTP_PORT = 5000;
-const DEV_HTTPS_PORT = 5001;
-const DISCOVERY_TIMEOUT_MS = 1500;
-const SETUP_TIMEOUT_MS = 6000;
+const DEV_HTTP_PORT = 5050;
+const DEV_HTTPS_PORT = 5051;
+const DISCOVERY_TIMEOUT_MS = 2000;
+const SETUP_TIMEOUT_MS = 5000;
 
 const normalizeHost = (value) => {
     if (!value) return '';
@@ -29,19 +29,32 @@ const buildBaseUrls = (value) => {
 
     if (normalizedBase) {
         const candidates = [];
-        
+
         try {
             const parsed = new URL(normalizedBase);
             const host = parsed.hostname;
+            const explicitPort = parsed.port ? Number(parsed.port) : null;
+            const scheme = parsed.protocol.replace(':', '');
             if (host) {
-                // For Native Apps, ALWAYS try HTTP 5000 first to bypass self-signed cert issues
                 if (isNative) {
+                    // Native app talks to backend over HTTP only.
+                    if (scheme === 'http') {
+                        candidates.push(normalizedBase);
+                    }
+                    if (scheme === 'https' && explicitPort && explicitPort > 1) {
+                        candidates.push(`http://${host}:${explicitPort - 1}`);
+                    }
                     candidates.push(`http://${host}:${DEV_HTTP_PORT}`);
+                } else {
+                    // Browser/PWA uses HTTPS only.
+                    if (scheme === 'https') {
+                        candidates.push(normalizedBase);
+                    }
+                    if (scheme === 'http' && explicitPort) {
+                        candidates.push(`https://${host}:${explicitPort + 1}`);
+                    }
+                    candidates.push(`https://${host}:${DEV_HTTPS_PORT}`);
                 }
-                candidates.push(normalizedBase);
-                candidates.push(`http://${host}:${DEV_HTTP_PORT}`);
-                candidates.push(`http://${host}:${DEV_HTTPS_PORT}`);
-                candidates.push(`https://${host}:${DEV_HTTPS_PORT}`);
             }
         } catch (e) {
             candidates.push(normalizedBase);
@@ -53,8 +66,9 @@ const buildBaseUrls = (value) => {
     const host = normalizeHost(value);
     if (!host) return [];
 
-    // Fallback candidates are now limited to the provided hostname without hardcoded ports
-    return [];
+    return isNative
+        ? [`http://${host}:${DEV_HTTP_PORT}`]
+        : [`https://${host}:${DEV_HTTPS_PORT}`];
 };
 
 const uniqueHosts = (values) => [...new Set(values.map(normalizeHost).filter(Boolean))];
@@ -100,31 +114,6 @@ export const MobileProvider = ({ children }) => {
     });
     const [canInstall, setCanInstall] = useState(!!window.deferredPrompt);
 
-    useEffect(() => {
-        const handleBeforeInstallPrompt = (e) => {
-            e.preventDefault();
-            console.log('📱 beforeinstallprompt event fired');
-            setDeferredPrompt(e);
-            setCanInstall(true);
-            window.deferredPrompt = e;
-        };
-
-        const handleAppInstalled = () => {
-            console.log('✅ App installed');
-            setDeferredPrompt(null);
-            setCanInstall(false);
-            window.deferredPrompt = null;
-        };
-
-        window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-        window.addEventListener('appinstalled', handleAppInstalled);
-
-        return () => {
-            window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-            window.removeEventListener('appinstalled', handleAppInstalled);
-        };
-    }, []);
-
     const installApp = async () => {
         if (!deferredPrompt) {
             console.warn('⚠️ No install prompt available');
@@ -149,7 +138,9 @@ export const MobileProvider = ({ children }) => {
     const [missing, setMissing] = useState([]);
     const [loadingMissing, setLoadingMissing] = useState(false);
 
-    const api = useMemo(() => axios.create(), []);
+    const api = useMemo(() => axios.create({
+        timeout: 15000 // Increased to 15s for slow LAN/WiFi
+    }), []);
 
     const probeHost = useCallback(async (host) => {
         const baseUrls = buildBaseUrls(host);
@@ -222,9 +213,11 @@ export const MobileProvider = ({ children }) => {
             response => response,
             error => {
                 if (error.response && (error.response.status === 403 || error.response.status === 401)) {
-                    const errMsg = error.response.data?.error || '';
-                    // Only auto-logout if it's clearly a scanner auth issue
-                    if (errMsg.includes('Scanner') || errMsg.includes('Unauthorized')) {
+                    const errMsg = String(error.response.data?.error || error.response.data?.message || '');
+                    // Only auto-logout when backend explicitly indicates scanner revocation/deletion.
+                    const scannerRevoked = /scanner.*(deleted|disabled|not found|invalid|removed)/i.test(errMsg)
+                        || /device.*removed/i.test(errMsg);
+                    if (scannerRevoked) {
                         console.warn('🚨 Global 403 Interceptor: Scanner invalid. Clearing session.');
                         localStorage.removeItem('SL_SCANNER_ID');
                         localStorage.removeItem('SL_USER_TOKEN');
@@ -349,14 +342,22 @@ export const MobileProvider = ({ children }) => {
 
         try {
             const existingId = localStorage.getItem('SL_SCANNER_ID');
-            const candidateBases = [
-                ...buildBaseUrls(ip),
-                ...buildBaseUrls(localStorage.getItem('SL_SERVER_ORIGIN')),
-                ...buildBaseUrls(serverIp),
-                ...buildBaseUrls(window.location.hostname),
-                ...buildBaseUrls(DEFAULT_IP)
-            ];
-            const candidateHosts = [...new Set(candidateBases)];
+            const inputText = String(ip || '').trim();
+            const inputHasProtocol = /^https?:\/\//i.test(inputText);
+
+            // If QR/manual input includes a full URL, prioritize only those concrete variants first.
+            // This avoids long serial retries across stale hosts/ports that look like a hang.
+            const primaryCandidates = buildBaseUrls(ip);
+            const fallbackCandidates = inputHasProtocol
+                ? []
+                : [
+                    ...buildBaseUrls(localStorage.getItem('SL_SERVER_ORIGIN')),
+                    ...buildBaseUrls(serverIp),
+                    ...buildBaseUrls(window.location.hostname),
+                    ...buildBaseUrls(DEFAULT_IP)
+                ];
+
+            const candidateHosts = [...new Set([...primaryCandidates, ...fallbackCandidates])].slice(0, inputHasProtocol ? 2 : 4);
             console.log('🔍 Candidate Hosts for pairing:', candidateHosts);
             let res = null;
             let connectedBase = null;
@@ -364,6 +365,7 @@ export const MobileProvider = ({ children }) => {
 
             for (const baseURL of candidateHosts) {
                 try {
+                    console.log(`📡 Attempting: ${baseURL}/api/auth/pair`);
                     const setupClient = axios.create({
                         baseURL,
                         timeout: SETUP_TIMEOUT_MS
@@ -375,12 +377,16 @@ export const MobileProvider = ({ children }) => {
                         scannerId: existingId,
                         workspaceCode
                     });
+                    console.log(`✅ Reachable! Base: ${baseURL}`);
                     connectedBase = baseURL;
                     break;
                 } catch (err) {
                     lastError = err;
                     const status = err.response?.status;
-                    const errorText = `${err.response?.data?.error || err.response?.data?.message || err.message || ''}`.toLowerCase();
+                    const errorMsg = err.response?.data?.error || err.response?.data?.message || err.message;
+                    console.warn(`❌ Failed ${baseURL}: ${errorMsg} (Code: ${err.code || status || 'N/A'})`);
+                    
+                    const errorText = `${errorMsg || ''}`.toLowerCase();
                     const retryable = (
                         !status && (
                             err.code === 'ECONNABORTED' ||
@@ -435,25 +441,23 @@ export const MobileProvider = ({ children }) => {
 
             return true;
         } catch (err) {
-            if (!err.response && allowDiscoveryRetry) {
-                const discovered = await discoverBackend(ip);
-                if (discovered) {
-                    return setupDevice(discovered, token, name, false);
-                }
-            }
             console.error('❌ Setup Error:', err);
             const rawMsg = err.response?.data?.message || err.response?.data?.error || err.message || 'Setup Failed';
             const normalizedMsg = String(rawMsg).toLowerCase();
-            const msg = (!err.response && (
+            const attemptedUrl = err.config?.url ? ` (${err.config.baseURL}${err.config.url})` : '';
+
+            let msg = rawMsg;
+            if (!err.response && (
                 normalizedMsg.includes('request aborted') ||
                 normalizedMsg.includes('network error') ||
                 normalizedMsg.includes('failed to fetch') ||
-                normalizedMsg.includes('ecconnaborted') ||
+                normalizedMsg.includes('econnaborted') ||
                 normalizedMsg.includes('err_network')
-            ))
-                ? `Network Error: ${rawMsg}`
-                : rawMsg;
-            throw new Error(msg);
+            )) {
+                msg = `Network Error: Backend unreachable at ${err.config?.baseURL || ip}. Ensure you are on the same WiFi.`;
+            }
+
+            throw new Error(msg + attemptedUrl);
         }
     }, [serverIp, workspaceCode, discoverBackend]);
 
@@ -516,7 +520,13 @@ export const MobileProvider = ({ children }) => {
 
                     const workspaceParam = workspaceCode ? `&workspaceCode=${encodeURIComponent(workspaceCode)}` : '';
                     const verifyBase = normalizeBaseUrl(localStorage.getItem('SL_SERVER_ORIGIN')) || api.defaults.baseURL || buildBaseUrls(serverIp)[0] || `http://${serverIp}:${DEV_HTTP_PORT}`;
-                    const res = await verifyClient.get(`${verifyBase}/api/auth/check-scanner/${scannerId}${employeeParam}${workspaceParam}`);
+                    // Add cache-busting timestamp to force fresh verification
+                    const res = await verifyClient.get(`${verifyBase}/api/auth/check-scanner/${scannerId}${employeeParam}${workspaceParam}&_t=${Date.now()}`, {
+                        headers: {
+                            'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+                            'Pragma': 'no-cache'
+                        }
+                    });
                     if (!res.data.valid) {
                         // Scanner no longer valid - unpair it
                         console.warn('Scanner no longer paired with backend');
@@ -547,13 +557,12 @@ export const MobileProvider = ({ children }) => {
                         setScannerDeletedError('Your scanner was deleted. Please pair a new device.');
                     } else if (err.response?.status === 402) {
                         setScannerDeletedError(err.response?.data?.error || 'License activation required.');
-                    } else if (err.message?.includes('Network Error') || err.code === 'ECONNREFUSED' || !err.response) {
+                    } else if (err.message?.includes('Network Error') || err.code === 'ECONNREFUSED' || !err.response || err.code === 'ECONNABORTED') {
                         // Server unreachable (network error, not deletion)
                         // DO NOT setScannerId(null) here. STAY PAIRED.
-                        console.warn('⚠️ Server unreachable - keeping paired state');
-                        setScannerDeletedError('Cannot reach server. Check your connection.');
-                        // Attempt to rediscover the working IP/Port
-                        await discoverBackend(serverIp);
+                        console.warn('⚠️ Server unreachable during verify - keeping paired state');
+                        setScannerDeletedError(null);
+                        // Optional: don't even try to rediscover if we know the network is just slow
                     }
                 }
             }

@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import axios from 'axios';
 import QRCode from 'react-qr-code';
+import { io } from 'socket.io-client';
 import { useConfig } from '../context/ConfigContext';
 import { IconBroadcast, IconTrash, IconScan, IconX } from '../components/Icons';
 import { useNotification } from '../context/NotificationContext';
@@ -11,8 +12,10 @@ const Scanners = () => {
     const [setupToken, setSetupToken] = useState('');
     const [qrTarget, setQrTarget] = useState(null); // null, 'NEW', or scanner object
     const [serverIp, setServerIp] = useState('');
-    const [serverPort, setServerPort] = useState(5001);
+    const [serverHttpPort, setServerHttpPort] = useState(5000);
+    const [serverHttpsPort, setServerHttpsPort] = useState(5001);
     const [loading, setLoading] = useState(false);
+    const [deletedScannerIds, setDeletedScannerIds] = useState(new Set());
     const [deleteConfirm, setDeleteConfirm] = useState(null);
     const [showInstallQr, setShowInstallQr] = useState(false);
     const [checkingInstallApk, setCheckingInstallApk] = useState(false);
@@ -28,7 +31,8 @@ const Scanners = () => {
         try {
             const res = await axios.get(`${apiUrl}/api/admin/server-ip`, { headers: authHeaders() });
             if (res.data.ip) setServerIp(res.data.ip);
-            if (res.data.httpsPort) setServerPort(Number(res.data.httpsPort) || 5001);
+            if (res.data.httpPort) setServerHttpPort(Number(res.data.httpPort) || 5000);
+            if (res.data.httpsPort) setServerHttpsPort(Number(res.data.httpsPort) || 5001);
         } catch (err) {
             console.error("Failed to fetch Server IP", err);
             showNotification("Could not resolve Server LAN IP", 'error');
@@ -47,29 +51,76 @@ const Scanners = () => {
 
     const fetchScanners = useCallback(async () => {
         try {
-            if (scanners.length === 0) setLoading(true);
-            const res = await axios.get(`${apiUrl}/api/admin/scanners`, { headers: authHeaders() });
-
-            // Prevent flickering: Only update state if data actually changed
-            setScanners(prev => {
-                const newData = res.data || [];
-                if (JSON.stringify(prev) !== JSON.stringify(newData)) {
-                    return newData;
+            // Add cache-busting timestamp and headers to force fresh data
+            const res = await axios.get(`${apiUrl}/api/admin/scanners?_t=${Date.now()}`, { 
+                headers: {
+                    ...authHeaders(),
+                    'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+                    'Pragma': 'no-cache'
                 }
-                return prev;
             });
+            setScanners(res.data || []);
         } catch (err) {
             console.error("Failed to fetch scanners:", err);
         } finally {
             setLoading(false);
         }
-    }, [apiUrl, scanners.length]);
+    }, [apiUrl]);
 
     useEffect(() => {
+        setLoading(true);
         fetchScanners();
-        const interval = setInterval(fetchScanners, 5000);
+        // Poll more frequently for real-time scanner status updates
+        const interval = setInterval(fetchScanners, 10000); // Poll every 10 seconds for live status
         return () => clearInterval(interval);
     }, [fetchScanners]);
+
+    // Socket.IO real-time updates with better connection handling
+    useEffect(() => {
+        const socketOptions = import.meta.env.DEV
+            ? { transports: ['websocket'], reconnection: true, reconnectionDelay: 1000, reconnectionAttempts: 10 }
+            : { transports: ['websocket', 'polling'], reconnection: true, reconnectionDelay: 1000, reconnectionAttempts: 10 };
+
+        const socket = io(apiUrl, socketOptions);
+
+        socket.on('connect', () => {
+            console.log('✓ Scanner page Socket.IO connected');
+        });
+
+        socket.on('disconnect', () => {
+            console.warn('✗ Scanner page Socket.IO disconnected');
+        });
+
+        socket.on('connect_error', (error) => {
+            console.error('Socket.IO connection error:', error);
+        });
+
+        socket.on('scanner_updated', () => {
+            console.log('📡 Scanner updated event received');
+            fetchScanners();
+        });
+
+        socket.on('scanner_deleted', (data) => {
+            console.log('📡 Scanner deleted event received:', data);
+            // Remove from deleted cache if we're tracking it
+            setDeletedScannerIds(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(data?.scannerId);
+                return newSet;
+            });
+            // Refetch to ensure consistency
+            fetchScanners();
+        });
+
+        socket.on('scanner_registered', () => {
+            console.log('📡 Scanner registered event received');
+            fetchScanners();
+        });
+
+        return () => {
+            socket.disconnect();
+        };
+    }, [apiUrl, fetchScanners]);
 
     // Fetch IP when QR modal opens
     useEffect(() => {
@@ -99,37 +150,74 @@ const Scanners = () => {
         return () => clearInterval(interval);
     }, [qrTarget, fetchPairingToken]);
 
+    // When QR modal closes (after pairing), immediately refetch scanners
+    useEffect(() => {
+        if (!qrTarget) {
+            // Delay slightly to ensure backend has processed pairing
+            const timer = setTimeout(() => {
+                fetchScanners();
+            }, 500);
+            return () => clearTimeout(timer);
+        }
+    }, [qrTarget, fetchScanners]);
+
     const removeScannerDevice = async (scannerId) => {
         try {
+            // Mark as deleted immediately in UI
+            setDeletedScannerIds(prev => new Set([...prev, scannerId]));
+            setScanners(prev => prev.filter(s => s.scannerId !== scannerId));
+            setDeleteConfirm(null);
+            showNotification('Scanner removed successfully', 'success');
+            
+            // Send delete request to backend
             const res = await axios.delete(`${apiUrl}/api/admin/scanners/${scannerId}`, { headers: authHeaders() });
             if (res.status === 200) {
-                setScanners(prev => prev.filter(s => s.scannerId !== scannerId));
-                setDeleteConfirm(null);
+                // Success - keep it removed
+                setDeletedScannerIds(prev => {
+                    const newSet = new Set(prev);
+                    newSet.delete(scannerId);
+                    return newSet;
+                });
+            } else {
+                // Failure - restore it and refetch
+                showNotification('Failed to delete scanner', 'error');
+                setDeletedScannerIds(prev => {
+                    const newSet = new Set(prev);
+                    newSet.delete(scannerId);
+                    return newSet;
+                });
+                fetchScanners();
             }
         } catch (err) {
-            showNotification(`Error: ${err.response?.data?.error || 'Failed to remove scanner'}`, 'error');
+            showNotification(`${err.response?.data?.error || 'Failed to remove scanner'}`, 'error');
+            // Restore on error and refetch
+            setDeletedScannerIds(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(scannerId);
+                return newSet;
+            });
+            fetchScanners();
         }
     };
 
     const getPairingUrl = () => {
         if (!serverIp) return '';
         if (qrTarget === 'NEW' && !setupToken) return '';
-        const lanUrl = `https://${serverIp}:${serverPort}`;
+        // Open pairing page on HTTPS (PWA/browser-safe), but pass HTTP server target for native app pairing.
+        const pairingUrl = `https://${serverIp}:${serverHttpsPort}`;
+        const serverForClient = `http://${serverIp}:${serverHttpPort}`;
 
         const tokenToUse = (qrTarget && typeof qrTarget === 'object') ? qrTarget.fingerprint : setupToken;
-        const urlParams = `server=${encodeURIComponent(lanUrl)}`;
+        const urlParams = `server=${encodeURIComponent(serverForClient)}`;
 
-        return `${lanUrl}/pair?token=${tokenToUse}&${urlParams}&action=PAIR`;
+        return `${pairingUrl}/pair?token=${tokenToUse}&${urlParams}&action=PAIR`;
     };
 
     const getInstallUrl = () => {
         if (!serverIp) return '';
-        return `https://${serverIp}:${serverPort}/pwa/LoomTrackMobile.apk`;
-    };
-
-    const getPwaUrl = () => {
-        if (!serverIp) return '';
-        return `https://${serverIp}:${serverPort}/pwa/index.html`;
+        // PWA and APK download should use HTTPS (Port 5001) because browsers require 
+        // a secure context for Camera and Service Workers to function.
+        return `https://${serverIp}:${serverHttpsPort}/pwa/LoomTrack.apk`;
     };
 
     const verifyInstallApk = async () => {
@@ -255,9 +343,10 @@ const Scanners = () => {
                 ) : (
                     /* Grid */
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '1.5rem' }}>
-                        {scanners.map((scanner) => {
-                            const lastSeenTime = new Date(scanner.lastSeen).getTime();
-                            const isActiveRecently = (Date.now() - lastSeenTime) < 2 * 60 * 1000;
+                        {scanners.filter(s => !deletedScannerIds.has(s.scannerId)).map((scanner) => {
+                            const lastSeenTime = scanner.lastSeen ? new Date(scanner.lastSeen).getTime() : 0;
+                            // Scanner is online if seen in last 30 seconds (accounts for 10s polling + buffer)
+                            const isActiveRecently = (Date.now() - lastSeenTime) < 30 * 1000;
                             const statusDisplay = isActiveRecently ? 'Online' : 'Offline';
                             const statusColor = isActiveRecently ? 'var(--success-color)' : 'var(--text-secondary)';
                             const statusBg = isActiveRecently ? 'rgba(16, 185, 129, 0.1)' : 'var(--bg-tertiary)';
@@ -479,7 +568,7 @@ const Scanners = () => {
                                 Install Mobile App
                             </h2>
                             <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', margin: '0 0 1.25rem' }}>
-                                Scan this QR from your phone browser to download the APK or open the PWA web app.
+                                Scan this QR from your phone browser to download and install the native APK.
                             </p>
 
                             <div style={{
@@ -505,45 +594,26 @@ const Scanners = () => {
                                 <div style={{ padding: '2.25rem', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                                     <div className="spinner" style={{ width: '32px', height: '32px', border: '3px solid var(--border-color)', borderTopColor: 'var(--accent-color)', borderRadius: '50%' }}></div>
                                 </div>
+                            ) : installApkStatus === 'missing' ? (
+                                <div style={{
+                                    padding: '1rem',
+                                    borderRadius: '12px',
+                                    background: 'var(--warning-bg)',
+                                    color: 'var(--warning-color)',
+                                    border: '1px solid var(--warning-color)',
+                                    fontSize: '0.86rem'
+                                }}>
+                                    APK is not available on server yet. Publish APK to continue native setup.
+                                </div>
                             ) : (
                                 <div style={{ background: 'white', padding: '1.5rem', borderRadius: '16px', display: 'inline-block', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}>
-                                    <QRCode
-                                        value={installApkStatus === 'ready' ? getInstallUrl() : getPwaUrl()}
-                                        size={200}
-                                    />
+                                    <QRCode value={getInstallUrl()} size={200} />
                                 </div>
                             )}
 
                             <div style={{ marginTop: '1.25rem', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                                {installApkStatus === 'ready'
-                                    ? 'Publish APK to server path: /pwa/LoomTrackMobile.apk'
-                                    : 'PWA fallback: /pwa/index.html'}
+                                Publish APK to server path: /pwa/LoomTrack.apk
                             </div>
-
-                            {serverIp && (
-                                <div style={{ marginTop: '0.9rem' }}>
-                                    <a
-                                        href={getPwaUrl()}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        style={{
-                                            display: 'inline-flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            padding: '0.7rem 1rem',
-                                            borderRadius: '999px',
-                                            border: '1px solid var(--border-color)',
-                                            color: 'var(--text-primary)',
-                                            textDecoration: 'none',
-                                            fontSize: '0.82rem',
-                                            fontWeight: '700',
-                                            background: 'var(--bg-tertiary)'
-                                        }}
-                                    >
-                                        Open PWA
-                                    </a>
-                                </div>
-                            )}
                         </div>
                     </div>
                 </div>

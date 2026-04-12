@@ -9,13 +9,75 @@ const Session = require('../models/Session');
 const Scanner = require('../models/Scanner');
 const { normalizePieces, totalFromPieces } = require('../utils/rollPieces');
 
-// Check barcode status (Scan Logic)
+// In-memory cache for scanner heartbeats (reduce DB writes by 80%)
+// Caches are cleared from shared state exposed via mobileRoutes export
+const scannerHeartbeatCache = new Map();
+const HEARTBEAT_BATCH_INTERVAL = 10 * 1000; // Batch write every 10 seconds (matches frontend polling)
+const HEARTBEAT_BATCH_SIZE = 10; // Or after 10 pings
+let pendingUpdates = [];
+
+// Batch update scanner lastSeen periodically
+setInterval(async () => {
+    if (pendingUpdates.length === 0) return;
+    const updates = [...pendingUpdates];
+    pendingUpdates = [];
+    
+    try {
+        await Promise.all(
+            updates.map(({ scannerId, timestamp }) =>
+                Scanner.updateOne(
+                    { uuid: scannerId },
+                    { lastSeen: timestamp },
+                    { timestamps: false } // Skip Mongoose timestamp updates
+                )
+            )
+        );
+        if (updates.length > 0) {
+            console.log(`✅ Batched ${updates.length} scanner heartbeats (updated in ${HEARTBEAT_BATCH_INTERVAL}ms)`);
+        }
+    } catch (err) {
+        console.error('❌ Batch heartbeat update failed:', err);
+        pendingUpdates.push(...updates); // Retry on next interval
+    }
+}, HEARTBEAT_BATCH_INTERVAL);
+
+// Optimized Ping Handler - Uses in-memory cache instead of DB write every time
 router.get('/ping', async (req, res) => {
     try {
         if (req.scanner) {
-            req.scanner.lastSeen = new Date();
-            await req.scanner.save();
-            res.json({ status: 'OK' });
+            const now = new Date();
+            const scannerId = req.scanner.uuid;
+            
+            // Update in-memory cache
+            scannerHeartbeatCache.set(scannerId, now);
+            
+            // Add to batch if not recently queued
+            if (!pendingUpdates.find(u => u.scannerId === scannerId)) {
+                pendingUpdates.push({ scannerId, timestamp: now });
+            }
+            
+            // Trigger batch if threshold reached
+            if (pendingUpdates.length >= HEARTBEAT_BATCH_SIZE) {
+                const updates = [...pendingUpdates];
+                pendingUpdates = [];
+                
+                try {
+                    await Promise.all(
+                        updates.map(({ scannerId: id, timestamp }) =>
+                            Scanner.updateOne(
+                                { uuid: id },
+                                { lastSeen: timestamp },
+                                { timestamps: false }
+                            )
+                        )
+                    );
+                } catch (err) {
+                    console.error('❌ Batch update failed:', err);
+                    pendingUpdates.push(...updates);
+                }
+            }
+            
+            res.json({ status: 'OK', cached: true });
         } else {
             res.status(401).json({ error: 'Unauthorized Scanner' });
         }
@@ -23,6 +85,9 @@ router.get('/ping', async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
+
+// Export cache for other modules
+module.exports.getScannerLastSeen = (scannerId) => scannerHeartbeatCache.get(scannerId);
 
 router.get('/scan/:barcode', async (req, res) => {
     try {

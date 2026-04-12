@@ -76,44 +76,32 @@ const SessionManager = () => {
     };
 
     const handleInstall = async () => {
-        console.log('=== INSTALL BUTTON CLICKED ===');
-        console.log('deferredPrompt from context:', !!deferredPrompt);
-        console.log('window.deferredPrompt:', !!window.deferredPrompt);
-
         const prompt = deferredPrompt || window.deferredPrompt;
-        console.log('Final prompt object:', !!prompt);
 
         if (!prompt) {
-            console.error('❌ NO PROMPT AVAILABLE');
-            console.log('Available on window:', Object.keys(window).filter(k => k.includes('defer')));
             setInstallStatus({ type: 'info', message: 'On iOS: Tap Share → Add to Home Screen' });
             setTimeout(() => setInstallStatus(null), 4000);
             return;
         }
 
         try {
-            console.log('✅ PROMPT AVAILABLE - Calling prompt.prompt()');
             setShowMenu(false);
             setShowInstallBanner(false);
-            setInstallStatus({ type: 'installing', message: 'Installing Loom Track...' });
+            setInstallStatus({ type: 'installing', message: 'Installing LoomTrack...' });
             
-            // Wait 2s to show installation
             await new Promise(r => setTimeout(r, 2000));
             
             if (deferredPrompt) {
                 deferredPrompt.prompt();
                 const { outcome } = await deferredPrompt.userChoice;
                 if (outcome === 'accepted') {
-                    setInstallStatus({ type: 'success', message: '✅ Loom Track installed successfully!' });
+                    setInstallStatus({ type: 'success', message: '✅ LoomTrack installed successfully!' });
                 }
                 setTimeout(() => setInstallStatus(null), 3000);
             } else {
-                console.log('⏭️ User dismissed install');
                 setInstallStatus(null);
             }
         } catch (err) {
-            console.error('❌ Install error:', err);
-            console.error('Error details:', err.message, err.stack);
             setInstallStatus({ type: 'error', message: 'Installation failed' });
             setTimeout(() => setInstallStatus(null), 3000);
         }
@@ -135,11 +123,8 @@ const SessionManager = () => {
         return () => clearInterval(interval);
     }, []);
 
-    // Auto-show install banner when prompt is available
     useEffect(() => {
-        // Check window.deferredPrompt set by index.html
         if (window.deferredPrompt && !localStorage.getItem('pwa_install_dismissed')) {
-            console.log('✅ deferredPrompt found in window');
             setTimeout(() => setShowInstallBanner(true), 1000);
         }
     }, []);
@@ -363,10 +348,10 @@ const SessionManager = () => {
                                 borderRadius: '12px', display: 'flex', alignItems: 'center',
                                 justifyContent: 'center', boxShadow: '0 4px 12px rgba(99, 102, 241, 0.2)'
                             }}>
-                                <img src={`${import.meta.env.BASE_URL}logo.svg`} alt="Loom Track" style={{ width: '22px', height: '22px' }} />
+                                <img src={`${import.meta.env.BASE_URL}logo.svg`} alt="LoomTrack" style={{ width: '22px', height: '22px' }} />
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                <span style={{ fontSize: '16px', fontWeight: '900', color: 'white', letterSpacing: '-0.02em', lineHeight: 1 }}>Loom Track</span>
+                                <span style={{ fontSize: '16px', fontWeight: '900', color: 'white', letterSpacing: '-0.02em', lineHeight: 1 }}>LoomTrack</span>
                                 <span style={{ fontSize: '9px', fontWeight: '700', color: THEME.textMuted, letterSpacing: '0.05em', marginTop: '2px' }}>TEXTILE MANAGEMENT</span>
                             </div>
                         </div>
@@ -910,7 +895,7 @@ const SessionManager = () => {
                     <div style={{ fontSize: '32px' }}>📲</div>
                     <div style={{ flex: 1 }}>
                         <div style={{ fontSize: '15px', fontWeight: '700', color: 'white', marginBottom: '2px' }}>
-                            Install Loom Track App
+                            Install LoomTrack App
                         </div>
                         <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.85)' }}>
                             Quick access from home screen

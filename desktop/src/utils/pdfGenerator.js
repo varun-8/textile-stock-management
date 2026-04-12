@@ -289,7 +289,7 @@ function renderPrintedTemplateCompact(doc, dcData, rollsList, template) {
     const bottomLimit = PH - 34;
     const titleRowH = 5.6;
     const detailRowH = 4.8;
-    const padX = 2.2;
+    const _padX = 2.2;
     const textOffsetY = 3.3;
     const serialColW = 10;
 

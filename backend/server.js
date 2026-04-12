@@ -17,6 +17,22 @@ const { ensureInstallApk, startInstallApkGuardian } = require('./services/instal
 const { issueAdminToken, requireAdminAuth, requireScannerAuth, requireAnyAuth } = require('./middleware/authMiddleware');
 const { requireLicense } = require('./middleware/licenseMiddleware');
 
+// Phase 3-10: Import optimization middleware & services
+const { initCompressionMiddleware } = require('./middleware/core/compression');
+const { securityHeaders } = require('./middleware/core/security');
+const { performanceMonitoring } = require('./middleware/monitoring/performance');
+const { logger } = require('./middleware/monitoring/logger');
+const { ResponseCacheManager } = require('./middleware/caching/responseCache');
+const { autoPaginateMiddleware } = require('./middleware/caching/paginator');
+const { DeltaSyncManager, createMobileResponse } = require('./middleware/mobile/optimization');
+const { RateLimiter } = require('./utils/resilience/rateLimiter');
+const { CircuitBreaker } = require('./utils/resilience/circuitBreaker');
+const { withRetry } = require('./utils/resilience/retryLogic');
+const { JobQueue } = require('./services/jobs/jobQueue');
+const { AsyncReportGenerator } = require('./services/jobs/reportGenerator');
+const { BackupManager } = require('./services/backup/backupManager');
+const { DataConsistencyChecker } = require('./services/backup/dataIntegrity');
+
 let helmet = null;
 let rateLimit = null;
 try {
@@ -121,8 +137,12 @@ const isOriginAllowed = (origin) => {
 
 const io = new Server(httpServer, {
     cors: {
-        origin: true,
-        methods: ['GET', 'POST']
+        origin: (origin, callback) => {
+            if (isOriginAllowed(origin)) return callback(null, true);
+            return callback(new Error('CORS blocked'));
+        },
+        methods: ['GET', 'POST'],
+        credentials: true
     }
 });
 
@@ -134,23 +154,58 @@ if (helmet) {
     }));
 }
 app.use(cors({
-    origin: true,
+    origin: (origin, callback) => {
+        if (isOriginAllowed(origin)) return callback(null, true);
+        return callback(new Error('CORS blocked'));
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
 }));
+
+// Phase 3-10: Optimization Middleware Stack
+const cacheManager = new ResponseCacheManager(600, 120); // 10-min TTL
+app.use(initCompressionMiddleware());
+app.use(performanceMonitoring);
+app.use(cacheManager.middleware(600));
+app.use(autoPaginateMiddleware);
+app.use(securityHeaders);
+app.use(logger);
+
+// Core middleware
 app.use(express.json({ limit: '8mb' }));
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
+// Phase 6: Rate Limiting (100 req/min per IP)
+const limiter = new RateLimiter({
+  windowMs: 60000,
+  maxRequests: 100,
+  keyPrefix: 'api-limiter'
+});
+app.use('/api', limiter.middleware({ maxRequests: 100, windowMs: 60000 }));
+
+// Auth endpoints: stricter rate limiting (20 req / 15 min)
+const authLimiter = new RateLimiter({
+  windowMs: 15 * 60 * 1000,
+  maxRequests: 20,
+  keyPrefix: 'auth-limiter'
+});
+app.use('/api/login', authLimiter.middleware({ maxRequests: 20 }));
+app.use('/api/auth', authLimiter.middleware({ maxRequests: 20 }));
+
+// Legacy rate limit for backward compatibility
 if (rateLimit) {
-    const authLimiter = rateLimit({
+    const authLimiterLegacy = rateLimit({
         windowMs: 15 * 60 * 1000,
         max: 20,
         standardHeaders: true,
         legacyHeaders: false
     });
-    app.use('/api/login', authLimiter);
-    app.use('/api/auth', authLimiter);
+    app.use('/api/login', authLimiterLegacy);
+    app.use('/api/auth', authLimiterLegacy);
 }
+
+// Phase 8: Initialize Mobile Services
+const deltaSyncManager = new DeltaSyncManager();
 
 // Serve PWA Static Files
 app.get('/pair', (req, res) => {
@@ -172,7 +227,7 @@ app.get('/pair', (req, res) => {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <meta http-equiv="refresh" content="0; url=${target}" />
-  <title>Opening Prodexa...</title>
+  <title>Opening LoomTrack...</title>
   <style>
     html,body{height:100%;margin:0;background:#0f172a;color:#f8fafc;font-family:Arial,sans-serif}
     .wrap{height:100%;display:flex;align-items:center;justify-content:center;flex-direction:column;padding:24px;text-align:center}
@@ -188,7 +243,7 @@ app.get('/pair', (req, res) => {
   <div class="wrap">
     <div class="card">
       <div class="spinner"></div>
-      <h1>Opening Prodexa</h1>
+      <h1>Opening LoomTrack</h1>
       <p>Loading the scanner app and pairing details.</p>
       <a href="${target}">Tap if it does not open automatically</a>
     </div>
@@ -198,7 +253,7 @@ app.get('/pair', (req, res) => {
 </html>`);
 });
 
-app.get('/pwa/ProdexaMobile.apk', (req, res, next) => {
+app.get('/pwa/LoomTrack.apk', (req, res, next) => {
     try {
         const apkResult = ensureInstallApk();
         if (!apkResult.exists) {
@@ -215,6 +270,16 @@ app.use('/pwa', express.static(path.join(__dirname, 'public/pwa')));
 // Attach IO to request for routes
 app.use((req, res, next) => {
     req.io = io;
+    // Phase 9-10: Attach services to request
+    req.jobQueue = jobQueue;
+    req.reportGenerator = reportGenerator;
+    req.backupManager = backupManager;
+    req.dataIntegrity = dataIntegrity;
+    req.cacheManager = cacheManager;
+    req.deltaSyncManager = deltaSyncManager;
+    // Phase 4: Attach circuit breakers
+    req.dbCircuitBreaker = dbCircuitBreaker;
+    req.apiCircuitBreaker = apiCircuitBreaker;
     next();
 });
 
@@ -232,6 +297,33 @@ const getLocalIp = () => {
     return '127.0.0.1';
 };
 
+// Phase 9: Initialize Job Queue
+const jobQueue = new JobQueue({ maxConcurrency: 5 });
+const reportGenerator = new AsyncReportGenerator(path.join(__dirname, 'reports'));
+
+// Phase 10: Initialize Backup Manager
+const mongoUrl = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/textile-stock-management';
+const backupDir = path.join(__dirname, 'backups', 'mongo-dumps');
+if (!fs.existsSync(backupDir)) {
+    fs.mkdirSync(backupDir, { recursive: true });
+}
+const backupManager = new BackupManager(mongoUrl, backupDir);
+const dataIntegrity = new DataConsistencyChecker();
+backupManager.scheduleBackups(60 * 60 * 1000);
+
+// Phase 10: Initialize Circuit Breakers for critical services
+const dbCircuitBreaker = new CircuitBreaker({
+  name: 'Database',
+  failureThreshold: 5,
+  timeout: 60000
+});
+
+const apiCircuitBreaker = new CircuitBreaker({
+  name: 'External API',
+  failureThreshold: 3,
+  timeout: 30000
+});
+
 // Database Connection
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/textile-stock-management').then(() => {
     console.log('Connected to MongoDB Local (textile-stock-management)');
@@ -244,6 +336,7 @@ const barcodeRoutes = require('./routes/barcodeRoutes');
 const mobileRoutes = require('./routes/mobileRoutes');
 const statsRoutes = require('./routes/statsRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const authRoutes = require('./routes/authRoutes');
 const licenseRoutes = require('./routes/licenseRoutes');
 
 // Init Services
@@ -257,17 +350,147 @@ app.use(requireLicense);
 app.use('/api/mobile', requireAnyAuth, mobileRoutes);
 app.use('/api/barcode', requireAdminAuth, barcodeRoutes);
 app.use('/api/stats', requireAdminAuth, statsRoutes);
-app.use('/api/admin', requireAdminAuth, adminRoutes);
+app.use('/api/admin', requireAdminAuth, adminRoutes(io));
+app.use('/api/auth', authRoutes(io));
 app.use('/api/sessions', require('./routes/sessionRoutes'));
 app.use('/api/reports', requireAdminAuth, require('./routes/reportsRoutes'));
 app.use('/api/sizes', require('./routes/sizesRoutes'));
 app.use('/api/employees', require('./routes/employeeRoutes'));
 app.use('/api/dc', requireAdminAuth, require('./routes/dcRoutes'));
 app.use('/api/quotations', requireAdminAuth, require('./routes/quotationRoutes'));
-app.use('/api/auth', require('./routes/authRoutes'));
 
 app.get('/api/auth/ping', (req, res) => {
     res.json({ success: true, message: 'pong' });
+});
+
+// Phase 9: Job Queue API Endpoints
+app.post('/api/admin/reports/generate', requireAdminAuth, (req, res) => {
+    try {
+        const { type, filters } = req.body;
+        if (!['INVENTORY', 'SALES', 'AUDIT'].includes(type)) {
+            return res.status(400).json({ error: 'Invalid report type' });
+        }
+
+        const jobId = jobQueue.submit({
+            type: 'REPORT',
+            reportType: type,
+            filters,
+            execute: async (onProgress) => {
+                return await reportGenerator.generateReport(jobId, type, filters, onProgress);
+            }
+        }, 'high');
+
+        res.json({
+            success: true,
+            jobId,
+            message: 'Report generation started',
+            statusUrl: `/api/admin/jobs/${jobId}/status`
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/admin/jobs/:jobId/status', requireAdminAuth, (req, res) => {
+    const { jobId } = req.params;
+    const status = jobQueue.getStatus(parseInt(jobId));
+
+    if (!status) {
+        return res.status(404).json({ error: 'Job not found' });
+    }
+
+    res.json({ success: true, job: status });
+});
+
+app.get('/api/admin/jobs/stats', requireAdminAuth, (req, res) => {
+    const stats = jobQueue.getStats();
+    res.json({ success: true, stats });
+});
+
+// Phase 10: Backup API Endpoints
+app.post('/api/admin/backup/create', requireAdminAuth, async (req, res) => {
+    try {
+        const backup = await backupManager.createBackup('manual');
+        res.json({
+            success: true,
+            message: 'Backup created successfully',
+            backup
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/admin/backup/list', requireAdminAuth, (req, res) => {
+    const backups = backupManager.listBackups();
+    res.json({
+        success: true,
+        backups,
+        count: backups.length
+    });
+});
+
+app.post('/api/admin/backup/restore/:backupName', requireAdminAuth, async (req, res) => {
+    try {
+        const { backupName } = req.params;
+        await backupManager.restoreFromBackup(backupName);
+        res.json({
+            success: true,
+            message: 'Backup restored successfully'
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Phase 10: Data Integrity API Endpoints
+app.post('/api/admin/integrity/check', requireAdminAuth, async (req, res) => {
+    try {
+        console.log('🔍 Running data integrity check...');
+        const models = {
+            ClothRoll: require('./models/ClothRoll'),
+            Scanner: require('./models/Scanner'),
+            User: require('./models/User'),
+            Employee: require('./models/Employee')
+        };
+
+        const issues = await dataIntegrity.checkReferentialIntegrity(models);
+        const report = dataIntegrity.getReport();
+
+        res.json({
+            success: true,
+            report,
+            issuesUrl: '/api/admin/integrity/report'
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/admin/integrity/report', requireAdminAuth, (req, res) => {
+    const report = dataIntegrity.getReport();
+    res.json({ success: true, report });
+});
+
+// Phase 8: Delta Sync Endpoint for Mobile
+app.get('/api/mobile/sync/delta', requireAnyAuth, (req, res) => {
+    try {
+        const clientId = req.user?.id || req.ip;
+        const currentData = {
+            timestamp: Date.now(),
+            scanners: Math.random() * 100,
+            heartbeat: 'ok'
+        };
+
+        const delta = deltaSyncManager.calculateDelta(clientId, currentData);
+
+        res.json(createMobileResponse({
+            delta,
+            version: 1
+        }));
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
 });
 
 const { authenticateAdmin } = require('./services/adminCredentialService');
@@ -298,7 +521,51 @@ app.post('/api/logout', async (req, res) => {
     return res.json({ success: true, message: 'Logged out' });
 });
 
+// Phase 5: Performance Monitoring Dashboard
+app.get('/api/admin/monitoring/dashboard', requireAdminAuth, (req, res) => {
+    const stats = jobQueue.getStats();
+    const backups = backupManager.listBackups();
+    const dbState = dbCircuitBreaker.getState();
+    const apiState = apiCircuitBreaker.getState();
+
+    res.json({
+        success: true,
+        monitoring: {
+            timestamp: new Date().toISOString(),
+            jobQueue: stats,
+            backups: {
+                total: backups.length,
+                latest: backups[0] || null
+            },
+            circuitBreakers: {
+                database: dbState,
+                externalAPI: apiState
+            },
+            memory: process.memoryUsage()
+        }
+    });
+});
+
+// Phase 4: Error Handling (with recovery suggestions)
 // Error Handling Middleware (Must be last)
+app.use((err, req, res, next) => {
+    console.error('❌ Unhandled Error:',  {
+        path: req.path,
+        method: req.method,
+        error: err.message,
+        stack: err.stack
+    });
+
+    res.status(err.statusCode || 500).json({
+        error: err.message || 'Internal server error',
+        requestId: req.id,
+        recovery: {
+            retry: true,
+            retryAfter: 5,
+            endpoint: req.path
+        }
+    });
+});
 app.use(errorHandler);
 
 // Socket.IO
@@ -308,7 +575,35 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => {
         console.log('Client disconnected:', socket.id);
     });
+
+    // Phase 9: Job Queue events
+    socket.on('job:subscribe', (jobId) => {
+        socket.join(`job:${jobId}`);
+        console.log(`📊 Client subscribed to job ${jobId}`);
+    });
+
+    socket.on('job:unsubscribe', (jobId) => {
+        socket.leave(`job:${jobId}`);
+    });
+
+    // Phase 10: Backup events
+    socket.on('backup:listen', () => {
+        socket.join('backup:updates');
+        console.log('📌 Client listening to backup updates');
+    });
+
+    socket.on('backup:unlisten', () => {
+        socket.leave('backup:updates');
+    });
 });
+
+// Monitor job completions and emit to subscribed clients
+setInterval(() => {
+    const stats = jobQueue.getStats();
+    if (stats.completed > 0) {
+        io.emit('jobs:updated', stats);
+    }
+}, 5000);
 
 const PORT = process.env.PORT || 5000;
 const startHttpsServer = (port, label) => {
@@ -349,5 +644,5 @@ httpServer.listen(HTTP_PORT, '0.0.0.0', () => {
     const localIp = getLocalIp();
     console.log(`HTTP Server running on port ${HTTP_PORT}`);
     console.log(`- Local Access:   http://localhost:${HTTP_PORT}`);
-    console.log(`- Network Access: http://${localIp}:${HTTP_PORT} (Use this for mobile pairing/install in dev)`);
+    console.log(`- Network Access: http://${localIp}:${HTTP_PORT}`);
 });

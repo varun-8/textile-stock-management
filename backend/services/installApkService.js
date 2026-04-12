@@ -3,7 +3,7 @@ const path = require('path');
 
 const repoRoot = path.resolve(__dirname, '../..');
 const targetDir = path.resolve(repoRoot, 'backend/public/pwa');
-const targetApk = path.resolve(targetDir, 'ProdexaMobile.apk');
+const targetApk = path.resolve(targetDir, 'LoomTrack.apk');
 
 const sourceCandidates = [
     path.resolve(repoRoot, 'mobile-web/android/app/build/outputs/apk/release/app-release.apk'),

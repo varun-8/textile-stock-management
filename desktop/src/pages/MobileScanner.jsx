@@ -11,7 +11,7 @@ const MobileScanner = () => {
     const navigate = useNavigate();
     const { apiUrl } = useConfig();
     const [serverIp, setServerIp] = useState('');
-    const [serverPort, setServerPort] = useState(5001);
+    const [serverPort, setServerPort] = useState(5000);
     const [connectMode, setConnectMode] = useState('PROD');
 
     useEffect(() => {
@@ -22,7 +22,7 @@ const MobileScanner = () => {
                 });
                 const data = await res.json();
                 if (data.ip) setServerIp(data.ip);
-                if (data.httpsPort) setServerPort(Number(data.httpsPort) || 5001);
+                if (data.httpPort) setServerPort(Number(data.httpPort) || 5000);
             } catch (err) {
                 console.error("Failed to fetch LAN IP:", err);
             }
@@ -30,7 +30,7 @@ const MobileScanner = () => {
         fetchIp();
     }, [apiUrl]);
 
-    const displayUrl = serverIp ? `https://${serverIp}:${serverPort}` : apiUrl;
+    const displayUrl = serverIp ? `http://${serverIp}:${serverPort}` : apiUrl;
     const expoUrl = serverIp ? `exp://${serverIp}:8081` : '';
 
     return (

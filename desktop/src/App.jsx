@@ -69,8 +69,9 @@ const ServerGuard = ({ children }) => {
           setLoadingLicense(false);
           clearInterval(pollRef.current);
           return;
-        } catch (_) {
+        } catch (err) {
           // Try next candidate.
+          console.debug('License poll error:', err.message);
         }
       }
 

@@ -35,78 +35,57 @@ const SetupScreen = () => {
         const raw = String(message || '').trim();
         const lower = raw.toLowerCase();
 
+        // Extract URL or specific network info from the error string if present (added in MobileContext)
+        const urlMatch = raw.match(/\((http[^)]+)\)/);
+        const attemptedUrl = urlMatch ? urlMatch[1] : '';
+        const cleanMessage = raw.replace(/\s*\(http[^)]+\)/, '');
+
         if (context === 'scanner') {
             if (lower.includes('invalid pairing qr')) {
                 return {
                     title: 'Invalid QR Code',
-                    message: 'This QR code is not a valid pairing code for this scanner.',
+                    message: 'This QR code is not a valid pairing code.',
                     hint: 'Open desktop Scanner Fleet and scan the Pair Device QR.'
-                };
-            }
-            if (lower.includes('install qr')) {
-                return {
-                    title: 'Wrong QR Type',
-                    message: 'You scanned the install QR instead of the pairing QR.',
-                    hint: 'Use the Pair Device QR from desktop to connect this scanner.'
                 };
             }
             return {
                 title: 'Scanner Error',
-                message: raw || 'Unable to scan QR code.',
-                hint: 'Hold device steady and ensure the full QR is visible in frame.'
+                message: cleanMessage || 'Unable to scan QR code.',
+                hint: 'Ensure you are scanning the blue "Pair Device" QR from the desktop app.'
             };
         }
 
         if (lower.includes('network')) {
             return {
                 title: 'Connection Error',
-                message: raw,
-                hint: 'Verify backend is reachable and scan a fresh pairing QR code.'
-            };
-        }
-
-        if (lower.includes('expired') || lower.includes('invalid')) {
-            return {
-                title: 'Pairing Link Invalid',
-                message: raw,
-                hint: 'Generate a new Pair Device QR from desktop and try again.'
+                message: cleanMessage,
+                hint: attemptedUrl ? `Failed Target: ${attemptedUrl}` : 'Verify your phone and PC are on the same WiFi network.'
             };
         }
 
         return {
-            title: 'Pairing Failed',
-            message: raw || 'Unable to pair this device.',
-            hint: 'Retry with a fresh QR from desktop or use manual IP setup.'
+            title: 'Setup Failed',
+            message: cleanMessage || 'Unable to pair this device.',
+            hint: attemptedUrl ? `Tried: ${attemptedUrl}` : 'Check if your PC Firewall is blocking incoming connections.'
         };
     };
 
-    // 1. Auto-Pairing from URL (QR Scan)
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
-        let serverParam = params.get('server');
+        const serverParam = params.get('server');
         const tokenParam = params.get('token');
 
         if (serverParam && tokenParam) {
-            console.log('🔗 Deep Link Detected - Auto-triggering pairing');
-            
-            // Normalize for native app: force http://ip:5000 to bypass SSL
-            if (Capacitor.isNativePlatform() && serverParam.includes('://')) {
-                const ip = serverParam.replace(/https?:\/\//, '').split(':')[0];
-                if (ip) {
-                    serverParam = `http://${ip}:5000`;
-                    console.log('🔄 Normalized Deep Link Server URL for native:', serverParam);
-                }
-            }
-            
             executePairing(serverParam, tokenParam, 'AUTO_ASSIGN');
         }
-    }, [setupDevice]); // Add dependency for linting, though stable
+        // setupDevice should not be in dependency - URL params don't depend on it
+    }, []);
 
     useEffect(() => {
         return () => {
             stopQrScanner();
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        // Cleanup only - no dependencies needed
     }, []);
 
     useEffect(() => {
@@ -141,13 +120,38 @@ const SetupScreen = () => {
         const finalName = nameOverride || 'AUTO_ASSIGN';
 
         try {
-            // Clean the input IP/URL to get just the hostname/IP and Port
-            const matches = String(ip || '').match(/^https?:\/\/([^/:]+)(?::(\d+))?/i);
-            const cleanHost = matches ? matches[1] : String(ip || '').split(':')[0].split('/')[0];
-            const cleanPort = matches && matches[2] ? matches[2] : '5000';
-            
-            const httpUrl = `http://${cleanHost}:${cleanPort}`;
-            await setupDevice(httpUrl, token, finalName);
+            const input = String(ip || '').trim();
+            const hasProtocol = /^https?:\/\//i.test(input);
+            const isNative = Capacitor.isNativePlatform();
+
+            // Preserve full URL from QR (scheme + host + port).
+            // For manual entry, pass host only so setupDevice probes known ports.
+            let pairingTarget = hasProtocol
+                ? input
+                : input.replace(/^https?:\/\//, '').split('/')[0];
+
+            // In browser/PWA mode, if QR target host equals current host,
+            // always pair against current origin to avoid mixed-content/cross-origin issues.
+            if (!isNative && hasProtocol) {
+                try {
+                    const parsed = new URL(input);
+                    if (parsed.hostname === window.location.hostname) {
+                        pairingTarget = window.location.origin;
+                    }
+                } catch {
+                    // Keep existing pairingTarget if URL parsing fails.
+                }
+            }
+
+            const allowDiscoveryRetry = !hasProtocol;
+            const pairPromise = setupDevice(pairingTarget, token, finalName, allowDiscoveryRetry);
+            const timeoutPromise = new Promise((_, reject) => {
+                setTimeout(() => {
+                    reject(new Error('Pairing timeout. Backend not responding after 60s. Please check if your PC firewall is blocking port 5000 or using a different WiFi.'));
+                }, 60000);
+            });
+
+            await Promise.race([pairPromise, timeoutPromise]);
             finishPairing();
         } catch (err) {
             handlePairError(err.message || 'Connection Failed');
@@ -174,7 +178,7 @@ const SetupScreen = () => {
         const normalized = text.startsWith('?') ? text.slice(1) : text;
         const queryLike = normalized.includes('token=') || normalized.includes('server=');
 
-        if (/LoomTrackMobile(?:-debug)?\.apk/i.test(text) || /\/pwa\/.*\.apk/i.test(text)) {
+        if (/LoomTrack(?:-debug)?\.apk/i.test(text) || /\/pwa\/.*\.apk/i.test(text)) {
             return { kind: 'install' };
         }
 
@@ -189,11 +193,6 @@ const SetupScreen = () => {
 
             if (serverFromParam) {
                 ip = serverFromParam.replace(/https?:\/\//, '').split(':')[0];
-                
-                // If native, normalization: force http://ip:5000
-                if (Capacitor.isNativePlatform() && ip) {
-                    finalServerUrl = `http://${ip}:5000`;
-                }
             }
 
             if (!ip) return null;
@@ -241,8 +240,10 @@ const SetupScreen = () => {
             await scanner.start(
                 { facingMode: 'environment' },
                 {
-                    fps: 10,
-                    qrbox: { width: 240, height: 240 },
+                    fps: 30,
+                    qrbox: { width: 320, height: 320 },
+                    disableFlip: false,
+                    aspectRatio: 1.0,
                     formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE]
                 },
                 async (decodedText) => {
@@ -411,9 +412,7 @@ const SetupScreen = () => {
                 </div>
             )}
 
-            <div style={{ position: 'absolute', bottom: '30px', opacity: 0.3, fontSize: '12px' }}>
-                v1.0 • Official Stable Release
-            </div>
+
         </div>
     );
 };

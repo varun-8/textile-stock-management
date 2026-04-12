@@ -1,53 +1,56 @@
 const express = require('express');
-const router = express.Router();
 const Scanner = require('../models/Scanner');
 const User = require('../models/User');
 const crypto = require('crypto'); // Built-in Node module
 const os = require('os');
 const { verifyToken } = require('../middleware/authMiddleware');
-let bcrypt = null;
-try {
-    bcrypt = require('bcryptjs');
-} catch (err) {
-    console.warn('[Security] Optional dependency "bcryptjs" not installed. Using legacy plaintext PIN comparison.');
-}
 
-const comparePin = async (plain, stored) => {
-    if (!stored) return false;
-    if (stored.startsWith('$2') && bcrypt) return bcrypt.compare(plain, stored);
-    return plain === stored;
-};
+module.exports = function createAuthRouter(io) {
+    const router = express.Router();
+    
+    let bcrypt = null;
+    try {
+        bcrypt = require('bcryptjs');
+    } catch (err) {
+        console.warn('[Security] Optional dependency "bcryptjs" not installed. Using legacy plaintext PIN comparison.');
+    }
 
-const CURRENT_WORKSPACE_CODE = process.env.WORKSPACE_CODE || 'default';
+    const comparePin = async (plain, stored) => {
+        if (!stored) return false;
+        if (stored.startsWith('$2') && bcrypt) return bcrypt.compare(plain, stored);
+        return plain === stored;
+    };
 
-const getWorkspaceCode = (value = CURRENT_WORKSPACE_CODE) => String(value || CURRENT_WORKSPACE_CODE).trim() || CURRENT_WORKSPACE_CODE;
+    const CURRENT_WORKSPACE_CODE = process.env.WORKSPACE_CODE || 'default';
 
-const workspaceMatch = (workspaceCode = CURRENT_WORKSPACE_CODE) => ({
-    $or: [
-        { workspaceCode },
-        { workspaceCode: { $exists: false } },
-        { workspaceCode: null }
-    ]
-});
+    const getWorkspaceCode = (value = CURRENT_WORKSPACE_CODE) => String(value || CURRENT_WORKSPACE_CODE).trim() || CURRENT_WORKSPACE_CODE;
 
-const getLocalIp = () => {
-    const interfaces = os.networkInterfaces();
-    for (const addrs of Object.values(interfaces)) {
-        for (const addr of addrs || []) {
-            if (addr.family === 'IPv4' && !addr.internal) {
-                return addr.address;
+    const workspaceMatch = (workspaceCode = CURRENT_WORKSPACE_CODE) => ({
+        $or: [
+            { workspaceCode },
+            { workspaceCode: { $exists: false } },
+            { workspaceCode: null }
+        ]
+    });
+
+    const getLocalIp = () => {
+        const interfaces = os.networkInterfaces();
+        for (const addrs of Object.values(interfaces)) {
+            for (const addr of addrs || []) {
+                if (addr.family === 'IPv4' && !addr.internal) {
+                    return addr.address;
+                }
             }
         }
-    }
-    return 'localhost';
-};
+        return 'localhost';
+    };
 
 router.get('/discovery/ping', (req, res) => {
     res.json({
         ok: true,
         workspaceCode: CURRENT_WORKSPACE_CODE,
         serverIp: getLocalIp(),
-        appName: 'Prodexa Mobile'
+        appName: 'LoomTrack'
     });
 });
 
@@ -127,6 +130,9 @@ router.post('/pair', async (req, res) => {
                 existingScanner.workspaceCode = existingScanner.workspaceCode || currentWorkspace;
                 await existingScanner.save();
 
+                // Emit socket event for real-time updates
+                if (io) io.emit('scanner_registered', { scannerId: existingScanner.uuid, name: existingScanner.name });
+
                 return res.json({
                     success: true,
                     scannerId: existingScanner.uuid,
@@ -162,6 +168,9 @@ router.post('/pair', async (req, res) => {
                 potentialMatch.lastIp = ip;
                 if (potentialMatch.status === 'DISABLED') potentialMatch.status = 'ACTIVE';
                 await potentialMatch.save();
+
+                // Emit socket event for real-time updates
+                if (io) io.emit('scanner_registered', { scannerId: potentialMatch.uuid, name: potentialMatch.name });
 
                 return res.json({
                     success: true,
@@ -203,6 +212,9 @@ router.post('/pair', async (req, res) => {
             }
         });
 
+        // Emit socket event for real-time updates
+        if (io) io.emit('scanner_registered', { scannerId: newScanner.uuid, name: newScanner.name });
+
         res.json({
             success: true,
             scannerId: newScanner.uuid,
@@ -223,6 +235,11 @@ router.post('/pair', async (req, res) => {
 // Check if Scanner is Active (Heartbeat / Startup Check)
 router.get('/check-scanner/:id', async (req, res) => {
     try {
+        // DISABLE CACHING: Scanner status must always be fresh
+        res.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+        res.set('Pragma', 'no-cache');
+        res.set('Expires', '0');
+
         const currentWorkspace = getWorkspaceCode(req.query?.workspaceCode);
         const scanner = await Scanner.findOne({ uuid: req.params.id, ...workspaceMatch(currentWorkspace) });
         if (!scanner) return res.status(404).json({ valid: false });
@@ -265,7 +282,7 @@ router.post('/check-device', async (req, res) => {
 
         // If fingerprint provided, check if this exact device is already paired
         if (fingerprint) {
-            const scanner = await Scanner.findOne({ fingerprint, status: 'ACTIVE', ...workspaceMatch(currentWorkspace) });
+            const scanner = await Scanner.findOne({ fingerprint, status: 'ACTIVE', ...workspaceMatch(currentWorkspace) }).lean();
             if (scanner) {
                 return res.json({
                     alreadyPaired: true,
@@ -362,4 +379,5 @@ router.post('/logout', async (req, res) => {
     }
 });
 
-module.exports = router;
+    return router;
+};

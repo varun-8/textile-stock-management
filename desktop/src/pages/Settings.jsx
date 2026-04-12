@@ -92,7 +92,7 @@ const Settings = () => {
                 }
             }
         } catch (err) { console.error(err); }
-    }, [apiUrl]);
+    }, [apiUrl, updateCompanyName]);
 
     const fetchBackups = useCallback(async () => {
         setLoadingBackups(true);

@@ -56,6 +56,12 @@ const scannerSchema = new mongoose.Schema({
     }
 });
 
+// Compound indexes for fast lookups and filtering
 scannerSchema.index({ workspaceCode: 1, uuid: 1 });
+scannerSchema.index({ fingerprint: 1 }, { unique: true }); // Fast pairing token lookup
+scannerSchema.index({ status: 1, workspaceCode: 1 }); // Filter by status
+scannerSchema.index({ lastSeen: -1, status: 1 }); // Online/offline status + sorting
+scannerSchema.index({ lastIp: 1, workspaceCode: 1 }); // IP-based discovery
+scannerSchema.index({ pairedAt: -1 }); // Sorting by paired date
 
 module.exports = mongoose.model('Scanner', scannerSchema);

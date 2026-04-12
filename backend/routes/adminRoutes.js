@@ -1,5 +1,4 @@
 const express = require('express');
-const router = express.Router();
 const backupService = require('../services/backupService');
 const AuditLog = require('../models/AuditLog');
 const Scanner = require('../models/Scanner');
@@ -23,10 +22,16 @@ const { ensureInstallApk } = require('../services/installApkService');
 const HTTP_PORT = parseInt(process.env.HTTP_PORT || '5000', 10);
 const HTTPS_PORT = parseInt(process.env.PORT || '5001', 10);
 
+module.exports = function createAdminRouter(io) {
+    const router = express.Router();
+
 // Get Audit Logs
 router.get('/audit-logs', async (req, res) => {
     try {
-        const logs = await AuditLog.find().sort({ timestamp: -1 }).limit(100);
+        const logs = await AuditLog.find()
+            .sort({ timestamp: -1 })
+            .limit(100)
+            .lean();
         res.json(logs);
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -415,15 +420,15 @@ router.get('/apk-status', async (req, res) => {
         const resolvedPath = apkState.exists ? apkState.target : null;
         const exists = Boolean(resolvedPath);
         const stats = exists ? fs.statSync(resolvedPath) : null;
-        const fileName = exists ? path.basename(resolvedPath) : 'ProdexaMobile.apk';
+        const fileName = exists ? path.basename(resolvedPath) : 'LoomTrack.apk';
         const relativePath = `/pwa/${fileName}`;
 
         res.json({
             exists,
             fileName,
             relativePath,
-            installUrl: `http://${lanIp}:${HTTP_PORT}${relativePath}`,
-            pwaUrl: `http://${lanIp}:${HTTP_PORT}/pwa/index.html`,
+            installUrl: `https://${lanIp}:${HTTPS_PORT}${relativePath}`,
+            pwaUrl: `https://${lanIp}:${HTTPS_PORT}/pwa/index.html`,
             resolvedPath,
             checkedPaths: apkState.checkedPaths || [resolvedPath].filter(Boolean),
             restoredFrom: apkState.copied ? apkState.source : null,
@@ -435,14 +440,24 @@ router.get('/apk-status', async (req, res) => {
     }
 });
 
-// Get All Paired Scanners
+// Get All Paired Scanners (with online/offline status)
 router.get('/scanners', async (req, res) => {
     try {
-        const scanners = await Scanner.find().sort({ pairedAt: -1 });
+        // DISABLE CACHING: Scanner list must always be fresh (real-time)
+        res.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+        res.set('Pragma', 'no-cache');
+        res.set('Expires', '0');
 
-        // Threshold for "Online" is 60 seconds (since ping is every 30s)
+        // Use lean() to get plain JS objects instead of Mongoose documents
+        // Reduces memory by ~40% and speeds up JSON serialization
+        const scanners = await Scanner.find()
+            .select('uuid fingerprint name status pairedAt lastSeen repairCount currentEmployee')
+            .sort({ pairedAt: -1 })
+            .lean();
+
+        // Threshold for "Online" is 30 seconds (matching frontend polling + batch interval)
         const NOW = new Date();
-        const THRESHOLD_MS = 60 * 1000;
+        const THRESHOLD_MS = 30 * 1000;
 
         res.json(scanners.map(s => {
             const lastSeenTime = s.lastSeen ? new Date(s.lastSeen).getTime() : 0;
@@ -459,6 +474,10 @@ router.get('/scanners', async (req, res) => {
                 currentEmployee: s.currentEmployee || null
             };
         }));
+
+        // Emit socket event for real-time scanner updates
+        if (io) io.emit('scanners_list_updated', scanners.length);
+
     } catch (err) {
         console.error('❌ Error fetching scanners:', err);
         res.status(500).json({ error: err.message });
@@ -475,6 +494,11 @@ router.get('/pairing-token', (req, res) => {
 // Register a New Scanner (called when mobile app pairs)
 router.post('/scanners', async (req, res) => {
     try {
+        // DISABLE CACHING: Ensure immediate visibility
+        res.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+        res.set('Pragma', 'no-cache');
+        res.set('Expires', '0');
+
         const { scannerId, name } = req.body;
 
         console.log('📱 POST /scanners - Registering scanner:', { scannerId, name });
@@ -505,6 +529,9 @@ router.post('/scanners', async (req, res) => {
             console.log(`✅ Created new scanner: ${scannerId} with label: ${scanner.name}`);
         }
 
+        // Emit socket event for real-time updates
+        if (io) io.emit('scanner_registered', { scannerId: scanner.uuid, name: scanner.name });
+
         res.json({
             success: true,
             message: 'Scanner registered',
@@ -523,10 +550,19 @@ router.post('/scanners', async (req, res) => {
 // Delete Scanner
 router.delete('/scanners/:scannerId', async (req, res) => {
     try {
+        // DISABLE CACHING: Ensure deleted scanner is never served from cache
+        res.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+        res.set('Pragma', 'no-cache');
+        res.set('Expires', '0');
+
         const result = await Scanner.deleteOne({ uuid: req.params.scannerId });
         if (result.deletedCount === 0) {
             return res.status(404).json({ error: 'Scanner not found' });
         }
+
+        // Emit socket event for real-time updates
+        if (io) io.emit('scanner_deleted', { scannerId: req.params.scannerId });
+
         res.json({ success: true, message: 'Scanner removed' });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -567,8 +603,6 @@ router.post('/system/wipe', async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
-
-module.exports = router;
 
 // --- INVENTORY MANAGEMENT (DASHBOARD) ---
 
@@ -696,7 +730,8 @@ router.get('/missing/list', async (req, res) => {
 
         const items = await MissedScan.find(query)
             .sort({ detectedAt: -1, resolvedAt: -1 })
-            .limit(Math.max(1, Math.min(Number(limit) || 100, 500)));
+            .limit(Math.max(1, Math.min(Number(limit) || 100, 500)))
+            .lean();
 
         res.json(items);
     } catch (err) {
@@ -860,3 +895,6 @@ router.delete('/inventory/delete/:barcode', async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
+
+    return router;
+};

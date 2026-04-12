@@ -1,6 +1,6 @@
 {
-    "name": "Loom Track Inventory Scanner",
-    "short_name": "Loom Track",
+    "name": "LoomTrack",
+    "short_name": "LoomTrack",
     "id": "/pwa/",
     "description": "Mobile inventory management scanner - Works offline",
     "start_url": "/pwa/index.html",

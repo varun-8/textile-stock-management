@@ -183,7 +183,7 @@ router.get('/missing', async (req, res) => {
         if (!year || !size) return res.status(400).json({ error: 'Year and Pick Density (PPI) are required' });
 
         // Get all sequences, sorted
-        const barcodes = await Barcode.find({ year, size }, { sequence: 1 }).sort({ sequence: 1 });
+        const barcodes = await Barcode.find({ year, size }, { sequence: 1 }).sort({ sequence: 1 }).lean();
 
         const existingSeqs = new Set(barcodes.map(b => b.sequence));
         const maxSeq = barcodes.length > 0 ? barcodes[barcodes.length - 1].sequence : 0;
@@ -219,7 +219,7 @@ router.post('/reprint', async (req, res) => {
             return res.status(400).json({ error: 'At least one barcode is required' });
         }
 
-        const docs = await Barcode.find({ full_barcode: { $in: list } });
+        const docs = await Barcode.find({ full_barcode: { $in: list } }).lean();
         if (docs.length !== list.length) {
             const found = new Set(docs.map((doc) => doc.full_barcode));
             const missing = list.filter((code) => !found.has(code));

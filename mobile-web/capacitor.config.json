@@ -1,6 +1,6 @@
 {
   "appId": "com.srilakshmitextiles.mobile",
-  "appName": "Loom Track Mobile",
+  "appName": "LoomTrack",
   "webDir": "dist",
   "server": {
     "allowNavigation": [

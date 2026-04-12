@@ -4,7 +4,6 @@ import React, { createContext, useState, useContext, useEffect } from 'react';
 const ConfigContext = createContext();
 
 const defaultProtocol = 'http';
-const defaultApiUrl = `${defaultProtocol}://localhost:5000`;
 
 // Normalize API URL while keeping production secure and local development simple.
 const sanitizeUrl = (raw, defaultPort = 5000) => {
@@ -54,7 +53,9 @@ export const ConfigProvider = ({ children }) => {
                         // Extract hostname from current or default to localhost
                         let hostname = 'localhost';
                         if (current) {
-                            try { hostname = new URL(current).hostname; } catch (e) {}
+                            try { hostname = new URL(current).hostname; } catch {
+                                // Invalid URL format, use default hostname
+                            }
                         }
                         const backendPort = config.httpPort || 5000;
                         const newUrl = `http://${hostname}:${backendPort}`;

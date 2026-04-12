@@ -174,7 +174,7 @@ const DetailedStats = () => {
             }
 
             if (res.ok) {
-                const result = await res.json();
+                await res.json();
                 if (isCreation) {
                     try {
                         const patchRes = await fetch(`${apiUrl}/api/admin/missing/create-entry/${encodeURIComponent(editItem.barcode)}`, {
@@ -271,7 +271,7 @@ const DetailedStats = () => {
         fetchData();
     }, [type, filters, apiUrl, refreshTick]);
 
-    const resolveMissing = async (barcode, action) => {
+    const _resolveMissing = async (barcode, action) => {
         try {
             const token = localStorage.getItem('ADMIN_TOKEN');
             const routeMap = {

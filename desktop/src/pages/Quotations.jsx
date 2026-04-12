@@ -218,7 +218,7 @@ const Quotations = () => {
         await Promise.all([fetchDensities(), fetchDcTemplateConfig()]);
     };
 
-    const openEditModal = async (quotation) => {
+    const _openEditModal = async (quotation) => {
         const selected = Array.isArray(quotation.rolls) && quotation.rolls.length > 0
             ? quotation.rolls.map((roll) => roll.barcode)
             : (Array.isArray(quotation.rollSnapshots) ? quotation.rollSnapshots.map((roll) => roll.barcode) : []);
@@ -487,7 +487,7 @@ const Quotations = () => {
         setDraftPrintPayload(null);
     };
 
-    const handleCancelQuotation = async (id) => {
+    const _cancelQuotation = async (id) => {
         if (!window.confirm('Are you sure you want to cancel this quotation?')) {
             return;
         }
