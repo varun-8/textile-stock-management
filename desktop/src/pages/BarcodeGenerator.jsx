@@ -199,7 +199,8 @@ const BarcodeGenerator = () => {
                 throw new Error(data.error || 'Failed to reprint barcode');
             }
 
-            generatePDF(data.barcodes, year, size, forcedPaperSize);
+            const firstBc = data.barcodes?.[0] || {};
+            generatePDF(data.barcodes, firstBc.year || year, firstBc.size || size, forcedPaperSize);
             showNotification(`Reprinted ${normalized.length} barcode(s).`, 'success');
             fetchHistory();
             fetchPendingMissing();

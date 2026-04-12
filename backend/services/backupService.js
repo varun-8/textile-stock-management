@@ -76,6 +76,18 @@ const performBackup = async (type = 'AUTO') => {
             : null;
 
         const data = {};
+        const licenseDir = path.join(__dirname, '../license-data');
+        const licenseSnapshot = {};
+        if (await fs.pathExists(licenseDir)) {
+            const files = await fs.readdir(licenseDir);
+            for (const file of files) {
+                if (file.endsWith('.json')) {
+                    const content = await fs.readJson(path.join(licenseDir, file)).catch(() => null);
+                    if (content) licenseSnapshot[file] = content;
+                }
+            }
+        }
+
         let totalDocs = 0;
         for (const def of BACKUP_MODEL_DEFS) {
             const docs = await def.model.find({}).lean();
@@ -90,6 +102,7 @@ const performBackup = async (type = 'AUTO') => {
                 type
             },
             configSnapshot,
+            licenseSnapshot,
             data
         };
 
@@ -169,6 +182,14 @@ const restoreBackup = async (filename) => {
 
         if (backup.configSnapshot && typeof backup.configSnapshot === 'object') {
             await fs.writeJson(getConfigPath(), backup.configSnapshot, { spaces: 2 });
+        }
+
+        if (backup.licenseSnapshot && typeof backup.licenseSnapshot === 'object') {
+            const licenseDir = path.join(__dirname, '../license-data');
+            await fs.ensureDir(licenseDir);
+            for (const [file, content] of Object.entries(backup.licenseSnapshot)) {
+                await fs.writeJson(path.join(licenseDir, file), content, { spaces: 2 });
+            }
         }
 
         console.log('[Restore] Complete');

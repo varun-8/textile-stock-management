@@ -219,7 +219,7 @@ router.post('/reprint', async (req, res) => {
             return res.status(400).json({ error: 'At least one barcode is required' });
         }
 
-        const docs = await Barcode.find({ full_barcode: { $in: list } }).lean();
+        const docs = await Barcode.find({ full_barcode: { $in: list } });
         if (docs.length !== list.length) {
             const found = new Set(docs.map((doc) => doc.full_barcode));
             const missing = list.filter((code) => !found.has(code));
@@ -237,7 +237,7 @@ router.post('/reprint', async (req, res) => {
         }
 
         await AuditLog.create({
-            action: 'BARCODE_GENERATE',
+            action: 'BARCODE_REPRINTED',
             user: req.user?.username || 'Admin',
             details: { count: docs.length, barcodes: list, reprint: true },
             ipAddress: req.ip
