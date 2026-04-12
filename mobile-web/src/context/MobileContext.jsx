@@ -138,9 +138,24 @@ export const MobileProvider = ({ children }) => {
     const [missing, setMissing] = useState([]);
     const [loadingMissing, setLoadingMissing] = useState(false);
 
-    const api = useMemo(() => axios.create({
-        timeout: 15000 // Increased to 15s for slow LAN/WiFi
-    }), []);
+    const api = useMemo(() => {
+        const instance = axios.create({
+            timeout: 15000 // Increased to 15s for slow LAN/WiFi
+        });
+        
+        // Add cache-busting interceptor for GET requests
+        instance.interceptors.request.use((config) => {
+            if ((!config.method || config.method === 'GET') && config.url && config.url.includes('/api/')) {
+                const separator = config.url.includes('?') ? '&' : '?';
+                config.url = `${config.url}${separator}_t=${Date.now()}`;
+            }
+            config.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0';
+            config.headers['Pragma'] = 'no-cache';
+            return config;
+        });
+        
+        return instance;
+    }, []);
 
     const probeHost = useCallback(async (host) => {
         const baseUrls = buildBaseUrls(host);
@@ -513,6 +528,15 @@ export const MobileProvider = ({ children }) => {
 
                 try {
                     const verifyClient = axios.create();
+                    
+                    // Add cache-busting to this instance too
+                    verifyClient.interceptors.request.use((config) => {
+                        if ((!config.method || config.method === 'GET') && config.url && config.url.includes('/api/')) {
+                            const separator = config.url.includes('?') ? '&' : '?';
+                            config.url = `${config.url}${separator}_t=${Date.now()}`;
+                        }
+                        return config;
+                    });
 
                     // Include employee data if logged in
                     const employee = localStorage.getItem('employee');
@@ -520,13 +544,7 @@ export const MobileProvider = ({ children }) => {
 
                     const workspaceParam = workspaceCode ? `&workspaceCode=${encodeURIComponent(workspaceCode)}` : '';
                     const verifyBase = normalizeBaseUrl(localStorage.getItem('SL_SERVER_ORIGIN')) || api.defaults.baseURL || buildBaseUrls(serverIp)[0] || `http://${serverIp}:${DEV_HTTP_PORT}`;
-                    // Add cache-busting timestamp to force fresh verification
-                    const res = await verifyClient.get(`${verifyBase}/api/auth/check-scanner/${scannerId}${employeeParam}${workspaceParam}&_t=${Date.now()}`, {
-                        headers: {
-                            'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
-                            'Pragma': 'no-cache'
-                        }
-                    });
+                    const res = await verifyClient.get(`${verifyBase}/api/auth/check-scanner/${scannerId}${employeeParam}${workspaceParam}`);
                     if (!res.data.valid) {
                         // Scanner no longer valid - unpair it
                         console.warn('Scanner no longer paired with backend');

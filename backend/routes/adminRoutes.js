@@ -1,5 +1,6 @@
 const express = require('express');
 const backupService = require('../services/backupService');
+const cloudBackupRoutes = require('../services/backup/cloudBackupRoutes');
 const AuditLog = require('../models/AuditLog');
 const Scanner = require('../models/Scanner');
 const Barcode = require('../models/Barcode');
@@ -22,7 +23,7 @@ const { ensureInstallApk } = require('../services/installApkService');
 const HTTP_PORT = parseInt(process.env.HTTP_PORT || '5000', 10);
 const HTTPS_PORT = parseInt(process.env.PORT || '5001', 10);
 
-module.exports = function createAdminRouter(io) {
+module.exports = function createAdminRouter(io, cloudBackupManager) {
     const router = express.Router();
 
 // Get Audit Logs
@@ -895,6 +896,11 @@ router.delete('/inventory/delete/:barcode', async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
+
+    // Integrate Cloud Backup Routes
+    if (cloudBackupManager) {
+        cloudBackupRoutes(router, cloudBackupManager);
+    }
 
     return router;
 };

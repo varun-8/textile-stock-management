@@ -51,14 +51,7 @@ const Scanners = () => {
 
     const fetchScanners = useCallback(async () => {
         try {
-            // Add cache-busting timestamp and headers to force fresh data
-            const res = await axios.get(`${apiUrl}/api/admin/scanners?_t=${Date.now()}`, { 
-                headers: {
-                    ...authHeaders(),
-                    'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
-                    'Pragma': 'no-cache'
-                }
-            });
+            const res = await axios.get(`${apiUrl}/api/admin/scanners`, { headers: authHeaders() });
             setScanners(res.data || []);
         } catch (err) {
             console.error("Failed to fetch scanners:", err);

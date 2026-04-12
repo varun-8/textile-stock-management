@@ -119,6 +119,15 @@ const performBackup = async (type = 'AUTO') => {
         // Cleanup old backups (Keep last 7 days)
         await cleanupOldBackups();
 
+        // Trigger cloud backup asynchronously (non-blocking)
+        // Upload will happen after CLOUD_BACKUP_INTERVAL_MINUTES delay
+        if (global.cloudBackupManager && global.CLOUD_BACKUP_INTERVAL) {
+            setTimeout(() => {
+                global.cloudBackupManager.uploadBackupAsync(filePath)
+                    .catch(err => console.log('[Cloud Backup] Upload failed:', err.message));
+            }, global.CLOUD_BACKUP_INTERVAL);
+        }
+
         return { success: true, filename };
     } catch (err) {
         console.error('[Backup] Failed:', err);
@@ -207,12 +216,59 @@ const restoreBackup = async (filename) => {
     }
 };
 
-// Schedule Daily Backup at 23:00 (11 PM)
-cron.schedule('0 23 * * *', () => {
-    performBackup('AUTO');
-});
+// Schedule Daily Backup - First Boot in Morning, then at 6:00 AM
+const scheduleBackup = () => {
+    const lastBackupFile = path.join(getBackupDir(), '.lastBackupDate');
+    
+    // Check if backup was already done today on startup
+    const checkAndBackupOnBoot = async () => {
+        try {
+            const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+            
+            // Read last backup date
+            let lastBackupDate = null;
+            try {
+                if (fs.existsSync(lastBackupFile)) {
+                    lastBackupDate = fs.readFileSync(lastBackupFile, 'utf8').trim();
+                }
+            } catch (err) {
+                console.log('[Backup] No last backup date found');
+            }
+            
+            // If backup wasn't done today, do it now
+            if (lastBackupDate !== today) {
+                console.log('[Scheduler] First boot detected - executing backup now...');
+                await performBackup('BOOT');
+                fs.writeFileSync(lastBackupFile, today);
+            } else {
+                console.log('[Scheduler] Backup already done today at boot');
+            }
+        } catch (err) {
+            console.error('[Scheduler] Error during boot backup check:', err.message);
+        }
+    };
+    
+    // Check on startup
+    console.log('[Scheduler] Checking for pending backups...');
+    checkAndBackupOnBoot();
+    
+    // Schedule daily backup at 6:00 AM
+    cron.schedule('0 6 * * *', () => {
+        console.log('[Scheduler] 6:00 AM backup triggered');
+        performBackup('AUTO');
+        try {
+            const today = new Date().toISOString().split('T')[0];
+            fs.writeFileSync(lastBackupFile, today);
+        } catch (err) {
+            console.error('[Scheduler] Error updating backup date:', err.message);
+        }
+    });
+    
+    console.log('[Scheduler] Daily backup scheduled for 6:00 AM (and on first morning boot)');
+};
 
-console.log('[Scheduler] Daily backup scheduled for 23:00');
+// Initialize scheduler
+scheduleBackup();
 
 module.exports = {
     performBackup,

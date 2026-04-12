@@ -32,6 +32,8 @@ const { JobQueue } = require('./services/jobs/jobQueue');
 const { AsyncReportGenerator } = require('./services/jobs/reportGenerator');
 const { BackupManager } = require('./services/backup/backupManager');
 const { DataConsistencyChecker } = require('./services/backup/dataIntegrity');
+const CloudBackupManager = require('./services/backup/cloudBackupManager');
+const cloudBackupRoutes = require('./services/backup/cloudBackupRoutes');
 
 let helmet = null;
 let rateLimit = null;
@@ -166,7 +168,21 @@ app.use(cors({
 const cacheManager = new ResponseCacheManager(600, 120); // 10-min TTL
 app.use(initCompressionMiddleware());
 app.use(performanceMonitoring);
-app.use(cacheManager.middleware(600));
+
+// ⚠️ DISABLE CACHING FOR API ROUTES: All /api/* endpoints must always serve fresh data
+// Cache headers will be set per-endpoint as needed
+app.use((req, res, next) => {
+    // Skip caching for all API endpoints - UI needs real-time data
+    if (req.path.startsWith('/api')) {
+        res.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+        res.set('Pragma', 'no-cache');
+        res.set('Expires', '0');
+        return next();
+    }
+    // Static assets can be cached
+    return cacheManager.middleware(600)(req, res, next);
+});
+
 app.use(autoPaginateMiddleware);
 app.use(securityHeaders);
 app.use(logger);
@@ -331,6 +347,56 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/textile-s
     console.error('MongoDB Connection Error:', err);
 });
 
+// Initialize Cloud Backup Manager
+const getCloudBackupDir = () => {
+    let backupPath = path.join(__dirname, 'backups');
+    try {
+        const configPath = path.join(__dirname, 'config.json');
+        if (fs.existsSync(configPath)) {
+            try {
+                const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+                if (config.backupPath) backupPath = config.backupPath;
+            } catch (parseErr) {
+                // Keep default
+            }
+        }
+    } catch (err) {
+        // Use default
+    }
+    
+    try {
+        if (!path.isAbsolute(backupPath)) {
+            backupPath = path.join(__dirname, '..', backupPath);
+        }
+        fs.mkdirSync(backupPath, { recursive: true });
+    } catch (mkdirErr) {
+        console.warn(`⚠️ Could not create backup directory: ${mkdirErr.message}`);
+    }
+    return backupPath;
+};
+
+const cloudBackupDir = getCloudBackupDir();
+const cloudBackupConfig = {
+    provider: process.env.CLOUD_BACKUP_PROVIDER || 'backblaze-b2',
+    credentials: {
+        applicationKeyId: process.env.B2_APPLICATION_KEY_ID,
+        applicationKey: process.env.B2_APPLICATION_KEY,
+        bucketName: process.env.B2_BUCKET_NAME
+    },
+    enabled: process.env.CLOUD_BACKUP_ENABLED === 'true'
+};
+
+try {
+    const cloudBackupManagerInstance = new CloudBackupManager(cloudBackupDir, cloudBackupConfig);
+    global.cloudBackupManager = cloudBackupManagerInstance;
+    console.log('✅ Cloud Backup Manager initialized');
+} catch (err) {
+    console.warn(`⚠️ Cloud Backup Manager init failed: ${err.message}`);
+    global.cloudBackupManager = null;
+}
+
+global.CLOUD_BACKUP_INTERVAL = parseInt(process.env.CLOUD_BACKUP_INTERVAL_MINUTES || '60', 10) * 60 * 1000;
+
 // Routes
 const barcodeRoutes = require('./routes/barcodeRoutes');
 const mobileRoutes = require('./routes/mobileRoutes');
@@ -350,7 +416,7 @@ app.use(requireLicense);
 app.use('/api/mobile', requireAnyAuth, mobileRoutes);
 app.use('/api/barcode', requireAdminAuth, barcodeRoutes);
 app.use('/api/stats', requireAdminAuth, statsRoutes);
-app.use('/api/admin', requireAdminAuth, adminRoutes(io));
+app.use('/api/admin', requireAdminAuth, adminRoutes(io, cloudBackupManager));
 app.use('/api/auth', authRoutes(io));
 app.use('/api/sessions', require('./routes/sessionRoutes'));
 app.use('/api/reports', requireAdminAuth, require('./routes/reportsRoutes'));
