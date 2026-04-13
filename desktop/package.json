@@ -43,45 +43,24 @@
   },
   "main": "electron-main.cjs",
   "build": {
-    "appId": "com.srilakshmitextiles.inventory",
-    "productName": "Loom Track",
-    "afterPack": "scripts/afterPack.cjs",
-    "asar": true,
-    "asarUnpack": [
-      "icon.png",
-      "icon.ico"
-    ],
+    "appId": "com.textilestock.inventory",
+    "productName": "Textile Stock Management",
+    "directories": {
+      "output": "dist-app",
+      "buildResources": "public"
+    },
     "files": [
       "dist/**/*",
+      "node_modules/**/*",
       "electron-main.cjs",
       "preload.cjs",
-      "icon.png",
-      "icon.ico",
-      "package.json"
+      "public/**/*",
+      "resources/**/*"
     ],
-    "extraResources": [
-      {
-        "from": "resources",
-        "to": "resources",
-        "filter": [
-          "**/*"
-        ]
-      },
-      {
-        "from": "../backend",
-        "to": "backend",
-        "filter": [
-          "**/*",
-          "!node_modules/**",
-          "!**/*.test.js",
-          "!backups/**"
-        ]
-      }
+    "asarUnpack": [
+      "resources/mongo/**/*",
+      "resources/backend/**/*"
     ],
-    "directories": {
-      "output": "setup_release"
-    },
-    "compression": "maximum",
     "win": {
       "target": [
         {
@@ -89,24 +68,25 @@
           "arch": [
             "x64"
           ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
         }
       ],
-      "icon": "icon.ico",
-      "forceCodeSigning": false,
-      "requestedExecutionLevel": "requireAdministrator"
+      "icon": "public/icon.ico"
     },
     "nsis": {
       "oneClick": false,
-      "perMachine": true,
       "allowToChangeInstallationDirectory": true,
-      "allowElevation": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Loom Track",
-      "installerIcon": "icon.ico",
-      "uninstallerIcon": "icon.ico",
-      "installerHeaderIcon": "icon.ico",
-      "artifactName": "${productName} Setup ${version}.${ext}"
+      "shortcutName": "Textile Stock Management"
+    },
+    "portable": {
+      "artifactName": "Textile-Stock-Management-Portable.exe"
     }
   }
 }
