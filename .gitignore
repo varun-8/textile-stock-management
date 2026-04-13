@@ -10,9 +10,11 @@ build/
 **/dist/
 **/build/
 desktop/dist/
+desktop/dist-app/
 desktop/release/
 desktop/setup_release/
 mobile-web/dist/
+mobile-web/setup_release/
 backend/public/pwa/assets/
 backend/public/pwa/index.html
 out/
@@ -23,22 +25,38 @@ out/
 .env
 .env.*
 !.env.example
+**/.env
 *.pem
 *.key
 *.pfx
 *.cert
 *.crt
 
-# Runtime Artifacts & Logs
+# Runtime Artifacts, Logs & Debug
 *.log
+**/*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 *.tmp
+build_log.txt
+build_error.txt
+eslint_report.txt
+lint.json
+net.json
+net2.json
+ip.txt
+ports.txt
+profile.json
+profile2.json
 
 # Backup and Local Data
+scratch/
 backend/backups/*.json
 !backend/backups/.gitkeep
+backend/config.json
+backend/license-data/
+backend/setup_output/
 
 # Testing
 coverage/

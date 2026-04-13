@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#0f172a" />
+  <meta name="description" content="Warehouse inventory scanner app - works offline" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="LoomTrack" />
+  <meta name="format-detection" content="telephone=no" />
+  <meta name="msapplication-tap-highlight" content="no" />
+  <link rel="icon" type="image/svg+xml" href="logo.svg" />
+  <link rel="manifest" href="manifest.json" />
+  <title>LoomTrack</title>
+  <script type="module" crossorigin src="/pwa/assets/index-F3XlDkhU.js"></script>
+  <link rel="modulepreload" crossorigin href="/pwa/assets/html5-qrcode-B4PQAKFk.js">
+  <link rel="modulepreload" crossorigin href="/pwa/assets/axios-42ANG6Sg.js">
+  <link rel="stylesheet" crossorigin href="/pwa/assets/index-DAPXCoKG.css">
+</head>
+
+<body class="bg-primary overflow-hidden overscroll-none">
+  <div id="root"></div>
+  <script>
+    // Register service worker for offline support
+    const isNativeApp = !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform());
+    if (!isNativeApp && 'serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').then(reg => {
+          console.log('✅ Service Worker registered');
+        }).catch(err => {
+          console.warn('⚠️ Service Worker registration failed:', err);
+        });
+      });
+    }
+
+    // Handle install prompt
+    let deferredPrompt;
+    window.addEventListener('beforeinstallprompt', e => {
+      e.preventDefault();
+      deferredPrompt = e;
+      console.log('📱 PWA installable');
+      // Make deferredPrompt available globally for React components
+      window.deferredPrompt = deferredPrompt;
+    });
+
+    // iOS PWA detection
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    if (isIOS && !window.navigator.standalone) {
+      console.log('📱 iOS - User should tap Share → Add to Home Screen');
+    }
+  </script>
+</body>
+
+</html>

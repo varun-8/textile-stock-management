@@ -39,9 +39,11 @@ function collectMongoCandidates(isPackaged) {
     if (isPackaged) {
         addCandidate(path.join(process.resourcesPath, 'resources', 'mongo', 'mongod.exe'));
         addCandidate(path.join(process.resourcesPath, 'mongo', 'mongod.exe'));
+        addCandidate(path.join(process.resourcesPath, 'app.asar.unpacked', 'resources', 'mongo', 'mongod.exe'));
     } else {
         addCandidate(path.join(__dirname, 'resources', 'mongo', 'mongod.exe'));
         addCandidate(path.join(__dirname, '..', 'resources', 'mongo', 'mongod.exe'));
+        addCandidate(path.join(__dirname, '..', 'backend', 'resources', 'mongo', 'mongod.exe'));
     }
 
     const programFilesRoots = [
@@ -112,10 +114,19 @@ async function startServices() {
     const isPackaged = app.isPackaged;
     const { binaryPath: mongoPath, candidates: mongoCandidates } = resolveMongoBinary(isPackaged);
 
-    const backendDir = isPackaged
-        ? path.join(process.resourcesPath, 'backend')
-        : path.join(__dirname, '..', 'backend');
+    const backendCandidates = isPackaged
+        ? [
+            path.join(process.resourcesPath, 'backend'),
+            path.join(process.resourcesPath, 'resources', 'backend'),
+            path.join(process.resourcesPath, 'app.asar.unpacked', 'resources', 'backend'),
+            path.join(process.resourcesPath, 'app.asar.unpacked', 'backend')
+          ]
+        : [
+            path.join(__dirname, '..', 'backend'),
+            path.join(__dirname, 'resources', 'backend')
+          ];
 
+    const backendDir = backendCandidates.find(dir => fs.existsSync(path.join(dir, 'server.js'))) || backendCandidates[0];
     const backendScript = path.join(backendDir, 'server.js');
     const dbPath = path.join(app.getPath('userData'), 'database');
     const tlsKeyPath = path.join(backendDir, 'stock-system.local-key.pem');
@@ -130,8 +141,16 @@ async function startServices() {
                 console.log('MongoDB port 27017 already in use. Reusing existing MongoDB instance.');
             } else {
                 console.log('Starting MongoDB embedded logic...');
-                mongoProcess = spawn(mongoPath, ['--dbpath', dbPath, '--port', '27017'], {
-                    stdio: 'ignore'
+                const mongoLogPath = path.join(app.getPath('userData'), 'mongo.log');
+                mongoProcess = spawn(mongoPath, [
+                    '--dbpath', dbPath, 
+                    '--port', '27017',
+                    '--bind_ip', '127.0.0.1',
+                    '--logpath', mongoLogPath,
+                    '--logappend'
+                ], {
+                    stdio: 'ignore', // mongod redirects its own output to the logpath
+                    windowsHide: true
                 });
                 mongoProcess.on('error', (err) => console.error('Mongo Error:', err));
             }
@@ -150,13 +169,19 @@ async function startServices() {
     // 2. Start Backend using Electron's built-in node
     if (fs.existsSync(backendScript)) {
         try {
+            // Give MongoDB a few seconds to initialize its socket listeners
+            console.log('Waiting for MongoDB to initialize...');
+            await new Promise(resolve => setTimeout(resolve, 3000));
+
             assignedHttpPort = await findAvailablePort(5050);
             assignedHttpsPort = await findAvailablePort(assignedHttpPort + 1);
 
             console.log(`Starting Backend Node Server on Dynamic Ports: HTTP:${assignedHttpPort}, HTTPS:${assignedHttpsPort}`);
-            // In packaged app, process.env gets stripped of many things. We must pass required items carefully.
+            const backendLogStream = fs.createWriteStream(path.join(app.getPath('userData'), 'backend.log'), { flags: 'a' });
+            
             backendProcess = spawn(process.execPath, [backendScript], {
                 cwd: backendDir,
+                windowsHide: true,
                 env: {
                     ...process.env,
                     ELECTRON_RUN_AS_NODE: '1',
@@ -166,14 +191,18 @@ async function startServices() {
                     HTTP_PORT: String(assignedHttpPort),
                     PORT: String(assignedHttpsPort),
                     APP_USERNAME: process.env.APP_USERNAME || 'admin',
-                    APP_PASSWORD: process.env.APP_PASSWORD || 'password'
+                    APP_PASSWORD: process.env.APP_PASSWORD || 'password',
+                    NODE_ENV: 'production'
                 }
             });
 
-            // Helpful debugging if server crashes
-            backendProcess.stdout.on('data', data => console.log(`Backend: ${data}`));
-            backendProcess.stderr.on('data', data => console.error(`Backend Error: ${data}`));
-            backendProcess.on('error', (err) => console.error('Backend spawn error:', err));
+            backendProcess.stdout.pipe(backendLogStream);
+            backendProcess.stderr.pipe(backendLogStream);
+            
+            backendProcess.on('error', (err) => {
+                console.error('Backend spawn error:', err);
+                backendLogStream.write(`\n[${new Date().toISOString()}] Spawn Error: ${err.message}\n`);
+            });
         } catch (e) {
             console.error('Failed to start Backend:', e);
             dialog.showErrorBox('Initialization Error', `Backend startup failed:\n${e.message}`);

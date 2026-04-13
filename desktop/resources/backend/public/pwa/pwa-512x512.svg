@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" fill="#0f172a"/>
+  <rect width="512" height="512" fill="#6366f1" opacity="0.1"/>
+  <g transform="translate(128, 128)">
+    <!-- Scanner icon - larger -->
+    <rect x="32" y="32" width="224" height="224" rx="20" fill="none" stroke="#6366f1" stroke-width="12"/>
+    <rect x="64" y="80" width="160" height="128" rx="12" fill="#6366f1" opacity="0.2"/>
+    <line x1="96" y1="140" x2="192" y2="140" stroke="#6366f1" stroke-width="6"/>
+    <line x1="96" y1="176" x2="192" y2="176" stroke="#6366f1" stroke-width="6"/>
+    <circle cx="144" cy="220" r="8" fill="#6366f1"/>
+  </g>
+</svg>
