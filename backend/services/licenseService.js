@@ -31,7 +31,13 @@ const writeJson = (filePath, value) => {
     fs.writeFileSync(filePath, JSON.stringify(value, null, 2));
 };
 
-const isLicenseRequired = () => process.env.LICENSE_REQUIRED === 'true' || process.env.NODE_ENV === 'production';
+const isLicenseRequired = () => {
+    // Explicit LICENSE_REQUIRED env var takes precedence
+    if (process.env.LICENSE_REQUIRED === 'false') {
+        return false;
+    }
+    return process.env.LICENSE_REQUIRED === 'true' || process.env.NODE_ENV === 'production';
+};
 
 const getDeviceId = () => {
     const existing = readJson(DEVICE_FILE);

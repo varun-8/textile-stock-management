@@ -2,8 +2,8 @@ const { getLicenseStatus, isLicenseRequired } = require('../services/licenseServ
 
 const ALLOWED_PREFIXES = [
     '/api/license',
-    '/api/auth/ping',
-    '/api/auth/discovery/ping',
+    '/api/auth',
+    '/api/admin/server-ip',
     '/pwa'
 ];
 

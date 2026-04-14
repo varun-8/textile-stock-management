@@ -131,7 +131,15 @@ const isPrivateNetworkOrigin = (origin) => {
 const isOriginAllowed = (origin) => {
     if (!origin) return true;
     if (origin.startsWith('file://')) return true;
-    if (origin === 'capacitor://localhost' || origin === 'ionic://localhost' || origin === 'http://localhost') return true;
+    
+    // Allow all localhost-like origins for development
+    if (origin === 'http://localhost' || origin.startsWith('http://localhost:')) return true;
+    if (origin === 'http://127.0.0.1' || origin.startsWith('http://127.0.0.1:')) return true;
+    if (origin === 'https://localhost' || origin.startsWith('https://localhost:')) return true;
+    if (origin === 'https://127.0.0.1' || origin.startsWith('https://127.0.0.1:')) return true;
+    
+    if (origin === 'capacitor://localhost' || origin === 'ionic://localhost') return true;
+    
     if (allowedOrigins.length === 0) return true;
     if (isPrivateNetworkOrigin(origin)) return true;
     return allowedOrigins.includes(origin);

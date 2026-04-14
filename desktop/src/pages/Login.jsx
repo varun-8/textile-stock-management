@@ -20,7 +20,7 @@ const Login = () => {
         e.preventDefault();
         setError('');
         try {
-            const res = await fetch(`${apiUrl}/api/login`, {
+            const res = await fetch(`${apiUrl}/api/auth/admin-login`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(credentials)
@@ -35,7 +35,7 @@ const Login = () => {
             } else if (res.status === 401) {
                 setError('Invalid Credentials');
             } else {
-                setError(`Server Error: ${data.message || 'Unknown error'}`);
+                setError(`Server Error: ${data.error || data.message || 'Unknown error'}`);
             }
         } catch (err) {
             console.error('Login Error:', err);

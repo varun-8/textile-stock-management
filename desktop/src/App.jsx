@@ -49,29 +49,43 @@ const ServerGuard = ({ children }) => {
 
   useEffect(() => {
     const ping = async () => {
+      // Build list of possible backend URLs to try
       const candidates = Array.from(new Set([
+        // 1. Previously configured API URL
         apiUrl,
+        // 2. Static ports for development
         'http://localhost:5000',
         'http://127.0.0.1:5000',
-        'https://localhost:5000',
-        'https://127.0.0.1:5000'
+        // 3. Electron dynamic ports (start from 5050)
+        'http://localhost:5050',
+        'http://127.0.0.1:5050',
+        'http://localhost:5051',
+        'http://127.0.0.1:5051',
+        'http://localhost:5052',
+        'http://127.0.0.1:5052',
+        'http://localhost:5053',
+        'http://127.0.0.1:5053',
+        // 4. Mobile web development
+        'http://localhost:5173',
+        'http://127.0.0.1:5173'
       ]));
 
       for (const base of candidates) {
         try {
-          const response = await fetchWithTimeout(`${base}/api/license/status`);
-          const data = await response.json();
-          if (base !== apiUrl) {
-            updateApiUrl(base);
+          const response = await fetchWithTimeout(`${base}/api/admin/server-ip`);
+          if (response.ok || response.status < 500) {
+            // Connection successful
+            if (base !== apiUrl) {
+              updateApiUrl(base);
+            }
+            setServerReady(true);
+            setLoadingLicense(false);
+            clearInterval(pollRef.current);
+            return;
           }
-          setLicenseStatus(data);
-          setServerReady(true);
-          setLoadingLicense(false);
-          clearInterval(pollRef.current);
-          return;
         } catch (err) {
-          // Try next candidate.
-          console.debug('License poll error:', err.message);
+          // Try next candidate
+          console.debug(`Backend not available at ${base}:`, err.message);
         }
       }
 
@@ -82,7 +96,7 @@ const ServerGuard = ({ children }) => {
     clearInterval(pollRef.current);
     
     ping(); // Immediate first attempt
-    pollRef.current = setInterval(ping, 1000);
+    pollRef.current = setInterval(ping, 2000);
     return () => clearInterval(pollRef.current);
   }, [apiUrl, updateApiUrl]);
 
@@ -102,25 +116,26 @@ const ServerGuard = ({ children }) => {
     );
   }
 
-  if (licenseStatus?.required && !licenseStatus?.active) {
-    return (
-      <LicenseActivation
-        licenseStatus={licenseStatus}
-        onActivated={async () => {
-          try {
-            const response = await fetch(`${apiUrl}/api/license/status`, {
-              method: 'GET',
-              signal: AbortSignal.timeout(2000)
-            });
-            const data = await response.json();
-            setLicenseStatus(data);
-          } catch (err) {
-            console.error('Failed to refresh license status after activation', err);
-          }
-        }}
-      />
-    );
-  }
+  // License functionality hidden for now
+  // if (licenseStatus?.required && !licenseStatus?.active) {
+  //   return (
+  //     <LicenseActivation
+  //       licenseStatus={licenseStatus}
+  //       onActivated={async () => {
+  //         try {
+  //           const response = await fetch(`${apiUrl}/api/license/status`, {
+  //             method: 'GET',
+  //             signal: AbortSignal.timeout(2000)
+  //           });
+  //           const data = await response.json();
+  //           setLicenseStatus(data);
+  //         } catch (err) {
+  //           console.error('Failed to refresh license status after activation', err);
+  //         }
+  //       }}
+  //     />
+  //   );
+  // }
 
   return children;
 };
