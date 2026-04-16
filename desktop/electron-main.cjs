@@ -179,12 +179,13 @@ async function startServices() {
             console.log(`Starting Backend Node Server on Dynamic Ports: HTTP:${assignedHttpPort}, HTTPS:${assignedHttpsPort}`);
             const backendLogStream = fs.createWriteStream(path.join(app.getPath('userData'), 'backend.log'), { flags: 'a' });
             
-            backendProcess = spawn(process.execPath, [backendScript], {
+            backendProcess = spawn('node', [backendScript], {
                 cwd: backendDir,
+                detached: true,
+                stdio: ['ignore', 'pipe', 'pipe'],
                 windowsHide: true,
                 env: {
                     ...process.env,
-                    ELECTRON_RUN_AS_NODE: '1',
                     MONGODB_URI: process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/textile-stock-management',
                     TLS_KEY_PATH: process.env.TLS_KEY_PATH || tlsKeyPath,
                     TLS_CERT_PATH: process.env.TLS_CERT_PATH || tlsCertPath,
@@ -195,13 +196,19 @@ async function startServices() {
                     NODE_ENV: 'production'
                 }
             });
-
+            
             backendProcess.stdout.pipe(backendLogStream);
             backendProcess.stderr.pipe(backendLogStream);
+            backendProcess.unref();
             
             backendProcess.on('error', (err) => {
                 console.error('Backend spawn error:', err);
                 backendLogStream.write(`\n[${new Date().toISOString()}] Spawn Error: ${err.message}\n`);
+            });
+
+            backendProcess.on('close', (code, signal) => {
+                console.error(`Backend process exited with code ${code} and signal ${signal}`);
+                backendLogStream.write(`\n[${new Date().toISOString()}] Process Exit: Code ${code}, Signal ${signal}\n`);
             });
         } catch (e) {
             console.error('Failed to start Backend:', e);

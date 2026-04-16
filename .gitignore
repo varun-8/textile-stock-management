@@ -21,17 +21,6 @@ out/
 .next/
 *.exe
 
-# Environment / Secrets
-.env
-.env.*
-!.env.example
-**/.env
-*.pem
-*.key
-*.pfx
-*.cert
-*.crt
-
 # Runtime Artifacts, Logs & Debug
 *.log
 **/*.log
@@ -49,6 +38,8 @@ ip.txt
 ports.txt
 profile.json
 profile2.json
+
+
 
 # Backup and Local Data
 scratch/

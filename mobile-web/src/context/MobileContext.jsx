@@ -4,13 +4,12 @@ import { Capacitor } from '@capacitor/core';
 
 const MobileContext = createContext();
 
-const DEFAULT_IP = (window.location.hostname && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1')
-    ? window.location.hostname
-    : 'stock-system.local';
+const DEFAULT_IP = 'stock-system.local'; // Hostname-based, survives IP changes on same WiFi
 const DEV_HTTP_PORT = 5050;
 const DEV_HTTPS_PORT = 5051;
 const DISCOVERY_TIMEOUT_MS = 2000;
 const SETUP_TIMEOUT_MS = 5000;
+const MDNS_SERVICE = '_textile-stock._tcp.local';
 
 const normalizeHost = (value) => {
     if (!value) return '';
@@ -37,23 +36,23 @@ const buildBaseUrls = (value) => {
             const scheme = parsed.protocol.replace(':', '');
             if (host) {
                 if (isNative) {
-                    // Native app talks to backend over HTTP only.
+                    // Native app: Always try hostname first, then IP fallbacks
+                    candidates.push(`http://${host}:${DEV_HTTP_PORT}`);
                     if (scheme === 'http') {
                         candidates.push(normalizedBase);
                     }
                     if (scheme === 'https' && explicitPort && explicitPort > 1) {
                         candidates.push(`http://${host}:${explicitPort - 1}`);
                     }
-                    candidates.push(`http://${host}:${DEV_HTTP_PORT}`);
                 } else {
-                    // Browser/PWA uses HTTPS only.
+                    // Browser/PWA: Always try hostname first, then IP fallbacks
+                    candidates.push(`https://${host}:${DEV_HTTPS_PORT}`);
                     if (scheme === 'https') {
                         candidates.push(normalizedBase);
                     }
                     if (scheme === 'http' && explicitPort) {
                         candidates.push(`https://${host}:${explicitPort + 1}`);
                     }
-                    candidates.push(`https://${host}:${DEV_HTTPS_PORT}`);
                 }
             }
         } catch (e) {
@@ -66,6 +65,7 @@ const buildBaseUrls = (value) => {
     const host = normalizeHost(value);
     if (!host) return [];
 
+    // Prioritize hostname-based connection
     return isNative
         ? [`http://${host}:${DEV_HTTP_PORT}`]
         : [`https://${host}:${DEV_HTTPS_PORT}`];
@@ -88,12 +88,8 @@ const THEME = {
 export const MobileProvider = ({ children }) => {
     const [serverIp, setServerIp] = useState(() => {
         const saved = localStorage.getItem('SL_SERVER_IP');
-        const current = window.location.hostname;
-        // Auto-update if accessed via a network IP/hostname
-        if (current && current !== 'localhost' && current !== '127.0.0.1' && current !== saved) {
-            localStorage.setItem('SL_SERVER_IP', current);
-            return current;
-        }
+        // Always prefer hostname (survives IP changes on same WiFi)
+        // Only use saved IP if it's explicitly set by user during pairing
         return saved || DEFAULT_IP;
     });
     const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem('SL_USER_TOKEN'));

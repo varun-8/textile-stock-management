@@ -3,6 +3,7 @@ import { useMobile } from '../context/MobileContext';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import { haptic } from '../utils/haptic';
 import { Capacitor } from '@capacitor/core';
+import { useNavigate } from 'react-router-dom';
 
 const THEME = {
     bg: '#0f172a', // Slate 900
@@ -17,8 +18,16 @@ const THEME = {
 };
 
 const SetupScreen = () => {
-    const { setupDevice } = useMobile();
+    const { setupDevice, scannerId } = useMobile();
+    const navigate = useNavigate();
     const [step, setStep] = useState('LANDING');
+    
+    // If already paired, redirect to main app
+    useEffect(() => {
+        if (scannerId) {
+            navigate('/', { replace: true });
+        }
+    }, [scannerId, navigate]);
     
     useEffect(() => {
         // Platform logging removed for production
@@ -103,15 +112,39 @@ const SetupScreen = () => {
     const handleManualConnect = () => {
         setError(null);
         if (!manualIp.trim()) {
-            setError("Enter Server IP");
+            setError("Enter Server IP or Hostname");
             return;
         }
-        // Extract IP if user pastes full URL
+        // Extract IP/hostname if user pastes full URL
         let ip = manualIp.replace(/https?:\/\//, '').split(':')[0];
 
         setShowManual(false);
         // Manual mode implies "Factory Setup"
         executePairing(ip, "FACTORY_SETUP_2026", 'AUTO_ASSIGN');
+    };
+
+    const handleAutoDiscover = async () => {
+        setError(null);
+        setStep('CONNECTING');
+        try {
+            // Try to discover via hostname first
+            const discoverUrl = `https://stock-system.local:5051/api/discover`;
+            const response = await fetch(discoverUrl, { 
+                signal: AbortSignal.timeout(3000),
+                method: 'GET'
+            });
+            if (response.ok) {
+                const data = await response.json();
+                console.log('Auto-discovered server:', data);
+                // Pair with discovered hostname
+                executePairing('stock-system.local', 'FACTORY_SETUP_2026', 'AUTO_ASSIGN');
+            } else {
+                throw new Error('Server discovery failed');
+            }
+        } catch (err) {
+            setStep('LANDING');
+            setError(`Auto-discovery failed: ${err.message}. Try manual entry or QR scan.`);
+        }
     };
 
     const executePairing = async (ip, token, nameOverride = null) => {
@@ -296,6 +329,11 @@ const SetupScreen = () => {
 
     // 3. LANDING SCREEN (Fallback / Manual)
     const isNativeApp = Capacitor.isNativePlatform();
+    
+    // If already paired, don't render anything (redirect in useEffect)
+    if (scannerId) {
+        return null;
+    }
 
     return (
         <div style={containerStyle}>
@@ -326,6 +364,12 @@ const SetupScreen = () => {
 
             {/* Connect Options */}
             <div style={{ width: '100%', maxWidth: '320px', marginTop: '20px' }}>
+                <button
+                    onClick={handleAutoDiscover}
+                    style={{ ...btnPrimaryStyle, width: '100%', marginBottom: '10px' }}
+                >
+                    AUTO DISCOVER
+                </button>
                 {isNativeApp && (
                     <button
                         onClick={startQrScanner}

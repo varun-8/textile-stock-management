@@ -50,6 +50,19 @@ try {
 
 const app = express();
 
+// Optional mDNS support for service discovery
+let mdnsAdvertiser = null;
+if (process.env.MDNS_ENABLED === 'true') {
+    try {
+        const mdns = require('bonjour')({ multicast: true });
+        const serviceName = process.env.MDNS_SERVICE_NAME || 'stock-system';
+        mdnsAdvertiser = { mdns, serviceName };
+        console.log(`📡 mDNS advertising enabled as "${serviceName}.local"`);
+    } catch (err) {
+        console.log(`ℹ️ mDNS not available (bonjour package). Using hostname-based discovery.`);
+    }
+}
+
 const isProduction = process.env.NODE_ENV === 'production';
 const requiredEnvs = ['APP_USERNAME', 'APP_PASSWORD', ...(isProduction ? ['JWT_SECRET'] : [])];
 const missingEnvs = requiredEnvs.filter((key) => !process.env[key]);
@@ -289,6 +302,18 @@ app.get('/pwa/LoomTrack.apk', (req, res, next) => {
         return next(err);
     }
 });
+
+// Redirect HTTP PWA requests to HTTPS
+if (httpsOptions) {
+    app.use('/pwa', (req, res, next) => {
+        if (req.protocol === 'http') {
+            const secureUrl = `https://${req.hostname}${HTTPS_PORT !== 443 ? ':' + HTTPS_PORT : ''}${req.originalUrl}`;
+            return res.redirect(301, secureUrl);
+        }
+        next();
+    });
+}
+
 app.use('/pwa', express.static(path.join(__dirname, 'public/pwa')));
 
 // Attach IO to request for routes
@@ -320,7 +345,19 @@ const getLocalIp = () => {
     }
     return '127.0.0.1';
 };
-
+// Service Discovery Endpoint (for clients to find the server)
+app.get('/api/service/info', (req, res) => {
+    const localIp = getLocalIp();
+    res.json({
+        status: 'ok',
+        service: 'textile-stock-management',
+        hostname: 'stock-system.local',
+        ip: localIp,
+        httpPort: HTTP_PORT,
+        httpsPort: HTTPS_PORT,
+        timestamp: new Date().toISOString()
+    });
+});
 // Phase 9: Initialize Job Queue
 const jobQueue = new JobQueue({ maxConcurrency: 5 });
 const reportGenerator = new AsyncReportGenerator(path.join(__dirname, 'reports'));
@@ -431,6 +468,24 @@ require('./services/backupService');
 app.use('/api/license', licenseRoutes);
 
 // New Endpoint: Get Server IP (for Desktop to generate QR)
+// Service Discovery Endpoint (No Auth Required)
+app.get('/api/discover', (req, res) => {
+    const localIp = getLocalIp();
+    const hostname = require('os').hostname();
+    res.json({
+        service: 'textile-stock-management',
+        hostname: hostname,
+        domain: 'stock-system.local',
+        lanIp: localIp,
+        httpPort: HTTP_PORT,
+        httpsPort: HTTPS_PORT,
+        nativeAppUrl: `http://${localIp}:${HTTP_PORT}`,
+        pwaBrowserUrl: `https://stock-system.local:${HTTPS_PORT}`,
+        mdnsService: '_textile-stock._tcp.local',
+        timestamp: new Date().toISOString()
+    });
+});
+
 // Auth Routes (Open for pairing/login)
 app.use(requireLicense);
 app.use('/api/mobile', requireAnyAuth, mobileRoutes);
@@ -697,6 +752,29 @@ const startHttpsServer = (port, label) => {
         return null;
     }
     const server = https.createServer(httpsOptions, app);
+    
+    // Attach Socket.IO to HTTPS server for PWA
+    const ioHttps = new Server(server, {
+        cors: {
+            origin: (origin, callback) => {
+                if (isOriginAllowed(origin)) return callback(null, true);
+                return callback(new Error('CORS blocked'));
+            },
+            methods: ['GET', 'POST'],
+            credentials: true
+        }
+    });
+    
+    // Share socket handlers between HTTP and HTTPS
+    ioHttps.on('connection', (socket) => {
+        // Reuse all handlers from io
+        for (const event of Object.keys(io._events || {})) {
+            if (typeof io._events[event] === 'function') {
+                ioHttps.on(event, io._events[event]);
+            }
+        }
+    });
+    
     server.on('error', (err) => {
         console.error(`${label} HTTPS server failed on port ${port}:`, err.message);
         if (label === 'Primary') {
