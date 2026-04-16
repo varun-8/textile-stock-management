@@ -39,7 +39,11 @@ ports.txt
 profile.json
 profile2.json
 
-
+# Environment & Secrets
+# NOTE: .env FILES ARE COMMITTED (local development/deployment values, not production secrets)
+# For production: generate unique JWT_SECRET and APP_PASSWORD per customer
+# Certificate files ARE committed to git (self-signed, local development keys)
+# setup-certs.js auto-regenerates on npm install if needed
 
 # Backup and Local Data
 scratch/
@@ -48,7 +52,7 @@ backend/backups/*.json
 backend/config.json
 backend/license-data/
 backend/setup_output/
-
+  
 # Testing
 coverage/
 
