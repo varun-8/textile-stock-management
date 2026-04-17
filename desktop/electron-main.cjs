@@ -129,10 +129,20 @@ async function startServices() {
     const backendDir = backendCandidates.find(dir => fs.existsSync(path.join(dir, 'server.js'))) || backendCandidates[0];
     const backendScript = path.join(backendDir, 'server.js');
     const dbPath = path.join(app.getPath('userData'), 'database');
+    const runtimeDir = path.join(app.getPath('userData'), 'backend-data');
+    const runtimeConfigPath = path.join(runtimeDir, 'config.json');
+    const runtimeBackupPath = path.join(runtimeDir, 'backups');
     const tlsKeyPath = path.join(backendDir, 'stock-system.local-key.pem');
     const tlsCertPath = path.join(backendDir, 'stock-system.local.pem');
 
     if (!fs.existsSync(dbPath)) fs.mkdirSync(dbPath, { recursive: true });
+    if (!fs.existsSync(runtimeDir)) fs.mkdirSync(runtimeDir, { recursive: true });
+    if (!fs.existsSync(runtimeBackupPath)) fs.mkdirSync(runtimeBackupPath, { recursive: true });
+
+    const bundledConfigPath = path.join(backendDir, 'config.json');
+    if (!fs.existsSync(runtimeConfigPath) && fs.existsSync(bundledConfigPath)) {
+        fs.copyFileSync(bundledConfigPath, runtimeConfigPath);
+    }
 
     // 1. Start MongoDB
     if (mongoPath) {
@@ -189,6 +199,9 @@ async function startServices() {
                     MONGODB_URI: process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/textile-stock-management',
                     TLS_KEY_PATH: process.env.TLS_KEY_PATH || tlsKeyPath,
                     TLS_CERT_PATH: process.env.TLS_CERT_PATH || tlsCertPath,
+                    APP_RUNTIME_DIR: runtimeDir,
+                    APP_CONFIG_PATH: runtimeConfigPath,
+                    DEFAULT_BACKUP_PATH: runtimeBackupPath,
                     HTTP_PORT: String(assignedHttpPort),
                     PORT: String(assignedHttpsPort),
                     APP_USERNAME: process.env.APP_USERNAME || 'admin',

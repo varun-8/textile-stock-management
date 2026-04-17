@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import axios from 'axios';
 import { io } from 'socket.io-client';
 import { useConfig } from '../context/ConfigContext';
 import { useNotification } from '../context/NotificationContext';
 import { IconPlus, IconTruck, IconEye, IconX, IconPrint } from '../components/Icons';
 import { generateDCPdf } from '../utils/pdfGenerator';
+import { withExponentialBackoff } from '../utils/apiUtils';
 
 const DEFAULT_DC_TEMPLATE = {
     layoutMode: 'printed',
@@ -87,11 +88,27 @@ const DeliveryChallans = () => {
         return fallbackMessage;
     };
 
+    const fetchDcTemplateConfig = useCallback(async () => {
+        try {
+            const res = await withExponentialBackoff(() =>
+                axios.get(`${apiUrl}/api/admin/config/dc-template`, authHeaders)
+            );
+            setDcTemplateConfig(res.data || null);
+            if (res.data?.templateId) {
+                setSelectedTemplateId(res.data.templateId);
+            }
+        } catch (error) {
+            console.error('Failed to fetch DC template config:', error);
+        }
+    }, [apiUrl]);
+
     const fetchDCs = useCallback(async () => {
         try {
             setLoading(true);
             setLoadError('');
-            const res = await axios.get(`${apiUrl}/api/dc`, authHeaders);
+            const res = await withExponentialBackoff(() =>
+                axios.get(`${apiUrl}/api/dc`, authHeaders)
+            );
             setDcs(res.data);
         } catch (error) {
             console.error('Failed to fetch DCs:', error);
@@ -111,12 +128,25 @@ const DeliveryChallans = () => {
             : { transports: ['websocket', 'polling'] };
 
         const socket = io(apiUrl, socketOptions);
+        let templateUpdateTimeout;
+        
         socket.on('dc_update', () => {
             fetchDCs();
         });
+        
+        // Debounce template update to prevent rate limiting
+        socket.on('template_update', () => {
+            if (templateUpdateTimeout) clearTimeout(templateUpdateTimeout);
+            templateUpdateTimeout = setTimeout(() => {
+                fetchDcTemplateConfig();
+            }, 500);
+        });
 
-        return () => socket.disconnect();
-    }, [apiUrl, fetchDCs]);
+        return () => {
+            if (templateUpdateTimeout) clearTimeout(templateUpdateTimeout);
+            socket.disconnect();
+        };
+    }, [apiUrl, fetchDCs, fetchDcTemplateConfig]);
 
     const buildPartyDirectory = (records) => {
         const directory = new Map();
@@ -172,8 +202,11 @@ const DeliveryChallans = () => {
     };
 
     useEffect(() => {
+        // Stagger initial API calls to avoid rate limiting
         fetchDCs();
-        fetchDcTemplateConfig();
+        const timer = setTimeout(() => fetchDcTemplateConfig(), 150);
+        
+        return () => clearTimeout(timer);
         // eslint-disable-next-line
     }, []);
 
@@ -210,21 +243,11 @@ const DeliveryChallans = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [dcs, partyName]);
 
-    const fetchDcTemplateConfig = async () => {
-        try {
-            const res = await axios.get(`${apiUrl}/api/admin/config/dc-template`, authHeaders);
-            setDcTemplateConfig(res.data || null);
-            if (res.data?.templateId) {
-                setSelectedTemplateId(res.data.templateId);
-            }
-        } catch (error) {
-            console.error('Failed to fetch DC template config:', error);
-        }
-    };
-
     const fetchDcTemplates = async () => {
         try {
-            const res = await axios.get(`${apiUrl}/api/admin/config/dc-templates`, authHeaders);
+            const res = await withExponentialBackoff(() =>
+                axios.get(`${apiUrl}/api/admin/config/dc-templates`, authHeaders)
+            );
             const templates = Array.isArray(res.data?.templates) ? res.data.templates : [];
             setDcTemplates(templates);
             if (res.data?.activeTemplateId) {
@@ -239,7 +262,9 @@ const DeliveryChallans = () => {
 
     const getLatestDcTemplateConfig = async () => {
         try {
-            const res = await axios.get(`${apiUrl}/api/admin/config/dc-template`, authHeaders);
+            const res = await withExponentialBackoff(() =>
+                axios.get(`${apiUrl}/api/admin/config/dc-template`, authHeaders)
+            );
             const latest = res.data || null;
             if (latest) {
                 setDcTemplateConfig(latest);
@@ -274,7 +299,6 @@ const DeliveryChallans = () => {
         if (templateConfig.showFolding && !folding.trim()) return 'Folding is required';
         if (templateConfig.showLotNo && !lotNo.trim()) return 'Lot No is required';
         if (templateConfig.showBillNo && !billNo.trim()) return 'Bill No is required';
-        if (templateConfig.showBillPreparedBy && !billPreparedBy.trim()) return 'Bill Prepared By is required';
         return null;
     };
 
@@ -460,7 +484,9 @@ const DeliveryChallans = () => {
     const fetchOutBatches = async () => {
         try {
             setBatchLoading(true);
-            const res = await axios.get(`${apiUrl}/api/sessions/batch/active-out/list`, authHeaders);
+            const res = await withExponentialBackoff(() =>
+                axios.get(`${apiUrl}/api/sessions/batch/active-out/list`, authHeaders)
+            );
             setOutBatches(res.data || []);
             setSelectedBatch(null);
             setPercentage('0');
@@ -547,7 +573,7 @@ const DeliveryChallans = () => {
     };
 
     return (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden', background: 'var(--bg-primary)' }}>
             {/* Header */}
             <header style={{ 
                 padding: '1.5rem 2rem', 
@@ -577,7 +603,7 @@ const DeliveryChallans = () => {
             </header>
 
             {/* Main Content */}
-            <main style={{ flex: 1, padding: '2.5rem 2rem', overflowY: 'auto' }}>
+            <main style={{ flex: 1, padding: '2.5rem 2rem', overflowY: 'auto', background: 'var(--bg-primary)' }}>
                 <div className="card">
                     <h2 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.5rem' }}>
                         <IconTruck size="18" /> DC History

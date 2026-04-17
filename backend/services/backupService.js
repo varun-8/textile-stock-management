@@ -15,8 +15,7 @@ const Size = require('../models/Size');
 const User = require('../models/User');
 const DeliveryChallan = require('../models/DeliveryChallan');
 const Quotation = require('../models/Quotation');
-
-const getConfigPath = () => path.join(__dirname, '../config.json');
+const { getConfigPath, getDefaultBackupDir, resolveBackupPath } = require('../utils/runtimePaths');
 
 const BACKUP_MODEL_DEFS = [
     { key: 'barcodes', model: Barcode },
@@ -33,7 +32,7 @@ const BACKUP_MODEL_DEFS = [
 ];
 
 const getBackupDir = () => {
-    let backupPath = './backups';
+    let backupPath = getDefaultBackupDir();
     try {
         const configPath = getConfigPath();
         if (fs.existsSync(configPath)) {
@@ -43,13 +42,13 @@ const getBackupDir = () => {
     } catch (err) {
         console.error('Error reading config:', err);
     }
-    const configuredPath = path.isAbsolute(backupPath) ? backupPath : path.join(__dirname, '..', backupPath);
+    const configuredPath = resolveBackupPath(backupPath);
 
     try {
         fs.ensureDirSync(configuredPath);
         return configuredPath;
     } catch (err) {
-        const fallbackPath = path.join(__dirname, '..', 'backups');
+        const fallbackPath = getDefaultBackupDir();
         try {
             fs.ensureDirSync(fallbackPath);
             console.warn(`[Backup] Backup path not writable (${configuredPath}). Using fallback: ${fallbackPath}`);

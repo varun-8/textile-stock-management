@@ -13,21 +13,22 @@ const path = require('path');
 const fs = require('fs').promises;
 const BackupService = require('./services/backupService');
 const CloudBackupManager = require('./services/backup/cloudBackupManager');
+const { getConfigPath, getDefaultBackupDir, resolveBackupPath } = require('./utils/runtimePaths');
 
 const command = process.argv[2] || 'help';
 
 async function getCloudBackupDir() {
   try {
-    const configPath = path.join(__dirname, 'config.json');
+    const configPath = getConfigPath();
     const config = JSON.parse(await fs.readFile(configPath, 'utf8'));
-    const backupDir = config.backupPath || path.join(__dirname, './backups');
+    const backupDir = resolveBackupPath(config.backupPath || getDefaultBackupDir());
     
     // Ensure directory exists
     await fs.mkdir(backupDir, { recursive: true });
     return backupDir;
   } catch (error) {
     console.log('⚠️  Using default backup directory');
-    const defaultDir = path.join(__dirname, './backups');
+    const defaultDir = getDefaultBackupDir();
     await fs.mkdir(defaultDir, { recursive: true });
     return defaultDir;
   }

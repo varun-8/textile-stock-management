@@ -315,7 +315,7 @@ const Dashboard = () => {
     const hasMultiplePieces = (pieces) => Array.isArray(pieces) && pieces.length > 1;
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', background: 'var(--bg-primary)' }}>
 
             {/* Header (Drag area) */}
             <header style={{

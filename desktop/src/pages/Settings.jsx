@@ -20,6 +20,8 @@ const Settings = () => {
     // Wipe states
     const [showWipeConfirm, setShowWipeConfirm] = useState(false);
     const [wipePasswordInput, setWipePasswordInput] = useState('');
+    const [systemInfoClickCount, setSystemInfoClickCount] = useState(0);
+    const [showDangerZone, setShowDangerZone] = useState(false);
 
     // API Edit states
     const [isEditingApi, setIsEditingApi] = useState(false);
@@ -47,23 +49,18 @@ const Settings = () => {
         subTitleSize: 8,
         addressSize: 7.5
     });
-    const [dcTemplates, setDcTemplates] = useState([]);
-    const [selectedDcTemplateId, setSelectedDcTemplateId] = useState('');
-    const [dcTemplateName, setDcTemplateName] = useState('Default Template');
+
     const [savingDcTemplate, setSavingDcTemplate] = useState(false);
     const [templatePreviewUrl, setTemplatePreviewUrl] = useState('');
 
     const fetchConfig = useCallback(async () => {
         try {
             const token = localStorage.getItem('ADMIN_TOKEN');
-            const [backupRes, dcTemplateRes, dcTemplatesRes] = await Promise.all([
+            const [backupRes, dcTemplateRes] = await Promise.all([
                 fetch(`${apiUrl}/api/admin/config/backup-path`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 }),
                 fetch(`${apiUrl}/api/admin/config/dc-template`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                }),
-                fetch(`${apiUrl}/api/admin/config/dc-templates`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 })
             ]);
@@ -78,21 +75,11 @@ const Settings = () => {
                     ...dcTemplateData,
                     layoutMode: dcTemplateData.layoutMode || 'printed'
                 }));
-                setDcTemplateName(dcTemplateData.templateName || 'Default Template');
-                if (dcTemplateData.companyName) {
-                    updateCompanyName(dcTemplateData.companyName);
-                }
             }
 
-            if (dcTemplatesRes.ok) {
-                const catalog = await dcTemplatesRes.json();
-                setDcTemplates(Array.isArray(catalog.templates) ? catalog.templates : []);
-                if (catalog.activeTemplateId) {
-                    setSelectedDcTemplateId(catalog.activeTemplateId);
-                }
-            }
+
         } catch (err) { console.error(err); }
-    }, [apiUrl, updateCompanyName]);
+    }, [apiUrl]);
 
     const fetchBackups = useCallback(async () => {
         setLoadingBackups(true);
@@ -149,58 +136,20 @@ const Settings = () => {
         }
     };
 
-    const handleSelectDcTemplate = async (templateId) => {
-        if (!templateId) return;
-        try {
-            const token = localStorage.getItem('ADMIN_TOKEN');
-            const res = await fetch(`${apiUrl}/api/admin/config/dc-template/select`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({ templateId })
-            });
-            const data = await res.json();
-            if (!res.ok) {
-                throw new Error(data.error || 'Failed to switch template');
-            }
-            setSelectedDcTemplateId(data.templateId || templateId);
-            setDcTemplateName(data.templateName || 'Untitled Template');
-            if (data.dcTemplate && data.dcTemplate.companyName) {
-                updateCompanyName(data.dcTemplate.companyName);
-            }
-            setDcTemplate((prev) => ({ ...prev, ...(data.dcTemplate || {}) }));
-        } catch (err) {
-            showNotification(err.message || 'Failed to switch template', 'error');
-        }
-    };
+    const handleSystemInfoClick = () => {
+        setActiveTab('system');
+        if (showDangerZone) return;
 
-    const handleNewTemplateDraft = () => {
-        setSelectedDcTemplateId('');
-        setDcTemplateName('New Template');
-        setDcTemplate({
-            layoutMode: 'printed',
-            companyName: '',
-            subTitle: '',
-            documentTitle: 'DELIVERY NOTE',
-            gstin: '',
-            address: '',
-            phoneText: '',
-            tableHeaderColor: '#1a5c1a',
-            showPartyAddress: true,
-            showQuality: true,
-            showFolding: true,
-            showLotNo: true,
-            showBillNo: true,
-            showBillPreparedBy: true,
-            logoDataUrl: '',
-            logoDataUrl2: '',
-            companyNameSize: 16,
-            subTitleSize: 8,
-            addressSize: 7.5
+        setSystemInfoClickCount((prev) => {
+            const next = prev + 1;
+            if (next >= 3) {
+                setShowDangerZone(true);
+            }
+            return next;
         });
     };
+
+
 
     // Core preview generator — called only by button click
     const generatePreview = (templateToUse) => {
@@ -279,9 +228,18 @@ const Settings = () => {
     };
 
     const handleSaveDcTemplate = async () => {
+        // Prevent multiple simultaneous saves
+        if (savingDcTemplate) {
+            showNotification('Save already in progress. Please wait...', 'warning');
+            return;
+        }
+        
         setSavingDcTemplate(true);
         try {
             const token = localStorage.getItem('ADMIN_TOKEN');
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+            
             const res = await fetch(`${apiUrl}/api/admin/config/dc-template`, {
                 method: 'POST',
                 headers: {
@@ -290,12 +248,17 @@ const Settings = () => {
                 },
                 body: JSON.stringify({
                     ...dcTemplate,
-                    templateId: selectedDcTemplateId || undefined,
-                    templateName: dcTemplateName || 'Untitled Template'
-                })
+                    templateName: 'Default Template'
+                }),
+                signal: controller.signal
             });
 
+            clearTimeout(timeoutId);
+
             if (!res.ok) {
+                if (res.status === 429) {
+                    throw new Error('Too many requests. Please wait before saving again.');
+                }
                 if (res.status === 413) {
                     throw new Error('Template payload is too large. Use a smaller logo image.');
                 }
@@ -316,18 +279,13 @@ const Settings = () => {
             if (data.dcTemplate) {
                 setDcTemplate((prev) => ({ ...prev, ...data.dcTemplate }));
             }
-            if (Array.isArray(data.templates)) {
-                setDcTemplates(data.templates);
-            }
-            if (data.templateId) {
-                setSelectedDcTemplateId(data.templateId);
-            }
-            if (data.templateName) {
-                setDcTemplateName(data.templateName);
-            }
+
             showNotification('DC template saved successfully', 'success');
         } catch (err) {
-            showNotification(err.message || 'Failed to save DC template', 'error');
+            const errorMsg = err.message || 'Failed to save DC template';
+            if (!errorMsg.includes('aborted')) {
+                showNotification(errorMsg, 'error');
+            }
         } finally {
             setSavingDcTemplate(false);
         }
@@ -539,7 +497,7 @@ const Settings = () => {
     };
 
     return (
-        <div style={{ padding: '2rem', height: '100%', overflowY: 'auto' }}>
+        <div style={{ padding: '2rem', height: '100%', overflowY: 'auto', background: 'var(--bg-primary)' }}>
             <div className="animate-fade-in" style={{ maxWidth: '1000px', margin: '0 auto' }}>
 
                 {/* Header */}
@@ -593,7 +551,7 @@ const Settings = () => {
                         Backup & Recovery
                     </button>
                     <button
-                        onClick={() => setActiveTab('system')}
+                        onClick={handleSystemInfoClick}
                         style={{
                             padding: '1rem 0.5rem', background: 'none', border: 'none',
                             borderBottom: activeTab === 'system' ? '2px solid var(--accent-color)' : '2px solid transparent',
@@ -714,40 +672,7 @@ const Settings = () => {
 
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
 
-                                {/* Template Selector */}
-                                <div style={{ ...infoCardStyle, marginBottom: 0 }}>
-                                    <div style={{ fontWeight: '700', fontSize: '0.78rem', color: 'var(--accent-color)', marginBottom: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Template Set</div>
 
-                                    <label style={labelStyle}>Select Template</label>
-                                    <select
-                                        value={selectedDcTemplateId}
-                                        onChange={(e) => handleSelectDcTemplate(e.target.value)}
-                                        style={{ ...textInputStyle, marginBottom: '0.7rem' }}
-                                    >
-                                        {dcTemplates.length === 0 ? (
-                                            <option value="">No templates found</option>
-                                        ) : (
-                                            dcTemplates.map((tpl) => (
-                                                <option key={tpl.id} value={tpl.id}>
-                                                    {tpl.name}
-                                                </option>
-                                            ))
-                                        )}
-                                    </select>
-
-                                    <label style={labelStyle}>Template Name</label>
-                                    <input
-                                        type="text"
-                                        value={dcTemplateName}
-                                        onChange={(e) => setDcTemplateName(e.target.value)}
-                                        style={{ ...textInputStyle, marginBottom: '0.7rem' }}
-                                        placeholder="Template name"
-                                    />
-
-                                    <button className="btn" style={{ width: '100%', justifyContent: 'center' }} onClick={handleNewTemplateDraft}>
-                                        + New Template
-                                    </button>
-                                </div>
 
                                 {/* Layout Mode */}
                                 <div style={{ ...infoCardStyle, marginBottom: 0 }}>
@@ -1107,81 +1032,82 @@ const Settings = () => {
                                 </div>
                             </div>
 
-                            {/* Danger Zone */}
-                            <div style={{ marginTop: '3rem', paddingTop: '2rem', borderTop: '1px solid var(--border-color)' }}>
-                                <div style={{
-                                    background: 'rgba(239, 68, 68, 0.03)',
-                                    borderRadius: '12px',
-                                    border: '1px solid rgba(239, 68, 68, 0.2)',
-                                    overflow: 'hidden'
-                                }}>
-                                    <div style={{ padding: '1.5rem', borderBottom: '1px solid rgba(239, 68, 68, 0.1)', background: 'var(--bg-secondary)' }}>
-                                        <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--error-color)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                            <span>!</span> Danger Zone
-                                        </h3>
-                                        <p style={{ margin: '0.5rem 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                                            System-wide data reset and permanent deletion.
-                                        </p>
-                                    </div>
-                                    <div style={{ padding: '2.5rem', textAlign: 'center' }}>
-                                        {!showWipeConfirm ? (
-                                            <button
-                                                onClick={() => setShowWipeConfirm(true)}
-                                                className="btn"
-                                                style={{
-                                                    maxWidth: '400px', margin: '0 auto', justifyContent: 'center', padding: '1rem 2rem',
-                                                    background: 'var(--error-color)', color: '#fff', border: 'none',
-                                                    fontWeight: '800', borderRadius: '8px', cursor: 'pointer',
-                                                    fontSize: '0.9rem', letterSpacing: '0.05em', display: 'flex'
-                                                }}
-                                            >
-                                                INITIALIZE SYSTEM WIPE
-                                            </button>
-                                        ) : (
-                                            <div style={{ maxWidth: '400px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                                                <p style={{ color: 'var(--error-color)', fontWeight: 'bold', fontSize: '0.9rem' }}>
-                                                    ENTER WIPE PASSWORD TO PROCEED:
-                                                </p>
-                                                <input
-                                                    type="password"
-                                                    value={wipePasswordInput}
-                                                    onChange={e => setWipePasswordInput(e.target.value)}
-                                                    placeholder="Enter password..."
-                                                    autoFocus
+                            {showDangerZone && (
+                                <div style={{ marginTop: '3rem', paddingTop: '2rem', borderTop: '1px solid var(--border-color)' }}>
+                                    <div style={{
+                                        background: 'rgba(239, 68, 68, 0.03)',
+                                        borderRadius: '12px',
+                                        border: '1px solid rgba(239, 68, 68, 0.2)',
+                                        overflow: 'hidden'
+                                    }}>
+                                        <div style={{ padding: '1.5rem', borderBottom: '1px solid rgba(239, 68, 68, 0.1)', background: 'var(--bg-secondary)' }}>
+                                            <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--error-color)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                <span>!</span> Danger Zone
+                                            </h3>
+                                            <p style={{ margin: '0.5rem 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                                System-wide data reset and permanent deletion.
+                                            </p>
+                                        </div>
+                                        <div style={{ padding: '2.5rem', textAlign: 'center' }}>
+                                            {!showWipeConfirm ? (
+                                                <button
+                                                    onClick={() => setShowWipeConfirm(true)}
+                                                    className="btn"
                                                     style={{
-                                                        width: '100%', padding: '0.8rem', borderRadius: '8px',
-                                                        border: '2px solid var(--error-color)', background: 'var(--bg-primary)',
-                                                        color: 'var(--text-primary)', textAlign: 'center', fontSize: '1.1rem', fontWeight: 'bold'
+                                                        maxWidth: '400px', margin: '0 auto', justifyContent: 'center', padding: '1rem 2rem',
+                                                        background: 'var(--error-color)', color: '#fff', border: 'none',
+                                                        fontWeight: '800', borderRadius: '8px', cursor: 'pointer',
+                                                        fontSize: '0.9rem', letterSpacing: '0.05em', display: 'flex'
                                                     }}
-                                                />
-                                                <div style={{ display: 'flex', gap: '1rem' }}>
-                                                    <button
-                                                        onClick={handleWipe}
-                                                        className="btn"
+                                                >
+                                                    INITIALIZE SYSTEM WIPE
+                                                </button>
+                                            ) : (
+                                                <div style={{ maxWidth: '400px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                                    <p style={{ color: 'var(--error-color)', fontWeight: 'bold', fontSize: '0.9rem' }}>
+                                                        ENTER WIPE PASSWORD TO PROCEED:
+                                                    </p>
+                                                    <input
+                                                        type="password"
+                                                        value={wipePasswordInput}
+                                                        onChange={e => setWipePasswordInput(e.target.value)}
+                                                        placeholder="Enter password..."
+                                                        autoFocus
                                                         style={{
-                                                            flex: 2, justifyContent: 'center', padding: '0.8rem',
-                                                            background: 'var(--error-color)', color: '#fff', border: 'none',
-                                                            fontWeight: '800', borderRadius: '8px', cursor: 'pointer'
+                                                            width: '100%', padding: '0.8rem', borderRadius: '8px',
+                                                            border: '2px solid var(--error-color)', background: 'var(--bg-primary)',
+                                                            color: 'var(--text-primary)', textAlign: 'center', fontSize: '1.1rem', fontWeight: 'bold'
                                                         }}
-                                                    >
-                                                        CONFIRM WIPE
-                                                    </button>
-                                                    <button
-                                                        onClick={() => { setShowWipeConfirm(false); setWipePasswordInput(''); }}
-                                                        className="btn btn-secondary"
-                                                        style={{ flex: 1, justifyContent: 'center' }}
-                                                    >
-                                                        CANCEL
-                                                    </button>
+                                                    />
+                                                    <div style={{ display: 'flex', gap: '1rem' }}>
+                                                        <button
+                                                            onClick={handleWipe}
+                                                            className="btn"
+                                                            style={{
+                                                                flex: 2, justifyContent: 'center', padding: '0.8rem',
+                                                                background: 'var(--error-color)', color: '#fff', border: 'none',
+                                                                fontWeight: '800', borderRadius: '8px', cursor: 'pointer'
+                                                            }}
+                                                        >
+                                                            CONFIRM WIPE
+                                                        </button>
+                                                        <button
+                                                            onClick={() => { setShowWipeConfirm(false); setWipePasswordInput(''); }}
+                                                            className="btn btn-secondary"
+                                                            style={{ flex: 1, justifyContent: 'center' }}
+                                                        >
+                                                            CANCEL
+                                                        </button>
+                                                    </div>
                                                 </div>
-                                            </div>
-                                        )}
-                                        <p style={{ marginTop: '1.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
-                                            Caution: This will reset inventory, logout all batches, and clear all history logs.
-                                        </p>
+                                            )}
+                                            <p style={{ marginTop: '1.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
+                                                Caution: This will reset inventory, logout all batches, and clear all history logs.
+                                            </p>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
+                            )}
                         </div>
                     )}
 

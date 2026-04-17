@@ -280,12 +280,12 @@ function renderPrintedTemplateCompact(doc, dcData, rollsList, template) {
     doc.line(mL, curY, PW - mR, curY);
     const startY = curY + 1;
 
-    const totalColCount = 4;
+    const totalColCount = 5;
     const rollColCount = 3;
     const colW = UW / totalColCount;
     const rollAreaW = colW * rollColCount;
     const summaryX = mL + rollAreaW;
-    const summaryW = colW;
+    const summaryW = UW - rollAreaW;
     const bottomLimit = PH - 34;
     const titleRowH = 5.6;
     const detailRowH = 4.8;
@@ -299,41 +299,52 @@ function renderPrintedTemplateCompact(doc, dcData, rollsList, template) {
         return adjustedLength.toFixed(2);
     };
 
-    const drawPageSummaryColumn = (pageSummaryRows, topY, endY) => {
-        const totalH = endY - topY;
-        if (totalH < 14) return;
-
+    const drawPageSummaryColumn = (pageSummaryRows, topY, rollAreaEndY) => {
         const titleH = 5;
         const headerH = 5;
-        const splitX = summaryX + 11;
-        const snoCenterX = summaryX + ((splitX - summaryX) / 2);
         const rows = Math.max(pageSummaryRows.length, 1);
-        const rowsAreaTopY = topY + titleH + headerH;
-        const rowsAreaH = Math.max(endY - rowsAreaTopY, 4);
-        const rowGap = rowsAreaH / (rows + 1);
-        const bodyFontSize = rowGap < 4 ? 7 : 8;
-        const baselineOffset = Math.max(2.2, rowGap * 0.25);
+        const rowGap = 4.5;
+        const totalRowH = 6.5;
+        const columnStartY = topY;
+        const columnEndY = topY + titleH + headerH + (rows * rowGap) + totalRowH + 2;
+        const totalH = columnEndY - columnStartY;
+
+        const splitX = summaryX + 15;
+        const snoCenterX = summaryX + ((splitX - summaryX) / 2);
+        const bodyFontSize = 8;
 
         setInk();
         doc.setLineWidth(0.25);
-        doc.rect(summaryX, topY, summaryW, totalH);
-        doc.line(summaryX, topY + titleH, summaryX + summaryW, topY + titleH);
-        doc.line(summaryX, topY + titleH + headerH, summaryX + summaryW, topY + titleH + headerH);
-        doc.line(splitX, topY + titleH, splitX, endY);
+        doc.rect(summaryX, columnStartY, summaryW, totalH);
+        doc.line(summaryX, columnStartY + titleH, summaryX + summaryW, columnStartY + titleH);
+        doc.line(summaryX, columnStartY + titleH + headerH, summaryX + summaryW, columnStartY + titleH + headerH);
+        doc.line(splitX, columnStartY + titleH, splitX, columnEndY);
 
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(8);
-        doc.text('ROLL SUMMARY', summaryX + (summaryW / 2), topY + 3.6, { align: 'center' });
-        doc.text('S.No', snoCenterX, topY + titleH + 3.4, { align: 'center' });
-        doc.text('Total Mtrs', summaryX + summaryW - 1.5, topY + titleH + 3.4, { align: 'right' });
+        doc.text('ROLL SUMMARY', summaryX + (summaryW / 2), columnStartY + 3.6, { align: 'center' });
+        doc.text('S.No', snoCenterX, columnStartY + titleH + 3.4, { align: 'center' });
+        doc.text('Total Mtrs', summaryX + summaryW - 2, columnStartY + titleH + 3.4, { align: 'right' });
+
+        const rowsAreaTopY = columnStartY + titleH + headerH;
+        const totalRowY = rowsAreaTopY + (rows * rowGap);
+        doc.setLineWidth(0.2);
+        doc.line(summaryX, totalRowY, summaryX + summaryW, totalRowY);
 
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(bodyFontSize);
         pageSummaryRows.forEach((row, idx) => {
-            const y = rowsAreaTopY + ((idx + 1) * rowGap) + baselineOffset;
+            const y = rowsAreaTopY + ((idx + 1) * rowGap) - 1.5;
             doc.text(String(row.serialNo), snoCenterX, y, { align: 'center' });
-            doc.text(row.totalMtrs, summaryX + summaryW - 1.5, y, { align: 'right' });
+            doc.text(row.totalMtrs, summaryX + summaryW - 2, y, { align: 'right' });
         });
+
+        const totalY = totalRowY + 5.5;
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(bodyFontSize + 0.5);
+        const grandTotal = pageSummaryRows.reduce((sum, row) => sum + Number(row.totalMtrs), 0);
+        doc.text('Total Meters', splitX + 2, totalY);
+        doc.text(grandTotal.toFixed(2), summaryX + summaryW - 2, totalY, { align: 'right' });
     };
 
     let drawY = startY;
@@ -710,7 +721,8 @@ export const generateQuotationPdf = (quotationData, rollsList, templateConfig = 
 
         let curY = baseHeaderY;
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(8);
+        doc.setFontSize(8.5);
+        doc.setTextColor(30, 41, 59);
         doc.text('To M/s.', mL + 2, curY + 4);
         doc.setFont('helvetica', 'normal');
         doc.text(`: ${quotationData.partyName || '________________________________'}`, mL + 16, curY + 4);
@@ -719,13 +731,16 @@ export const generateQuotationPdf = (quotationData, rollsList, templateConfig = 
         const pAddr = String(quotationData.partyAddress || '').trim();
         if (pAddr) {
             doc.setFont('helvetica', 'bold');
+            doc.setFontSize(8.5);
+            doc.setTextColor(30, 41, 59);
             doc.text('Address', mL + 2, curY + 4);
             doc.setFont('helvetica', 'normal');
+            doc.setFontSize(7.8);
             const pAddrLines = doc.splitTextToSize(`: ${pAddr}`, UW - 20);
             pAddrLines.forEach((line, i) => {
-                doc.text(line, mL + 16, curY + 4 + i * 4);
+                doc.text(line, mL + 16, curY + 4 + i * 3.5);
             });
-            curY += 4 + pAddrLines.length * 4;
+            curY += 4 + pAddrLines.length * 3.5;
         }
 
         const validityText = quotationData.validityDate
@@ -733,6 +748,8 @@ export const generateQuotationPdf = (quotationData, rollsList, templateConfig = 
             : 'N/A';
 
         doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8.5);
+        doc.setTextColor(30, 41, 59);
         doc.text('Density', mL + 2, curY + 4);
         doc.setFont('helvetica', 'normal');
         doc.text(`: ${quotationData.density || 'N/A'}`, mL + 16, curY + 4);
@@ -743,27 +760,26 @@ export const generateQuotationPdf = (quotationData, rollsList, templateConfig = 
         curY += 9;
 
         doc.setLineWidth(0.4);
+        doc.setDrawColor(100, 116, 139);
         doc.line(mL, curY, PW - mR, curY);
         curY += 2;
 
         const totalRolls = Number(quotationData.totalRolls || rows.length || 0);
         const totalMetre = rows.reduce((sum, roll) => sum + Number(roll?.metre || 0), 0);
-        const totalWeight = rows.reduce((sum, roll) => sum + Number(roll?.weight || 0), 0);
 
         autoTable(doc, {
             startY: curY,
             margin: { left: mL, right: mR },
-            head: [['S.No', 'Barcode', 'Metre', 'Weight', 'Pieces']],
+            head: [['S.No', 'Barcode', 'Metre', 'Pieces']],
             body: (rows.length > 0 ? rows : [{}]).map((roll, index) => {
                 if (rows.length === 0) {
-                    return ['-', 'No rolls selected', '0.00', '0.00', '0'];
+                    return ['-', 'No rolls selected', '0.00', '0'];
                 }
                 const piecesCount = Array.isArray(roll?.pieces) ? roll.pieces.length : Number(roll?.pieces || 1);
                 return [
                     index + 1,
                     roll?.barcode || '-',
                     Number(roll?.metre || 0).toFixed(2),
-                    Number(roll?.weight || 0).toFixed(2),
                     piecesCount
                 ];
             }),
@@ -772,18 +788,19 @@ export const generateQuotationPdf = (quotationData, rollsList, templateConfig = 
                 fillColor: hexToRgb(template.tableHeaderColor),
                 textColor: 255,
                 fontStyle: 'bold',
-                fontSize: 8.7,
+                fontSize: 9,
                 lineWidth: 0,
-                halign: 'center'
+                halign: 'center',
+                cellPadding: 3.2
             },
             styles: {
-                fontSize: 8.1,
-                cellPadding: 2.8,
+                fontSize: 8.5,
+                cellPadding: 3.2,
                 textColor: [30, 41, 59]
             },
             bodyStyles: {
                 lineColor: [203, 213, 225],
-                lineWidth: 0.2
+                lineWidth: 0.25
             },
             alternateRowStyles: {
                 fillColor: [248, 250, 252]
@@ -791,79 +808,100 @@ export const generateQuotationPdf = (quotationData, rollsList, templateConfig = 
             columnStyles: {
                 0: { cellWidth: 14, halign: 'center' },
                 2: { halign: 'right' },
-                3: { halign: 'right' },
-                4: { halign: 'right', cellWidth: 16 }
+                3: { halign: 'right', cellWidth: 18 }
             }
         });
 
         const finalY = doc.lastAutoTable?.finalY || curY;
 
-        const summaryY = finalY + 5;
-        const summaryGap = 3;
-        const summaryBoxW = (UW - summaryGap * 2) / 3;
+        const summaryY = finalY + 6;
+        const summaryGap = 4;
+        const summaryBoxW = (UW - summaryGap) / 2;
         const summaryItems = [
             { label: 'Total Rolls', value: String(totalRolls) },
-            { label: 'Total Metre', value: totalMetre.toFixed(2) },
-            { label: 'Total Weight', value: totalWeight.toFixed(2) }
+            { label: 'Total Metre', value: totalMetre.toFixed(2) }
         ];
 
         summaryItems.forEach((item, idx) => {
             const boxX = mL + idx * (summaryBoxW + summaryGap);
             setInk();
-            doc.setLineWidth(0.3);
-            doc.rect(boxX, summaryY, summaryBoxW, 10.5);
+            doc.setLineWidth(0.5);
+            doc.setDrawColor(41, 84, 209);
+            doc.rect(boxX, summaryY, summaryBoxW, 11);
+            doc.setFillColor(248, 250, 252);
+            doc.rect(boxX, summaryY, summaryBoxW, 11, 'F');
             doc.setFont('helvetica', 'bold');
-            doc.setFontSize(7.2);
-            doc.text(item.label.toUpperCase(), boxX + 2, summaryY + 3.7);
-            doc.setFont('helvetica', 'normal');
-            doc.setFontSize(10);
-            doc.text(item.value, boxX + summaryBoxW - 2, summaryY + 8.1, { align: 'right' });
+            doc.setFontSize(7.5);
+            doc.setTextColor(71, 85, 105);
+            doc.text(item.label.toUpperCase(), boxX + summaryBoxW / 2, summaryY + 3.5, { align: 'center' });
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(12);
+            doc.setTextColor(30, 41, 59);
+            doc.text(item.value, boxX + summaryBoxW / 2, summaryY + 8.5, { align: 'center' });
         });
 
-        let notesY = summaryY + 14;
+        let notesY = summaryY + 15;
         const notes = String(quotationData.notes || '').trim();
         if (notes) {
             setInk();
-            doc.setLineWidth(0.25);
-            doc.rect(mL, notesY - 3.5, UW, 10);
+            doc.setLineWidth(0.35);
+            doc.setDrawColor(100, 116, 139);
+            doc.rect(mL, notesY - 3, UW, 11);
+            doc.setFillColor(248, 250, 252);
+            doc.rect(mL, notesY - 3, UW, 11, 'F');
             doc.setFont('helvetica', 'bold');
+            doc.setFontSize(8);
+            doc.setTextColor(30, 41, 59);
             doc.text('Notes:', mL + 2, notesY);
             doc.setFont('helvetica', 'normal');
+            doc.setFontSize(7.5);
             const notesLines = doc.splitTextToSize(notes, UW - 14);
             notesLines.forEach((line, idx) => {
-                doc.text(line, mL + 14, notesY + idx * 4);
+                doc.text(line, mL + 14, notesY + idx * 3.5);
             });
-            const notesHeight = Math.max(10, notesLines.length * 4 + 5.5);
+            const notesHeight = Math.max(11, notesLines.length * 3.5 + 5.5);
             setInk();
-            doc.setLineWidth(0.25);
-            doc.rect(mL, notesY - 3.5, UW, notesHeight);
+            doc.setLineWidth(0.35);
+            doc.setDrawColor(100, 116, 139);
+            doc.rect(mL, notesY - 3, UW, notesHeight);
             notesY += notesHeight + 2;
         }
 
         const terms = String(quotationData.terms || '').trim();
         if (terms) {
             setInk();
-            doc.setLineWidth(0.25);
-            doc.rect(mL, notesY - 3.5, UW, 10);
+            doc.setLineWidth(0.35);
+            doc.setDrawColor(100, 116, 139);
+            doc.rect(mL, notesY - 3, UW, 11);
+            doc.setFillColor(248, 250, 252);
+            doc.rect(mL, notesY - 3, UW, 11, 'F');
             doc.setFont('helvetica', 'bold');
+            doc.setFontSize(8);
+            doc.setTextColor(30, 41, 59);
             doc.text('Terms:', mL + 2, notesY);
             doc.setFont('helvetica', 'normal');
+            doc.setFontSize(7.5);
             const termLines = doc.splitTextToSize(terms, UW - 14);
             termLines.forEach((line, idx) => {
-                doc.text(line, mL + 14, notesY + idx * 4);
+                doc.text(line, mL + 14, notesY + idx * 3.5);
             });
-            const termsHeight = Math.max(10, termLines.length * 4 + 5.5);
+            const termsHeight = Math.max(11, termLines.length * 3.5 + 5.5);
             setInk();
-            doc.setLineWidth(0.25);
-            doc.rect(mL, notesY - 3.5, UW, termsHeight);
+            doc.setLineWidth(0.35);
+            doc.setDrawColor(100, 116, 139);
+            doc.rect(mL, notesY - 3, UW, termsHeight);
         }
 
         setInk();
-        doc.setLineWidth(0.25);
+        doc.setLineWidth(0.5);
+        doc.setDrawColor(71, 84, 209);
         doc.line(mL, PH - 16, PW - mR, PH - 16);
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(7.2);
+        doc.setFontSize(7);
+        doc.setTextColor(100, 116, 139);
         doc.text(`Generated: ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })}`, mL, PH - 11);
+        doc.setTextColor(30, 41, 59);
+        doc.setFont('helvetica', 'bold');
         doc.text('Authorised Signatory', PW - mR - 2, PH - 11, { align: 'right' });
 
         const filename = `${String(quotationData.quotationNumber || 'Quotation').replace(/\s+/g, '_')}.pdf`;

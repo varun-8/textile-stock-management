@@ -1,10 +1,12 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
+import { io } from 'socket.io-client';
 import { useConfig } from '../context/ConfigContext';
 import { useNotification } from '../context/NotificationContext';
 import { IconEye, IconPlus, IconTruck, IconX } from '../components/Icons';
 import { DENSITY_NAME } from '../constants';
 import { generateQuotationPdf } from '../utils/pdfGenerator';
+import { cachedAxiosGet, withExponentialBackoff } from '../utils/apiUtils';
 
 const DEFAULT_DC_TEMPLATE = {
     layoutMode: 'printed',
@@ -109,6 +111,17 @@ const Quotations = () => {
         return fallbackMessage;
     };
 
+    const fetchDcTemplateConfig = useCallback(async () => {
+        try {
+            const res = await withExponentialBackoff(() =>
+                axios.get(`${apiUrl}/api/admin/config/dc-template`, authHeaders())
+            );
+            setDcTemplateConfig(res.data || null);
+        } catch (error) {
+            console.error('Failed to fetch DC template config:', error);
+        }
+    }, [apiUrl]);
+
     const validateQuotationForm = () => {
         const errors = {};
         if (!form.partyName.trim()) {
@@ -124,11 +137,40 @@ const Quotations = () => {
     };
 
     useEffect(() => {
+        // Stagger initial API calls to avoid rate limiting
         fetchQuotations();
-        fetchDensities();
-        fetchDcTemplateConfig();
+        
+        const timer1 = setTimeout(() => fetchDensities(), 100);
+        const timer2 = setTimeout(() => fetchDcTemplateConfig(), 200);
+        
+        return () => {
+            clearTimeout(timer1);
+            clearTimeout(timer2);
+        };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    useEffect(() => {
+        const socketOptions = import.meta.env.DEV
+            ? { transports: ['polling'], upgrade: false }
+            : { transports: ['websocket', 'polling'] };
+
+        const socket = io(apiUrl, socketOptions);
+        let templateUpdateTimeout;
+        
+        // Debounce template update to prevent rate limiting
+        socket.on('template_update', () => {
+            if (templateUpdateTimeout) clearTimeout(templateUpdateTimeout);
+            templateUpdateTimeout = setTimeout(() => {
+                fetchDcTemplateConfig();
+            }, 500);
+        });
+
+        return () => {
+            if (templateUpdateTimeout) clearTimeout(templateUpdateTimeout);
+            socket.disconnect();
+        };
+    }, [apiUrl, fetchDcTemplateConfig]);
 
     useEffect(() => {
         return () => {
@@ -146,7 +188,9 @@ const Quotations = () => {
         try {
             setLoading(true);
             setLoadError('');
-            const res = await axios.get(`${apiUrl}/api/quotations`, authHeaders());
+            const res = await withExponentialBackoff(() =>
+                axios.get(`${apiUrl}/api/quotations`, authHeaders())
+            );
             setQuotations(Array.isArray(res.data) ? res.data : []);
         } catch (error) {
             console.error('Failed to fetch quotations:', error);
@@ -160,22 +204,15 @@ const Quotations = () => {
 
     const fetchDensities = async () => {
         try {
-            const res = await axios.get(`${apiUrl}/api/sizes`);
+            const res = await withExponentialBackoff(() =>
+                axios.get(`${apiUrl}/api/sizes`)
+            );
             const values = (Array.isArray(res.data) ? res.data : [])
                 .map((item) => String(item?.code || '').trim())
                 .filter(Boolean);
             setDensities(values);
         } catch (error) {
             console.error('Failed to fetch densities:', error);
-        }
-    };
-
-    const fetchDcTemplateConfig = async () => {
-        try {
-            const res = await axios.get(`${apiUrl}/api/admin/config/dc-template`, authHeaders());
-            setDcTemplateConfig(res.data || null);
-        } catch (error) {
-            console.error('Failed to fetch DC template config:', error);
         }
     };
 
@@ -188,7 +225,9 @@ const Quotations = () => {
 
         try {
             setLoadingRolls(true);
-            const res = await axios.get(`${apiUrl}/api/quotations/available-rolls?density=${encodeURIComponent(densityValue)}`, authHeaders());
+            const res = await withExponentialBackoff(() =>
+                axios.get(`${apiUrl}/api/quotations/available-rolls?density=${encodeURIComponent(densityValue)}`, authHeaders())
+            );
             const rows = Array.isArray(res.data?.rolls) ? res.data.rolls : [];
             setAvailableRolls(rows);
 
@@ -645,7 +684,7 @@ const Quotations = () => {
     };
 
     return (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden', background: 'var(--bg-primary)' }}>
             <header style={{
                 padding: '1.5rem 2rem',
                 background: 'linear-gradient(180deg, var(--bg-primary), var(--bg-secondary))',

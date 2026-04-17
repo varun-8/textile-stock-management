@@ -581,7 +581,7 @@ const Sessions = () => {
     });
 
     return (
-        <div style={{ padding: '2rem', height: '100%', overflowY: 'auto' }}>
+        <div style={{ padding: '2rem', height: '100%', overflowY: 'auto', background: 'var(--bg-primary)' }}>
             <div className="animate-fade-in" style={{ maxWidth: '1200px', margin: '0 auto', paddingBottom: '3rem' }}>
 
                 {/* Header Block */}

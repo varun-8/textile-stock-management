@@ -302,7 +302,7 @@ const Employees = () => {
                                                         background: 'var(--bg-tertiary)', padding: '4px 8px', borderRadius: '4px',
                                                         fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-primary)', border: '1px solid var(--border-color)'
                                                     }}>
-                                                        Device: {emp.lastScanner}
+                                                        {emp.lastScanner}
                                                     </span>
                                                 ) : <span style={{ opacity: 0.4, fontSize: '0.8rem' }}>-</span>}
                                             </td>

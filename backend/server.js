@@ -34,6 +34,7 @@ const { BackupManager } = require('./services/backup/backupManager');
 const { DataConsistencyChecker } = require('./services/backup/dataIntegrity');
 const CloudBackupManager = require('./services/backup/cloudBackupManager');
 const cloudBackupRoutes = require('./services/backup/cloudBackupRoutes');
+const { getConfigPath, getDefaultBackupDir, resolveBackupPath } = require('./utils/runtimePaths');
 
 let helmet = null;
 let rateLimit = null;
@@ -229,6 +230,14 @@ const authLimiter = new RateLimiter({
 app.use('/api/login', authLimiter.middleware({ maxRequests: 20 }));
 app.use('/api/auth', authLimiter.middleware({ maxRequests: 20 }));
 
+// Config endpoints: lenient rate limiting (500 req/min per IP)
+const configLimiter = new RateLimiter({
+  windowMs: 60000,
+  maxRequests: 500,
+  keyPrefix: 'config-limiter'
+});
+app.use('/api/admin/config', configLimiter.middleware({ maxRequests: 500 }));
+
 // Legacy rate limit for backward compatibility
 if (rateLimit) {
     const authLimiterLegacy = rateLimit({
@@ -316,9 +325,19 @@ if (httpsOptions) {
 
 app.use('/pwa', express.static(path.join(__dirname, 'public/pwa')));
 
+// Store ioHttps globally for later use
+let ioHttps = null;
+
+// Broadcast helper that emits to both HTTP and HTTPS socket servers
+const broadcastSocket = (event, data) => {
+    if (io) io.emit(event, data);
+    if (ioHttps) ioHttps.emit(event, data);
+};
+
 // Attach IO to request for routes
 app.use((req, res, next) => {
     req.io = io;
+    req.broadcastSocket = broadcastSocket; // Broadcast to all socket servers
     // Phase 9-10: Attach services to request
     req.jobQueue = jobQueue;
     req.reportGenerator = reportGenerator;
@@ -364,7 +383,7 @@ const reportGenerator = new AsyncReportGenerator(path.join(__dirname, 'reports')
 
 // Phase 10: Initialize Backup Manager
 const mongoUrl = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/textile-stock-management';
-const backupDir = path.join(__dirname, 'backups', 'mongo-dumps');
+const backupDir = path.join(getDefaultBackupDir(), 'mongo-dumps');
 if (!fs.existsSync(backupDir)) {
     fs.mkdirSync(backupDir, { recursive: true });
 }
@@ -406,9 +425,9 @@ connectWithRetry();
 
 // Initialize Cloud Backup Manager
 const getCloudBackupDir = () => {
-    let backupPath = path.join(__dirname, 'backups');
+    let backupPath = getDefaultBackupDir();
     try {
-        const configPath = path.join(__dirname, 'config.json');
+        const configPath = getConfigPath();
         if (fs.existsSync(configPath)) {
             try {
                 const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
@@ -422,9 +441,7 @@ const getCloudBackupDir = () => {
     }
     
     try {
-        if (!path.isAbsolute(backupPath)) {
-            backupPath = path.join(__dirname, '..', backupPath);
-        }
+        backupPath = resolveBackupPath(backupPath);
         fs.mkdirSync(backupPath, { recursive: true });
     } catch (mkdirErr) {
         console.warn(`⚠️ Could not create backup directory: ${mkdirErr.message}`);
@@ -754,7 +771,7 @@ const startHttpsServer = (port, label) => {
     const server = https.createServer(httpsOptions, app);
     
     // Attach Socket.IO to HTTPS server for PWA
-    const ioHttps = new Server(server, {
+    ioHttps = new Server(server, {
         cors: {
             origin: (origin, callback) => {
                 if (isOriginAllowed(origin)) return callback(null, true);
