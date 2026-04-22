@@ -2,6 +2,7 @@ const { app, BrowserWindow, screen, ipcMain, dialog, session } = require('electr
 const path = require('path');
 const fs = require('fs');
 const net = require('net');
+const http = require('http');
 const { spawn } = require('child_process');
 
 // Load environment variables for the backend process
@@ -106,6 +107,46 @@ async function findAvailablePort(startPort) {
     return port;
 }
 
+function waitForBackendReady(port, timeoutMs = 30000) {
+    const deadline = Date.now() + timeoutMs;
+
+    return new Promise((resolve, reject) => {
+        const tryOnce = () => {
+            const req = http.get({
+                host: '127.0.0.1',
+                port,
+                path: '/api/admin/server-ip',
+                timeout: 1500
+            }, (res) => {
+                res.resume();
+                if (res.statusCode && res.statusCode < 500) {
+                    resolve(true);
+                    return;
+                }
+                if (Date.now() >= deadline) {
+                    reject(new Error(`Backend responded with status ${res.statusCode} on port ${port}`));
+                    return;
+                }
+                setTimeout(tryOnce, 500);
+            });
+
+            req.on('error', () => {
+                if (Date.now() >= deadline) {
+                    reject(new Error(`Backend did not become ready on port ${port} within ${timeoutMs}ms`));
+                    return;
+                }
+                setTimeout(tryOnce, 500);
+            });
+
+            req.on('timeout', () => {
+                req.destroy(new Error('Backend readiness probe timed out'));
+            });
+        };
+
+        tryOnce();
+    });
+}
+
 // Store assigned ports globally for IPC access
 let assignedHttpPort = 5010;
 let assignedHttpsPort = 5011;
@@ -150,14 +191,16 @@ async function startServices() {
             if (await isPortInUse(27017)) {
                 console.log('MongoDB port 27017 already in use. Reusing existing MongoDB instance.');
             } else {
-                console.log('Starting MongoDB embedded logic...');
+                console.log('Starting MongoDB embedded logic with authentication...');
                 const mongoLogPath = path.join(app.getPath('userData'), 'mongo.log');
                 mongoProcess = spawn(mongoPath, [
                     '--dbpath', dbPath, 
                     '--port', '27017',
                     '--bind_ip', '127.0.0.1',
                     '--logpath', mongoLogPath,
-                    '--logappend'
+                    '--logappend',
+                    '--auth',                          // ENABLE AUTHENTICATION
+                    '--nounixsocket'                    // Windows: disable unix socket
                 ], {
                     stdio: 'ignore', // mongod redirects its own output to the logpath
                     windowsHide: true
@@ -188,6 +231,11 @@ async function startServices() {
 
             console.log(`Starting Backend Node Server on Dynamic Ports: HTTP:${assignedHttpPort}, HTTPS:${assignedHttpsPort}`);
             const backendLogStream = fs.createWriteStream(path.join(app.getPath('userData'), 'backend.log'), { flags: 'a' });
+            const writeBackendLog = (chunk) => {
+                if (!backendLogStream.destroyed && !backendLogStream.writableEnded) {
+                    backendLogStream.write(chunk);
+                }
+            };
             
             backendProcess = spawn('node', [backendScript], {
                 cwd: backendDir,
@@ -210,19 +258,26 @@ async function startServices() {
                 }
             });
             
-            backendProcess.stdout.pipe(backendLogStream);
-            backendProcess.stderr.pipe(backendLogStream);
+            backendProcess.stdout.on('data', (chunk) => writeBackendLog(chunk));
+            backendProcess.stderr.on('data', (chunk) => writeBackendLog(chunk));
             backendProcess.unref();
             
             backendProcess.on('error', (err) => {
                 console.error('Backend spawn error:', err);
-                backendLogStream.write(`\n[${new Date().toISOString()}] Spawn Error: ${err.message}\n`);
+                writeBackendLog(`\n[${new Date().toISOString()}] Spawn Error: ${err.message}\n`);
             });
 
             backendProcess.on('close', (code, signal) => {
                 console.error(`Backend process exited with code ${code} and signal ${signal}`);
-                backendLogStream.write(`\n[${new Date().toISOString()}] Process Exit: Code ${code}, Signal ${signal}\n`);
+                writeBackendLog(`\n[${new Date().toISOString()}] Process Exit: Code ${code}, Signal ${signal}\n`);
+                if (!backendLogStream.destroyed && !backendLogStream.writableEnded) {
+                    backendLogStream.end();
+                }
             });
+
+            console.log(`Waiting for backend HTTP readiness on port ${assignedHttpPort}...`);
+            await waitForBackendReady(assignedHttpPort);
+            console.log(`Backend HTTP server is ready on port ${assignedHttpPort}`);
         } catch (e) {
             console.error('Failed to start Backend:', e);
             dialog.showErrorBox('Initialization Error', `Backend startup failed:\n${e.message}`);
