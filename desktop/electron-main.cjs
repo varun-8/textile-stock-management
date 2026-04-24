@@ -147,11 +147,60 @@ function waitForBackendReady(port, timeoutMs = 30000) {
     });
 }
 
+function waitForTcpPort(host, port, timeoutMs = 15000) {
+    const deadline = Date.now() + timeoutMs;
+
+    return new Promise((resolve, reject) => {
+        const tryConnect = () => {
+            const socket = net.createConnection({ host, port });
+            let settled = false;
+
+            const finish = (ok, err) => {
+                if (settled) return;
+                settled = true;
+                try { socket.destroy(); } catch (_) {}
+                if (ok) {
+                    resolve(true);
+                    return;
+                }
+                if (Date.now() >= deadline) {
+                    reject(err || new Error(`Timed out waiting for ${host}:${port}`));
+                    return;
+                }
+                setTimeout(tryConnect, 400);
+            };
+
+            socket.once('connect', () => finish(true));
+            socket.once('error', (err) => finish(false, err));
+            socket.setTimeout(1500, () => finish(false, new Error('TCP probe timed out')));
+        };
+
+        tryConnect();
+    });
+}
+
+function resolveBundledNodeBinary(isPackaged) {
+    if (!isPackaged) return null;
+
+    const candidates = [
+        path.join(process.resourcesPath, 'resources', 'node', 'node.exe'),
+        path.join(process.resourcesPath, 'node', 'node.exe'),
+        path.join(process.resourcesPath, 'app.asar.unpacked', 'resources', 'node', 'node.exe')
+    ];
+
+    return candidates.find((candidate) => fs.existsSync(candidate)) || null;
+}
+
 // Store assigned ports globally for IPC access
 let assignedHttpPort = 5010;
 let assignedHttpsPort = 5011;
+let assignedMongoPort = 27017;
 
 async function startServices() {
+    // Resolve ports immediately so frontend gets the correct ones on boot
+    assignedHttpPort = await findAvailablePort(5050);
+    assignedHttpsPort = await findAvailablePort(assignedHttpPort + 1);
+
     const isPackaged = app.isPackaged;
     const { binaryPath: mongoPath, candidates: mongoCandidates } = resolveMongoBinary(isPackaged);
 
@@ -186,49 +235,54 @@ async function startServices() {
     }
 
     // 1. Start MongoDB
+    let mongoUriForBackend = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/textile-stock-management';
+
     if (mongoPath) {
         try {
-            if (await isPortInUse(27017)) {
-                console.log('MongoDB port 27017 already in use. Reusing existing MongoDB instance.');
-            } else {
-                console.log('Starting MongoDB embedded logic with authentication...');
-                const mongoLogPath = path.join(app.getPath('userData'), 'mongo.log');
-                mongoProcess = spawn(mongoPath, [
-                    '--dbpath', dbPath, 
-                    '--port', '27017',
-                    '--bind_ip', '127.0.0.1',
-                    '--logpath', mongoLogPath,
-                    '--logappend',
-                    '--auth',                          // ENABLE AUTHENTICATION
-                    '--nounixsocket'                    // Windows: disable unix socket
-                ], {
-                    stdio: 'ignore', // mongod redirects its own output to the logpath
-                    windowsHide: true
-                });
-                mongoProcess.on('error', (err) => console.error('Mongo Error:', err));
-            }
+            assignedMongoPort = await findAvailablePort(27017);
+            console.log(`Starting app-owned MongoDB on port ${assignedMongoPort}...`);
+
+            const mongoLogPath = path.join(app.getPath('userData'), 'mongo.log');
+            mongoProcess = spawn(mongoPath, [
+                '--dbpath', dbPath,
+                '--port', String(assignedMongoPort),
+                '--bind_ip', '127.0.0.1',
+                '--logpath', mongoLogPath,
+                '--logappend'
+            ], {
+                stdio: 'ignore', // mongod redirects its own output to the logpath
+                windowsHide: true
+            });
+
+            mongoProcess.on('error', (err) => console.error('Mongo Error:', err));
+            mongoUriForBackend = `mongodb://127.0.0.1:${assignedMongoPort}/textile-stock-management`;
+
+            console.log(`Waiting for MongoDB readiness on 127.0.0.1:${assignedMongoPort}...`);
+            await waitForTcpPort('127.0.0.1', assignedMongoPort, 20000);
+            console.log(`MongoDB is ready on 127.0.0.1:${assignedMongoPort}`);
         } catch (e) {
             console.error('Failed to start MongoDB:', e);
+            dialog.showErrorBox('Initialization Error', `MongoDB startup failed:\n${e.message}`);
+            return;
         }
     } else {
         const searchedPaths = mongoCandidates.length > 0 ? mongoCandidates.join('\n') : '(no candidates)';
         console.error('MongoDB executable not found. Searched paths:\n', searchedPaths);
-        dialog.showErrorBox(
-            'Initialization Error',
-            `MongoDB binary not found.\n\nSearched:\n${searchedPaths}\n\nSet MONGOD_PATH or install MongoDB Server.`
-        );
+        const externalMongoAvailable = await isPortInUse(27017);
+        if (!externalMongoAvailable) {
+            dialog.showErrorBox(
+                'Initialization Error',
+                `MongoDB binary not found and no external MongoDB is listening on port 27017.\n\nSearched:\n${searchedPaths}\n\nSet MONGOD_PATH, bundle mongod.exe, or install MongoDB Server.`
+            );
+            return;
+        }
+
+        console.warn('MongoDB binary not found. Falling back to external MongoDB on port 27017.');
     }
 
     // 2. Start Backend using Electron's built-in node
     if (fs.existsSync(backendScript)) {
         try {
-            // Give MongoDB a few seconds to initialize its socket listeners
-            console.log('Waiting for MongoDB to initialize...');
-            await new Promise(resolve => setTimeout(resolve, 3000));
-
-            assignedHttpPort = await findAvailablePort(5050);
-            assignedHttpsPort = await findAvailablePort(assignedHttpPort + 1);
-
             console.log(`Starting Backend Node Server on Dynamic Ports: HTTP:${assignedHttpPort}, HTTPS:${assignedHttpsPort}`);
             const backendLogStream = fs.createWriteStream(path.join(app.getPath('userData'), 'backend.log'), { flags: 'a' });
             const writeBackendLog = (chunk) => {
@@ -237,14 +291,21 @@ async function startServices() {
                 }
             };
             
-            backendProcess = spawn('node', [backendScript], {
+            const bundledNode = resolveBundledNodeBinary(isPackaged);
+            const nodeBinary = bundledNode || 'node';
+
+            if (isPackaged && !bundledNode) {
+                console.warn('Bundled node.exe not found. Falling back to "node" from PATH.');
+            }
+
+            backendProcess = spawn(nodeBinary, [backendScript], {
                 cwd: backendDir,
                 detached: true,
                 stdio: ['ignore', 'pipe', 'pipe'],
                 windowsHide: true,
                 env: {
                     ...process.env,
-                    MONGODB_URI: process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/textile-stock-management',
+                    MONGODB_URI: mongoUriForBackend,
                     TLS_KEY_PATH: process.env.TLS_KEY_PATH || tlsKeyPath,
                     TLS_CERT_PATH: process.env.TLS_CERT_PATH || tlsCertPath,
                     APP_RUNTIME_DIR: runtimeDir,

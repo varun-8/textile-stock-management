@@ -67,7 +67,7 @@ Desktop.ini
 *.suo
 *.sln
 *.sw?
-
+*.pdb
 # Cache
 .cache/
 .eslintcache

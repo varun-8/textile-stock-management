@@ -1,5 +1,5 @@
 try {
-    require('dotenv').config();
+    require('dotenv').config({ path: require('path').resolve(__dirname, '.env') });
 } catch (err) {
     console.log('[Info] dotenv not found, assuming environment variables are provided by the host process.');
 }

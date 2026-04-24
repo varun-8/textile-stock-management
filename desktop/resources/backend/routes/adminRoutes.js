@@ -20,6 +20,7 @@ const { getWorkspaceCode } = require('../utils/workspace');
 const { normalizePieces, totalFromPieces } = require('../utils/rollPieces');
 const { detectMissingSequences } = require('../utils/missingSequenceService');
 const { ensureInstallApk } = require('../services/installApkService');
+const { getConfigPath, getDefaultBackupDir, resolveBackupPath } = require('../utils/runtimePaths');
 const HTTP_PORT = parseInt(process.env.HTTP_PORT || '5000', 10);
 const HTTPS_PORT = parseInt(process.env.PORT || '5001', 10);
 
@@ -38,8 +39,6 @@ router.get('/audit-logs', async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
-
-const getConfigPath = () => require('path').join(__dirname, '../config.json');
 
 const DEFAULT_DC_TEMPLATE = {
     layoutMode: 'printed',
@@ -184,7 +183,7 @@ const writeConfigFile = (config) => {
 router.get('/config/backup-path', (req, res) => {
     try {
         const config = readConfigFile();
-        res.json({ path: config.backupPath || './backups' });
+        res.json({ path: resolveBackupPath(config.backupPath || getDefaultBackupDir()) });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -194,7 +193,7 @@ router.get('/config/backup-path', (req, res) => {
 router.post('/config/backup-path', (req, res) => {
     try {
         const config = readConfigFile();
-        config.backupPath = req.body.path || './backups';
+        config.backupPath = req.body.path || getDefaultBackupDir();
         writeConfigFile(config);
         res.json({ success: true });
     } catch (err) {
@@ -275,6 +274,21 @@ router.post('/config/dc-template', (req, res) => {
         writeConfigFile(config);
         const active = persisted.templates.find((t) => t.id === persisted.activeTemplateId);
 
+        // Broadcast socket event to ALL connected clients (HTTP and HTTPS)
+        if (req.broadcastSocket) {
+            req.broadcastSocket('template_update', { 
+                templateId: active?.id,
+                templateName: active?.name,
+                timestamp: new Date()
+            });
+        } else if (io) {
+            io.emit('template_update', { 
+                templateId: active?.id,
+                templateName: active?.name,
+                timestamp: new Date()
+            });
+        }
+
         res.json({
             success: true,
             activeTemplateId: persisted.activeTemplateId,
@@ -311,6 +325,21 @@ router.post('/config/dc-template/select', (req, res) => {
         const persisted = persistDcTemplatesConfig(config, templates, templateId);
         writeConfigFile(config);
         const active = persisted.templates.find((tpl) => tpl.id === persisted.activeTemplateId);
+
+        // Broadcast socket event to ALL connected clients (HTTP and HTTPS)
+        if (req.broadcastSocket) {
+            req.broadcastSocket('template_update', { 
+                templateId: active?.id,
+                templateName: active?.name,
+                timestamp: new Date()
+            });
+        } else if (io) {
+            io.emit('template_update', { 
+                templateId: active?.id,
+                templateName: active?.name,
+                timestamp: new Date()
+            });
+        }
 
         res.json({
             success: true,

@@ -3,7 +3,7 @@ const Scanner = require('../models/Scanner');
 const User = require('../models/User');
 const crypto = require('crypto'); // Built-in Node module
 const os = require('os');
-const { verifyToken } = require('../middleware/authMiddleware');
+const { verifyToken, issueAdminToken } = require('../middleware/authMiddleware');
 
 module.exports = function createAuthRouter(io) {
     const router = express.Router();
@@ -308,6 +308,40 @@ router.post('/check-device', async (req, res) => {
         }
 
         res.json({ alreadyPaired: false });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// --- 1b. ADMIN LOGIN (Desktop/Web Interface) ---
+// For desktop app and web admin login without scanner requirement
+router.post('/admin-login', async (req, res) => {
+    try {
+        const { username, password } = req.body;
+        
+        if (!username || !password) {
+            return res.status(400).json({ error: 'Username and password required' });
+        }
+        
+        // Validate against environment variables (hardcoded admin credentials)
+        const validUsername = process.env.APP_USERNAME || 'admin';
+        const validPassword = process.env.APP_PASSWORD || 'password';
+        
+        if (username !== validUsername || password !== validPassword) {
+            return res.status(401).json({ error: 'Invalid credentials' });
+        }
+        
+        // Issue admin token
+        const token = issueAdminToken({ role: 'ADMIN', username });
+        
+        res.json({
+            success: true,
+            token,
+            user: {
+                username: 'admin',
+                role: 'ADMIN'
+            }
+        });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

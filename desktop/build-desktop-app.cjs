@@ -95,6 +95,19 @@ try {
         console.log('    → node_modules not found in backend, installing...');
         runCommand('npm install --production', backendResourcesDir);
     }
+
+    // Bundle Node.js runtime so target machines don't need Node installed
+    console.log('  → Bundling Node.js runtime...');
+    const nodeResourcesDir = path.join(RESOURCES_DIR, 'node');
+    fs.ensureDirSync(nodeResourcesDir);
+    const nodeExeSrc = process.execPath; // node.exe running this build script
+    const nodeExeDest = path.join(nodeResourcesDir, 'node.exe');
+    if (nodeExeSrc && fs.existsSync(nodeExeSrc)) {
+        fs.copySync(nodeExeSrc, nodeExeDest);
+        console.log('  ✓ Bundled node.exe');
+    } else {
+        console.log('  ⚠ node.exe not found — backend will require Node.js on target system');
+    }
     
     // Copy MongoDB binary if available
     const mongoResourcesSrc = path.join(BACKEND_DIR, 'resources', 'mongo');
@@ -154,9 +167,11 @@ try {
         ],
         asarUnpack: [
             "resources/mongo/**/*",
-            "resources/backend/**/*"
+            "resources/backend/**/*",
+            "resources/node/**/*"
         ],
         win: {
+            signAndEditExecutable: false,
             target: [
                 {
                     target: 'nsis',
