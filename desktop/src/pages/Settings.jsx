@@ -47,7 +47,11 @@ const Settings = () => {
         logoDataUrl2: '',
         companyNameSize: 16,
         subTitleSize: 8,
-        addressSize: 7.5
+        addressSize: 7.5,
+        detailFontSize: 9,
+        detailLineHeight: 4.4,
+        footerFontSize: 9,
+        signatoryFontSize: 8
     });
 
     const [savingDcTemplate, setSavingDcTemplate] = useState(false);
@@ -311,7 +315,11 @@ const Settings = () => {
             logoDataUrl2: '',
             companyNameSize: 16,
             subTitleSize: 8,
-            addressSize: 7.5
+            addressSize: 7.5,
+            detailFontSize: 9,
+            detailLineHeight: 4.4,
+            footerFontSize: 9,
+            signatoryFontSize: 8
         });
     };
 
@@ -745,6 +753,62 @@ const Settings = () => {
                                     <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center' }}>
                                         <input type="color" value={dcTemplate.tableHeaderColor || '#1a5c1a'} onChange={(e) => handleDcTemplateChange('tableHeaderColor', e.target.value)} style={{ width: '44px', height: '38px', border: '1px solid var(--border-color)', borderRadius: '6px', background: 'transparent', cursor: 'pointer' }} />
                                         <input type="text" value={dcTemplate.tableHeaderColor || '#1a5c1a'} onChange={(e) => handleDcTemplateChange('tableHeaderColor', e.target.value)} style={textInputStyle} placeholder="#1a5c1a" />
+                                    </div>
+
+                                    <div style={{ fontWeight: '700', fontSize: '0.78rem', color: 'var(--accent-color)', margin: '1rem 0 0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Detail &amp; Footer Fonts</div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.7rem' }}>
+                                        <div>
+                                            <label style={labelStyle}>Detail Font Size</label>
+                                            <input
+                                                type="number"
+                                                min="7"
+                                                max="14"
+                                                step="0.5"
+                                                value={dcTemplate.detailFontSize ?? ''}
+                                                placeholder="9"
+                                                onChange={(e) => handleDcTemplateChange('detailFontSize', e.target.value === '' ? '' : parseFloat(e.target.value))}
+                                                style={textInputStyle}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label style={labelStyle}>Detail Line Height</label>
+                                            <input
+                                                type="number"
+                                                min="3"
+                                                max="8"
+                                                step="0.2"
+                                                value={dcTemplate.detailLineHeight ?? ''}
+                                                placeholder="4.4"
+                                                onChange={(e) => handleDcTemplateChange('detailLineHeight', e.target.value === '' ? '' : parseFloat(e.target.value))}
+                                                style={textInputStyle}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label style={labelStyle}>Footer Font Size</label>
+                                            <input
+                                                type="number"
+                                                min="7"
+                                                max="14"
+                                                step="0.5"
+                                                value={dcTemplate.footerFontSize ?? ''}
+                                                placeholder="9"
+                                                onChange={(e) => handleDcTemplateChange('footerFontSize', e.target.value === '' ? '' : parseFloat(e.target.value))}
+                                                style={textInputStyle}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label style={labelStyle}>Signatory Font Size</label>
+                                            <input
+                                                type="number"
+                                                min="6"
+                                                max="12"
+                                                step="0.5"
+                                                value={dcTemplate.signatoryFontSize ?? ''}
+                                                placeholder="8"
+                                                onChange={(e) => handleDcTemplateChange('signatoryFontSize', e.target.value === '' ? '' : parseFloat(e.target.value))}
+                                                style={textInputStyle}
+                                            />
+                                        </div>
                                     </div>
                                 </div>
 

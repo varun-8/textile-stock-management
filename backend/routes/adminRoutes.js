@@ -61,12 +61,22 @@ const DEFAULT_DC_TEMPLATE = {
     logoDataUrl2: '',
     companyNameSize: 16,
     subTitleSize: 8,
-    addressSize: 7.5
+    addressSize: 7.5,
+    detailFontSize: 9,
+    detailLineHeight: 4.4,
+    footerFontSize: 9,
+    signatoryFontSize: 8
 };
 
 const createTemplateId = () => `tpl-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 const sanitizeDcTemplate = (body = {}) => {
+    const parseTemplateNumber = (value, fallback, min, max) => {
+        const num = parseFloat(value);
+        if (!Number.isFinite(num)) return fallback;
+        return Math.min(max, Math.max(min, num));
+    };
+
     const safeTemplate = {
         layoutMode: ['modern', 'printed'].includes(String(body.layoutMode || ''))
             ? String(body.layoutMode)
@@ -90,9 +100,13 @@ const sanitizeDcTemplate = (body = {}) => {
         showDriver: body.showDriver !== false,
         logoDataUrl: typeof body.logoDataUrl === 'string' ? body.logoDataUrl : '',
         logoDataUrl2: typeof body.logoDataUrl2 === 'string' ? body.logoDataUrl2 : '',
-        companyNameSize: parseFloat(body.companyNameSize) || 16,
-        subTitleSize: parseFloat(body.subTitleSize) || 8,
-        addressSize: parseFloat(body.addressSize) || 7.5
+        companyNameSize: parseTemplateNumber(body.companyNameSize, 16, 8, 40),
+        subTitleSize: parseTemplateNumber(body.subTitleSize, 8, 6, 24),
+        addressSize: parseTemplateNumber(body.addressSize, 7.5, 6, 18),
+        detailFontSize: parseTemplateNumber(body.detailFontSize, 9, 7, 14),
+        detailLineHeight: parseTemplateNumber(body.detailLineHeight, 4.4, 3, 8),
+        footerFontSize: parseTemplateNumber(body.footerFontSize, 9, 7, 14),
+        signatoryFontSize: parseTemplateNumber(body.signatoryFontSize, 8, 6, 12)
     };
 
     if (safeTemplate.logoDataUrl && !safeTemplate.logoDataUrl.startsWith('data:image/')) {

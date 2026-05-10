@@ -22,7 +22,11 @@ const DEFAULT_TEMPLATE = {
     logoDataUrl2: '',
     companyNameSize: 16,
     subTitleSize: 8,
-    addressSize: 7.5
+    addressSize: 7.5,
+    detailFontSize: 9,
+    detailLineHeight: 4.4,
+    footerFontSize: 9,
+    signatoryFontSize: 8
 };
 
 function hexToRgb(hex) {
@@ -233,8 +237,14 @@ function renderPrintedTemplateCompact(doc, dcData, rollsList, template) {
     const adjustedMetre = (value) => Number((Number(value || 0) * factor).toFixed(2));
     const items = Array.isArray(rollsList) ? rollsList : [];
 
+    // User-configurable readability settings for printed layout.
+    const detailFontSize = parseFloat(template.detailFontSize) || 9;
+    const detailLineHeight = parseFloat(template.detailLineHeight) || 4.4;
+    const footerFontSize = parseFloat(template.footerFontSize) || 9;
+    const signatoryFontSize = parseFloat(template.signatoryFontSize) || 8;
+
     let curY = baseHeaderY;
-    doc.setFontSize(8);
+    doc.setFontSize(detailFontSize);
     doc.setFont('helvetica', 'bold');
     doc.text('To M/s.', mL + 2, curY + 4);
     doc.setFont('helvetica', 'normal');
@@ -248,8 +258,8 @@ function renderPrintedTemplateCompact(doc, dcData, rollsList, template) {
         doc.setFont('helvetica', 'normal');
         if (pAddr) {
             const pAddrLines = doc.splitTextToSize(`: ${pAddr}`, UW - 20);
-            pAddrLines.forEach((line, i) => doc.text(line, mL + 16, curY + 4 + i * 4));
-            curY += 4 + pAddrLines.length * 4;
+            pAddrLines.forEach((line, i) => doc.text(line, mL + 16, curY + 4 + i * detailLineHeight));
+            curY += 4 + pAddrLines.length * detailLineHeight;
         } else {
             doc.text(': ________________________________', mL + 16, curY + 4);
             curY += 7;
@@ -276,12 +286,12 @@ function renderPrintedTemplateCompact(doc, dcData, rollsList, template) {
     }
     curY += 9;
 
-    doc.setLineWidth(0.35);
+    doc.setLineWidth(0.28);
     doc.line(mL, curY, PW - mR, curY);
     const startY = curY + 1;
 
-    const totalColCount = 5;
-    const rollColCount = 3;
+    const totalColCount = 6;
+    const rollColCount = 4;
     const colW = UW / totalColCount;
     const rollAreaW = colW * rollColCount;
     const summaryX = mL + rollAreaW;
@@ -291,7 +301,7 @@ function renderPrintedTemplateCompact(doc, dcData, rollsList, template) {
     const detailRowH = 4.8;
     const _padX = 2.2;
     const textOffsetY = 3.3;
-    const serialColW = 10;
+    const rollSerialHeaderW = 6;
 
     const formatPieceValue = (piece) => {
         const rawLength = typeof piece === 'number' ? piece : Number(piece?.length || 0);
@@ -314,7 +324,7 @@ function renderPrintedTemplateCompact(doc, dcData, rollsList, template) {
         const bodyFontSize = 8;
 
         setInk();
-        doc.setLineWidth(0.25);
+        doc.setLineWidth(0.18);
         doc.rect(summaryX, columnStartY, summaryW, totalH);
         doc.line(summaryX, columnStartY + titleH, summaryX + summaryW, columnStartY + titleH);
         doc.line(summaryX, columnStartY + titleH + headerH, summaryX + summaryW, columnStartY + titleH + headerH);
@@ -328,7 +338,7 @@ function renderPrintedTemplateCompact(doc, dcData, rollsList, template) {
 
         const rowsAreaTopY = columnStartY + titleH + headerH;
         const totalRowY = rowsAreaTopY + (rows * rowGap);
-        doc.setLineWidth(0.2);
+        doc.setLineWidth(0.15);
         doc.line(summaryX, totalRowY, summaryX + summaryW, totalRowY);
 
         doc.setFont('helvetica', 'normal');
@@ -385,8 +395,8 @@ function renderPrintedTemplateCompact(doc, dcData, rollsList, template) {
             }
 
             setInk();
-            doc.setLineWidth(0.25);
-            if (isFirstGroupOnPage) doc.line(mL, drawY, mL + rollAreaW, drawY);
+            doc.setLineWidth(0.28);
+            doc.line(mL, drawY, mL + rollAreaW, drawY);
             doc.line(mL, drawY + groupHeight, mL + rollAreaW, drawY + groupHeight);
             doc.line(mL, drawY, mL, drawY + groupHeight);
             doc.line(mL + rollAreaW, drawY, mL + rollAreaW, drawY + groupHeight);
@@ -395,12 +405,17 @@ function renderPrintedTemplateCompact(doc, dcData, rollsList, template) {
                 const vx = mL + (c * colW);
                 doc.line(vx, drawY, vx, drawY + groupHeight);
             }
+            // Show barcode serial split in every populated roll column.
+            doc.setLineWidth(0.14);
             for (let c = 0; c < rollColCount; c++) {
-                const gx = mL + (c * colW);
-                doc.line(gx + serialColW, drawY, gx + serialColW, drawY + groupHeight);
+                if (!normalized[c]) continue;
+                const sx = mL + (c * colW) + rollSerialHeaderW;
+                const splitEndY = c === 0 ? (drawY + groupHeight) : (drawY + titleRowH);
+                doc.line(sx, drawY, sx, splitEndY);
             }
-
+            doc.setLineWidth(0.28);
             doc.line(mL, drawY + titleRowH, mL + rollAreaW, drawY + titleRowH);
+            doc.setLineWidth(0.18);
             for (let r = 1; r < totalRows; r++) {
                 const hy = drawY + titleRowH + (r * detailRowH);
                 doc.line(mL, hy, mL + rollAreaW, hy);
@@ -410,27 +425,40 @@ function renderPrintedTemplateCompact(doc, dcData, rollsList, template) {
                 if (!entry) return;
                 const gx = mL + (colIdx * colW);
                 const barcodeText = String(entry.roll?.barcode || '').trim();
-                const valueCellCenterX = gx + serialColW + ((colW - serialColW) / 2);
+                const serialCenterX = gx + (rollSerialHeaderW / 2);
+                const barcodeCenterX = gx + rollSerialHeaderW + ((colW - rollSerialHeaderW) / 2);
+                const valueCellCenterX = barcodeCenterX;
+                const showPieceNumbers = colIdx === 0;
 
                 doc.setFont('helvetica', 'bold');
+                doc.setFontSize(7);
+                // Barcode serial number in the fixed left serial sub-column.
+                doc.text(String(entry.absoluteIndex + 1), serialCenterX, drawY + 3.9, { align: 'center' });
                 doc.setFontSize(8);
-                doc.text(String(entry.absoluteIndex + 1), gx + (serialColW / 2), drawY + 3.9, { align: 'center' });
-                doc.text(barcodeText || `ROLL ${entry.absoluteIndex + 1}`, valueCellCenterX, drawY + 3.9, { align: 'center' });
+                // Keep barcode in the dedicated right sub-column so it never shifts.
+                doc.text(barcodeText || `ROLL ${entry.absoluteIndex + 1}`, barcodeCenterX, drawY + 3.9, { align: 'center' });
 
                 doc.setFont('helvetica', 'normal');
                 doc.setFontSize(7.6);
                 for (let r = 0; r < maxPieceRows; r++) {
                     const lineY = drawY + titleRowH + (r * detailRowH) + textOffsetY;
                     const lineValue = entry.pieceValues[r];
-                    if (!lineValue) continue;
-                    doc.text(String(r + 1), gx + (serialColW / 2), lineY, { align: 'center' });
-                    doc.text(lineValue, valueCellCenterX, lineY, { align: 'center' });
+                    // Show piece-row numbers only in the starting column.
+                    if (showPieceNumbers) {
+                        doc.text(String(r + 1), serialCenterX, lineY, { align: 'center' });
+                    }
+                    if (lineValue) {
+                        doc.text(lineValue, valueCellCenterX, lineY, { align: 'center' });
+                    }
                 }
 
                 doc.setFont('helvetica', 'bold');
                 doc.setFontSize(7.8);
                 const totalY = drawY + titleRowH + (maxPieceRows * detailRowH) + textOffsetY;
-                doc.text(String(entry.pieceValues.length), gx + (serialColW / 2), totalY, { align: 'center' });
+                // Piece count is shown only in the starting column.
+                if (showPieceNumbers) {
+                    doc.text(String(entry.pieceValues.length), serialCenterX, totalY, { align: 'center' });
+                }
                 doc.text(entry.totalText, valueCellCenterX, totalY, { align: 'center' });
 
                 pageSummaryRows.push({
@@ -462,14 +490,14 @@ function renderPrintedTemplateCompact(doc, dcData, rollsList, template) {
     const totalPieces = items.reduce((sum, roll) => sum + (Array.isArray(roll?.pieces) && roll.pieces.length > 0 ? roll.pieces.length : 1), 0);
 
     setInk();
-    doc.setLineWidth(0.45);
+    doc.setLineWidth(0.35);
     doc.line(mL, footerY - 2, PW - mR, footerY - 2);
-    doc.setLineWidth(0.3);
+    doc.setLineWidth(0.24);
     doc.line(mL, footerY - 2, mL, footerY + 25);
     doc.line(PW - mR, footerY - 2, PW - mR, footerY + 25);
 
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8);
+    doc.setFontSize(footerFontSize);
     const footerLabelX = mL + 2;
     const footerColonX = mL + 34;
     const footerValueX = mL + 38;
@@ -505,7 +533,7 @@ function renderPrintedTemplateCompact(doc, dcData, rollsList, template) {
     }
 
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7);
+    doc.setFontSize(signatoryFontSize);
     doc.text('Authorised Signatory', PW - mR - 2, footerY + 24, { align: 'right' });
 }
 

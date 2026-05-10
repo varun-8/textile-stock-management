@@ -795,8 +795,7 @@ const startHttpsServer = (port, label) => {
     server.on('error', (err) => {
         console.error(`${label} HTTPS server failed on port ${port}:`, err.message);
         if (label === 'Primary') {
-            console.error('Primary HTTPS port is unavailable. Another backend instance may already be running.');
-            process.exit(1);
+            console.error('Primary HTTPS port is unavailable. Continuing with HTTP only for this session.');
         }
     });
     server.listen(port, '0.0.0.0', () => {
