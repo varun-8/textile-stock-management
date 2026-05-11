@@ -35,6 +35,8 @@ const DEFAULT_DC_TEMPLATE = {
     signatoryFontSize: 8
 };
 
+const RECORD_TABLE_FONT = '"Segoe UI", "Helvetica Neue", Arial, sans-serif';
+
 const DeliveryChallans = () => {
     const { apiUrl } = useConfig();
     const { showNotification } = useNotification();
@@ -686,7 +688,7 @@ const DeliveryChallans = () => {
                         </div>
                     ) : (
                         <div className="panel" style={{ padding: 0, overflow: 'hidden', border: '1px solid var(--border-color)', borderRadius: '16px', boxShadow: '0 16px 30px rgba(2, 6, 23, 0.1)' }}>
-                            <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', fontSize: '0.9rem' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', fontSize: '0.9rem', fontFamily: RECORD_TABLE_FONT }}>
                                 <colgroup>
                                     <col style={{ width: '20%' }} />
                                     <col style={{ width: '12%' }} />
@@ -733,7 +735,7 @@ const DeliveryChallans = () => {
                                                     whiteSpace: 'nowrap',
                                                     overflow: 'hidden',
                                                     textOverflow: 'ellipsis',
-                                                    fontFamily: 'monospace'
+                                                    letterSpacing: '0.01em'
                                                 }} title={dc.dcNumber}>
                                                     {dc.dcNumber}
                                                 </td>

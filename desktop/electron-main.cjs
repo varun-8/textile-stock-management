@@ -191,6 +191,30 @@ function resolveBundledNodeBinary(isPackaged) {
     return candidates.find((candidate) => fs.existsSync(candidate)) || null;
 }
 
+function resolveBackendRunner(isPackaged) {
+    const bundledNode = resolveBundledNodeBinary(isPackaged);
+    if (bundledNode) {
+        return {
+            command: bundledNode,
+            extraEnv: {}
+        };
+    }
+
+    if (isPackaged) {
+        return {
+            command: process.execPath,
+            extraEnv: {
+                ELECTRON_RUN_AS_NODE: '1'
+            }
+        };
+    }
+
+    return {
+        command: 'node',
+        extraEnv: {}
+    };
+}
+
 // Store assigned ports globally for IPC access
 let assignedHttpPort = 5010;
 let assignedHttpsPort = 5011;
@@ -292,19 +316,22 @@ async function startServices() {
             };
             
             const bundledNode = resolveBundledNodeBinary(isPackaged);
-            const nodeBinary = bundledNode || 'node';
+            const runner = resolveBackendRunner(isPackaged);
 
-            if (isPackaged && !bundledNode) {
-                console.warn('Bundled node.exe not found. Falling back to "node" from PATH.');
+            if (isPackaged && bundledNode) {
+                console.log(`Using bundled node runtime: ${bundledNode}`);
+            } else if (isPackaged) {
+                console.log('Bundled node.exe not found. Using Electron binary in Node mode for backend startup.');
             }
 
-            backendProcess = spawn(nodeBinary, [backendScript], {
+            backendProcess = spawn(runner.command, [backendScript], {
                 cwd: backendDir,
                 detached: true,
                 stdio: ['ignore', 'pipe', 'pipe'],
                 windowsHide: true,
                 env: {
                     ...process.env,
+                    ...runner.extraEnv,
                     MONGODB_URI: mongoUriForBackend,
                     TLS_KEY_PATH: process.env.TLS_KEY_PATH || tlsKeyPath,
                     TLS_CERT_PATH: process.env.TLS_CERT_PATH || tlsCertPath,
@@ -315,6 +342,7 @@ async function startServices() {
                     PORT: String(assignedHttpsPort),
                     APP_USERNAME: process.env.APP_USERNAME || 'admin',
                     APP_PASSWORD: process.env.APP_PASSWORD || 'password',
+                    JWT_SECRET: process.env.JWT_SECRET || 'dev-insecure-jwt-secret-change-me',
                     NODE_ENV: 'production'
                 }
             });

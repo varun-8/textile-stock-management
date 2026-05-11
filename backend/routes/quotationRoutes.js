@@ -364,4 +364,38 @@ router.post('/:id/cancel', async (req, res) => {
     }
 });
 
+router.delete('/:id', async (req, res) => {
+    try {
+        const quotation = await Quotation.findById(req.params.id);
+        if (!quotation) {
+            return res.status(404).json({ error: 'Quotation not found' });
+        }
+
+        const quotationNumber = quotation.quotationNumber;
+        await Quotation.deleteOne({ _id: quotation._id });
+
+        await AuditLog.create({
+            action: 'INVENTORY_EDIT',
+            user: req.user ? req.user.username : 'Admin',
+            details: {
+                action: 'QUOTATION_DELETE',
+                quotationNumber
+            },
+            ipAddress: req.ip
+        });
+
+        if (req.io) {
+            req.io.emit('stock_update', {
+                type: 'QUOTATION_DELETED',
+                quotationNumber,
+                timestamp: new Date()
+            });
+        }
+
+        res.json({ success: true, message: 'Quotation deleted successfully' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 module.exports = router;

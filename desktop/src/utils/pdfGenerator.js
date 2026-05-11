@@ -936,6 +936,295 @@ export const generateQuotationPdf = (quotationData, rollsList, templateConfig = 
         return finalizePdf(doc, filename, options);
     }
 
+    // Modern quotation layout (default)
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const marginLeft = 14;
+    const marginRight = 14;
+    const contentWidth = pageWidth - marginLeft - marginRight;
+    const borderColor = [0, 0, 0];
+    const textColor = [0, 0, 0];
+    let yPosition = 12;
+
+    // Company header with logo
+    let logoEndX = marginLeft;
+    const logoSize = 18;
+    const logoDataUrl = String(template.logoDataUrl || '');
+    if (logoDataUrl.startsWith('data:image/')) {
+        try {
+            const isPng = logoDataUrl.startsWith('data:image/png');
+            const format = isPng ? 'PNG' : 'JPEG';
+            doc.addImage(logoDataUrl, format, marginLeft, yPosition, logoSize, logoSize);
+            logoEndX = marginLeft + logoSize + 4;
+        } catch (error) {
+            console.debug('Logo error:', error);
+        }
+    }
+
+    doc.setTextColor(...textColor);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(18);
+    doc.text(template.companyName || "COMPANY NAME", logoEndX, yPosition + 5);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(...textColor);
+    doc.text(template.subTitle || "", logoEndX, yPosition + 12);
+
+    // Quotation title and status (right side)
+    doc.setTextColor(...textColor);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(14);
+    doc.text("QUOTATION", pageWidth - marginRight, yPosition + 3, { align: "right" });
+
+    if (quotationData.status === 'CANCELLED') {
+        doc.setTextColor(...textColor);
+        doc.setFontSize(9);
+        doc.text("CANCELLED", pageWidth - marginRight, yPosition + 11, { align: "right" });
+    }
+
+    yPosition += 25;
+
+    // Quotation details section
+    doc.setDrawColor(...borderColor);
+    doc.setLineWidth(0.5);
+    doc.rect(marginLeft, yPosition, contentWidth, 22);
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8.5);
+    doc.setTextColor(...textColor);
+    
+    const detailCol1X = marginLeft + 3;
+    const detailCol2X = marginLeft + contentWidth / 2;
+    
+    doc.text("Quotation No.", detailCol1X, yPosition + 5);
+    doc.setFont("helvetica", "normal");
+    doc.text(quotationData.quotationNumber || 'N/A', detailCol1X, yPosition + 10);
+
+    const createdDate = new Date(quotationData.createdAt).toLocaleDateString('en-IN', {
+        day: '2-digit', month: 'short', year: 'numeric'
+    });
+    doc.setFont("helvetica", "bold");
+    doc.text("Date", detailCol1X, yPosition + 16);
+    doc.setFont("helvetica", "normal");
+    doc.text(createdDate, detailCol1X, yPosition + 21);
+
+    doc.setFont("helvetica", "bold");
+    doc.text("Density", detailCol2X, yPosition + 5);
+    doc.setFont("helvetica", "normal");
+    doc.text(quotationData.density || 'N/A', detailCol2X, yPosition + 10);
+
+    const validityDate = quotationData.validityDate
+        ? new Date(quotationData.validityDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+        : 'N/A';
+    doc.setFont("helvetica", "bold");
+    doc.text("Valid Till", detailCol2X, yPosition + 16);
+    doc.setFont("helvetica", "normal");
+    doc.text(validityDate, detailCol2X, yPosition + 21);
+
+    yPosition += 28;
+
+    // Party details section
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(...textColor);
+    doc.text("Bill To:", marginLeft, yPosition);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.5);
+    doc.setTextColor(...textColor);
+    doc.text(quotationData.partyName || 'N/A', marginLeft + 25, yPosition);
+
+    if (quotationData.partyAddress) {
+        const addressLines = doc.splitTextToSize(quotationData.partyAddress, contentWidth - 25);
+        yPosition += 5;
+        addressLines.slice(0, 2).forEach((line, idx) => {
+            doc.text(line, marginLeft + 25, yPosition + idx * 4);
+        });
+        yPosition += Math.min(addressLines.length, 2) * 4;
+    } else {
+        yPosition += 5;
+    }
+
+    yPosition += 3;
+
+    // Items table
+    const tableStartY = yPosition;
+    const tableHeaders = ["S.No", "Barcode", "Description", "Metre", "Pieces"];
+    const tableData = (rows.length > 0 ? rows : [{}]).map((roll, index) => {
+        if (rows.length === 0) {
+            return ['1', '-', 'No rolls selected', '0.00', '0'];
+        }
+        const piecesCount = Array.isArray(roll?.pieces) ? roll.pieces.length : Number(roll?.pieces || 1);
+        const parts = String(roll?.barcode || '').split('-');
+        const description = parts.length === 3 ? `${parts[1]} PPI` : 'Cloth Roll';
+        return [
+            String(index + 1),
+            roll?.barcode || '-',
+            description,
+            Number(roll?.metre || 0).toFixed(2),
+            String(piecesCount)
+        ];
+    });
+
+    autoTable(doc, {
+        startY: tableStartY,
+        margin: { left: marginLeft, right: marginRight },
+        tableWidth: contentWidth,
+        head: [tableHeaders],
+        body: tableData,
+        theme: 'grid',
+        headStyles: {
+            fillColor: [255, 255, 255],
+            textColor: [0, 0, 0],
+            fontStyle: 'bold',
+            fontSize: 9,
+            halign: 'center',
+            valign: 'middle',
+            cellPadding: 3,
+            lineColor: [0, 0, 0],
+            lineWidth: 0.25
+        },
+        bodyStyles: {
+            fontSize: 8,
+            textColor: [0, 0, 0],
+            fillColor: [255, 255, 255],
+            cellPadding: 2.5,
+            lineColor: [0, 0, 0],
+            lineWidth: 0.25,
+            overflow: 'linebreak',
+            valign: 'middle'
+        },
+        alternateRowStyles: {
+            fillColor: [255, 255, 255]
+        },
+        columnStyles: {
+            0: { cellWidth: 12, halign: 'center', valign: 'middle' },
+            1: { cellWidth: 40, halign: 'center', valign: 'middle' },
+            2: { cellWidth: 'auto', halign: 'left', valign: 'middle' },
+            3: { cellWidth: 22, halign: 'right', valign: 'middle' },
+            4: { cellWidth: 15, halign: 'center', valign: 'middle' }
+        },
+        didParseCell: (hookData) => {
+            if (hookData.section === 'body') {
+                hookData.cell.styles.fontSize = 8;
+                hookData.cell.styles.overflow = 'linebreak';
+                hookData.cell.styles.valign = 'middle';
+                hookData.cell.styles.textColor = [0, 0, 0];
+                if (hookData.column.index === 1 || hookData.column.index === 2) {
+                    hookData.cell.styles.cellPadding = 2.2;
+                }
+            }
+        }
+    });
+
+    yPosition = doc.lastAutoTable?.finalY || tableStartY + 20;
+    yPosition += 4;
+
+    // Summary boxes
+    const boxHeight = 10;
+    const boxGap = 3;
+    const box1Width = contentWidth / 2 - boxGap / 2;
+    const totalRolls = Number(quotationData.totalRolls || rows.length || 0);
+    const totalMetre = rows.reduce((sum, roll) => sum + Number(roll?.metre || 0), 0);
+
+    // Total Rolls box
+    doc.setDrawColor(...borderColor);
+    doc.setLineWidth(0.6);
+    doc.rect(marginLeft, yPosition, box1Width, boxHeight);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7.5);
+    doc.setTextColor(...textColor);
+    doc.text("Total Rolls", marginLeft + 3, yPosition + 3.2);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.setTextColor(...textColor);
+    doc.text(String(totalRolls), marginLeft + box1Width - 3, yPosition + 7, { align: "right" });
+
+    // Total Metre box
+    const box2X = marginLeft + box1Width + boxGap;
+    doc.setDrawColor(...borderColor);
+    doc.setLineWidth(0.6);
+    doc.rect(box2X, yPosition, box1Width, boxHeight);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7.5);
+    doc.setTextColor(...textColor);
+    doc.text("Total Metre", box2X + 3, yPosition + 3.2);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.setTextColor(...textColor);
+    doc.text(totalMetre.toFixed(2), box2X + box1Width - 3, yPosition + 7, { align: "right" });
+
+    yPosition += boxHeight + 6;
+
+    // Notes section
+    const notes = String(quotationData.notes || '').trim();
+    if (notes) {
+        doc.setDrawColor(...borderColor);
+        doc.setLineWidth(0.4);
+        doc.rect(marginLeft, yPosition - 2, contentWidth, 8);
+        
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(8);
+        doc.setTextColor(...textColor);
+        doc.text("Notes:", marginLeft + 3, yPosition + 1);
+        
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(7.5);
+        const notesLines = doc.splitTextToSize(notes, contentWidth - 25);
+        const notesHeight = Math.min(notesLines.length, 2) * 3;
+        
+        notesLines.slice(0, 2).forEach((line, idx) => {
+            doc.text(line, marginLeft + 25, yPosition + 1 + idx * 3);
+        });
+        
+        yPosition += Math.max(8, notesHeight + 4);
+    }
+
+    // Terms section
+    const terms = String(quotationData.terms || '').trim();
+    if (terms) {
+        doc.setDrawColor(...borderColor);
+        doc.setLineWidth(0.4);
+        doc.rect(marginLeft, yPosition - 2, contentWidth, 8);
+        
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(8);
+        doc.setTextColor(...textColor);
+        doc.text("Terms & Conditions:", marginLeft + 3, yPosition + 1);
+        
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(7.5);
+        const termLines = doc.splitTextToSize(terms, contentWidth - 35);
+        termLines.slice(0, 2).forEach((line, idx) => {
+            doc.text(line, marginLeft + 35, yPosition + 1 + idx * 3);
+        });
+        
+        yPosition += Math.max(8, Math.min(termLines.length, 2) * 3 + 4);
+    }
+
+    yPosition = Math.max(yPosition, pageHeight - 35);
+
+    // Footer with signature line
+    doc.setDrawColor(...borderColor);
+    doc.setLineWidth(0.5);
+    doc.line(marginLeft, yPosition - 2, pageWidth - marginRight, yPosition - 2);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7);
+    doc.setTextColor(...textColor);
+    doc.text(`Generated on ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`, marginLeft, yPosition + 4);
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.setTextColor(...textColor);
+    doc.text("Authorised Signatory", pageWidth - marginRight, yPosition + 4, { align: "right" });
+
+    // Signature line
+    doc.setDrawColor(...borderColor);
+    doc.setLineWidth(0.3);
+    doc.line(pageWidth - marginRight - 30, pageHeight - 8, pageWidth - marginRight, pageHeight - 8);
+
     const filename = `${String(quotationData.quotationNumber || 'Quotation').replace(/\s+/g, '_')}.pdf`;
     return finalizePdf(doc, filename, options);
 };

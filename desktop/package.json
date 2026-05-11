@@ -5,11 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "node build-frontend.cjs",
     "lint": "eslint .",
     "preview": "vite preview",
+    "prepare:desktop-resources": "node prepare-desktop-resources.cjs",
     "electron:dev": "concurrently \"vite --port 5173 --strictPort\" \"wait-on tcp:5173 && cross-env ELECTRON_START_URL=http://localhost:5173 electron .\"",
-    "electron:build": "vite build && electron-builder --win --x64"
+    "electron:build": "npm run prepare:desktop-resources && vite build && electron-builder --win --x64"
   },
   "dependencies": {
     "axios": "^1.13.2",
