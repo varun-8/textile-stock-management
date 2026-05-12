@@ -107,7 +107,31 @@ async function findAvailablePort(startPort) {
     return port;
 }
 
-function waitForBackendReady(port, timeoutMs = 30000) {
+function killOrphanedMongo(dbPath) {
+    try {
+        const lockFile = require('path').join(dbPath, 'mongod.lock');
+        const fs = require('fs');
+        if (fs.existsSync(lockFile)) {
+            const pidStr = fs.readFileSync(lockFile, 'utf8').trim();
+            if (pidStr) {
+                const pid = parseInt(pidStr, 10);
+                if (pid > 0) {
+                    try {
+                        process.kill(pid, 0); // Check if alive
+                        console.log(`Killing orphaned mongod process (PID: ${pid}) holding lock...`);
+                        process.kill(pid, 'SIGKILL');
+                    } catch (e) {
+                        // Not running or no permission
+                    }
+                }
+            }
+        }
+    } catch (e) {
+        console.error('Failed to check/kill orphaned mongo:', e);
+    }
+}
+
+function waitForBackendReady(port, timeoutMs = 60000) {
     const deadline = Date.now() + timeoutMs;
 
     return new Promise((resolve, reject) => {
@@ -191,30 +215,6 @@ function resolveBundledNodeBinary(isPackaged) {
     return candidates.find((candidate) => fs.existsSync(candidate)) || null;
 }
 
-function resolveBackendRunner(isPackaged) {
-    const bundledNode = resolveBundledNodeBinary(isPackaged);
-    if (bundledNode) {
-        return {
-            command: bundledNode,
-            extraEnv: {}
-        };
-    }
-
-    if (isPackaged) {
-        return {
-            command: process.execPath,
-            extraEnv: {
-                ELECTRON_RUN_AS_NODE: '1'
-            }
-        };
-    }
-
-    return {
-        command: 'node',
-        extraEnv: {}
-    };
-}
-
 // Store assigned ports globally for IPC access
 let assignedHttpPort = 5010;
 let assignedHttpsPort = 5011;
@@ -263,6 +263,8 @@ async function startServices() {
 
     if (mongoPath) {
         try {
+            killOrphanedMongo(dbPath);
+
             assignedMongoPort = await findAvailablePort(27017);
             console.log(`Starting app-owned MongoDB on port ${assignedMongoPort}...`);
 
@@ -316,22 +318,19 @@ async function startServices() {
             };
             
             const bundledNode = resolveBundledNodeBinary(isPackaged);
-            const runner = resolveBackendRunner(isPackaged);
+            const nodeBinary = bundledNode || 'node';
 
-            if (isPackaged && bundledNode) {
-                console.log(`Using bundled node runtime: ${bundledNode}`);
-            } else if (isPackaged) {
-                console.log('Bundled node.exe not found. Using Electron binary in Node mode for backend startup.');
+            if (isPackaged && !bundledNode) {
+                console.warn('Bundled node.exe not found. Falling back to "node" from PATH.');
             }
 
-            backendProcess = spawn(runner.command, [backendScript], {
+            backendProcess = spawn(nodeBinary, [backendScript], {
                 cwd: backendDir,
                 detached: true,
                 stdio: ['ignore', 'pipe', 'pipe'],
                 windowsHide: true,
                 env: {
                     ...process.env,
-                    ...runner.extraEnv,
                     MONGODB_URI: mongoUriForBackend,
                     TLS_KEY_PATH: process.env.TLS_KEY_PATH || tlsKeyPath,
                     TLS_CERT_PATH: process.env.TLS_CERT_PATH || tlsCertPath,
@@ -342,13 +341,22 @@ async function startServices() {
                     PORT: String(assignedHttpsPort),
                     APP_USERNAME: process.env.APP_USERNAME || 'admin',
                     APP_PASSWORD: process.env.APP_PASSWORD || 'password',
-                    JWT_SECRET: process.env.JWT_SECRET || 'dev-insecure-jwt-secret-change-me',
                     NODE_ENV: 'production'
                 }
             });
             
-            backendProcess.stdout.on('data', (chunk) => writeBackendLog(chunk));
-            backendProcess.stderr.on('data', (chunk) => writeBackendLog(chunk));
+            backendProcess.stdout.on('data', (chunk) => {
+                writeBackendLog(chunk);
+                if (process.stdout && process.stdout.writable) {
+                    process.stdout.write(chunk);
+                }
+            });
+            backendProcess.stderr.on('data', (chunk) => {
+                writeBackendLog(chunk);
+                if (process.stderr && process.stderr.writable) {
+                    process.stderr.write(chunk);
+                }
+            });
             backendProcess.unref();
             
             backendProcess.on('error', (err) => {
@@ -364,7 +372,7 @@ async function startServices() {
                 }
             });
 
-            console.log(`Waiting for backend HTTP readiness on port ${assignedHttpPort}...`);
+            console.log(`Waiting for backend HTTP readiness on port ${assignedHttpPort} (This may take up to a minute if the database is recovering)...`);
             await waitForBackendReady(assignedHttpPort);
             console.log(`Backend HTTP server is ready on port ${assignedHttpPort}`);
         } catch (e) {

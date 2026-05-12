@@ -20,8 +20,6 @@ const Settings = () => {
     // Wipe states
     const [showWipeConfirm, setShowWipeConfirm] = useState(false);
     const [wipePasswordInput, setWipePasswordInput] = useState('');
-    const [systemInfoClickCount, setSystemInfoClickCount] = useState(0);
-    const [showDangerZone, setShowDangerZone] = useState(false);
 
     // API Edit states
     const [isEditingApi, setIsEditingApi] = useState(false);
@@ -142,15 +140,6 @@ const Settings = () => {
 
     const handleSystemInfoClick = () => {
         setActiveTab('system');
-        if (showDangerZone) return;
-
-        setSystemInfoClickCount((prev) => {
-            const next = prev + 1;
-            if (next >= 3) {
-                setShowDangerZone(true);
-            }
-            return next;
-        });
     };
 
 
@@ -1096,7 +1085,6 @@ const Settings = () => {
                                 </div>
                             </div>
 
-                            {showDangerZone && (
                                 <div style={{ marginTop: '3rem', paddingTop: '2rem', borderTop: '1px solid var(--border-color)' }}>
                                     <div style={{
                                         background: 'rgba(239, 68, 68, 0.03)',
@@ -1171,7 +1159,6 @@ const Settings = () => {
                                         </div>
                                     </div>
                                 </div>
-                            )}
                         </div>
                     )}
 
