@@ -412,7 +412,7 @@ const DeliveryChallans = () => {
             setModalError('Party Name is required');
             return showNotification('Party Name is required', 'error');
         }
-        if (!selectedBatch) {
+        if (!selectedBatch && !isEditing) {
             setModalError('Select a batch for preview');
             return showNotification('Select a batch for preview', 'error');
         }
@@ -440,7 +440,7 @@ const DeliveryChallans = () => {
             }
 
             // Filter rolls based on selected rolls
-            const filteredRolls = (selectedBatch.rolls || []).filter(roll => selectedRolls.includes(roll.barcode));
+            const filteredRolls = availableRolls.filter(roll => selectedRolls.includes(roll.barcode));
             const totalSelectedMetre = filteredRolls.reduce((sum, roll) => sum + (parseFloat(roll.metre) || 0), 0);
 
             // Create temporary DC-like object for preview
@@ -495,7 +495,7 @@ const DeliveryChallans = () => {
             setModalError('Party Name is required');
             return showNotification('Party Name is required', 'error');
         }
-        if (!selectedBatch) {
+        if (!selectedBatch && !isEditing) {
             setModalError('Select a batch for the DC');
             return showNotification('Select a batch for the DC', 'error');
         }
@@ -535,16 +535,19 @@ const DeliveryChallans = () => {
                 driverName: latestTemplate.showDriver ? driverName : '',
                 // Send only selected roll barcodes instead of all batch rolls
                 barcodes: selectedRolls,
-                batchId: selectedBatch._id,
+                batchId: selectedBatch?._id || null,
                 appliedPercentage: pct,
                 templateId: selectedTemplate?.id || '',
                 templateName: selectedTemplate?.name || '',
                 templateSnapshot: latestTemplate
             };
 
-            const res = await axios.post(`${apiUrl}/api/dc`, dcData, authHeaders);
+            const res = isEditing 
+                ? await axios.put(`${apiUrl}/api/dc/${editingDcId}`, dcData, authHeaders)
+                : await axios.post(`${apiUrl}/api/dc`, dcData, authHeaders);
 
-            showNotification(`Delivery Challan ${res.data.dc.dcNumber} created with ${pct}% adjustment!`, 'success');
+            const dcAction = isEditing ? 'updated' : 'created';
+            showNotification(`Delivery Challan ${res.data.dc.dcNumber} ${dcAction} with ${pct}% adjustment!`, 'success');
 
             const filename = `${String(res.data.dc.dcNumber || 'DC').replace(/\s+/g, '_')}_Challan.pdf`;
             if (window.electronAPI?.printOrSavePdf) {
@@ -1166,7 +1169,7 @@ const DeliveryChallans = () => {
             )}
         </div>
     </div>
-                        </div>
+</div>
 
                         {/* Modal Footer */}
                         <div style={{ padding: '1.5rem', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'flex-end', gap: '1rem', background: 'var(--bg-secondary)' }}>
