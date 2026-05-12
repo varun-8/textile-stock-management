@@ -983,16 +983,16 @@ router.get('/batch/active-out/list', async (req, res) => {
             type: 'OUT'
         }).sort({ createdAt: -1 }).lean();
 
-        const existingBatchDcs = await DeliveryChallan.find({
-            sourceBatchId: { $in: outBatches.map(b => b._id) }
-        }).select('sourceBatchId').lean();
-
-        const usedBatchIds = new Set(existingBatchDcs.map(row => String(row.sourceBatchId)));
-        const candidateBatches = outBatches.filter(batch => !usedBatchIds.has(String(batch._id)));
-
-        // For each batch, get rolls and calculate totals
-        const batchesWithRolls = await Promise.all(candidateBatches.map(async (batch) => {
-            const rolls = await getSessionDispatchRollDocs(batch._id);
+        // For each batch, find unassigned rolls
+        const batchesWithRolls = await Promise.all(outBatches.map(async (batch) => {
+            const rolls = await ClothRoll.find({
+                'transactionHistory.sessionId': batch._id,
+                status: 'RESERVED',
+                $or: [
+                    { dcId: { $exists: false } },
+                    { dcId: null }
+                ]
+            }).lean();
 
             const totalRolls = rolls.length;
             const totalMetre = rolls.reduce((sum, roll) => sum + (Number(roll.metre) || 0), 0);

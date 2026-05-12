@@ -64,6 +64,11 @@ const deliveryChallanSchema = new mongoose.Schema({
         trim: true,
         default: ''
     },
+    density: {
+        type: String,
+        trim: true,
+        default: ''
+    },
     templateId: {
         type: String,
         trim: true,
@@ -112,6 +117,6 @@ const deliveryChallanSchema = new mongoose.Schema({
 // Indexes for fast lookups
 deliveryChallanSchema.index({ createdAt: -1 });
 deliveryChallanSchema.index({ partyName: 1 });
-deliveryChallanSchema.index({ sourceBatchId: 1 }, { unique: true, sparse: true });
+// No longer uniquely indexing sourceBatchId since multiple DCs can come from anywhere
 
 module.exports = mongoose.model('DeliveryChallan', deliveryChallanSchema);

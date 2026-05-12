@@ -69,12 +69,17 @@ const DeliveryChallans = () => {
     const [outBatches, setOutBatches] = useState([]);
     const [selectedBatch, setSelectedBatch] = useState(null);
     const [batchLoading, setBatchLoading] = useState(false);
-    
-    // Roll selection state (new feature)
+    const [showRollSelection, setShowRollSelection] = useState(false);
+    const [isEditing, setIsEditing] = useState(false);
+    const [editingDcId, setEditingDcId] = useState(null);
+
+    // Roll selection state
+    const [availableRollsPool, setAvailableRollsPool] = useState([]);
+    const [selectedDensity, setSelectedDensity] = useState('');
     const [availableRolls, setAvailableRolls] = useState([]);
     const [selectedRolls, setSelectedRolls] = useState([]);
+    const [viewedBatchCode, setViewedBatchCode] = useState(null);
     const [loadingRolls, setLoadingRolls] = useState(false);
-    const [showRollSelection, setShowRollSelection] = useState(false);
 
     const token = localStorage.getItem('ADMIN_TOKEN');
     const authHeaders = { headers: { Authorization: `Bearer ${token}` } };
@@ -288,18 +293,22 @@ const DeliveryChallans = () => {
         }
     };
 
-    // Load rolls from selected batch
-    const handleBatchSelect = async (batch) => {
-        setSelectedBatch(batch);
-        setShowRollSelection(true);
-        setAvailableRolls(batch.rolls || []);
+    // Handle Density Selection
+    const handleDensitySelect = (density) => {
+        setSelectedDensity(density);
+        setViewedBatchCode(null);
+        const rollsForDensity = availableRollsPool.filter(r => {
+            const parts = r.barcode.split('-');
+            return parts.length > 1 && parts[1] === density;
+        });
+        setAvailableRolls(rollsForDensity);
         
-        // Auto-select all rolls by default
-        const allBarcodes = Array.isArray(batch.rolls) ? batch.rolls.map(r => r.barcode) : [];
-        setSelectedRolls(allBarcodes);
+        // Let's NOT auto-select all rolls here because that defeats the point of selecting specific batches.
+        // If they switch density, clear selected rolls.
+        setSelectedRolls([]); 
     };
 
-    // Toggle roll selection (similar to quotation roll selection)
+    // Toggle roll selection
     const toggleRollSelection = (barcode) => {
         setSelectedRolls((prev) => {
             if (prev.includes(barcode)) {
@@ -307,14 +316,6 @@ const DeliveryChallans = () => {
             }
             return [...prev, barcode];
         });
-    };
-
-    // Close roll selection and go back to batch selection
-    const closeBatchAndRollSelection = () => {
-        setSelectedBatch(null);
-        setShowRollSelection(false);
-        setAvailableRolls([]);
-        setSelectedRolls([]);
     };
 
     const handleOpenCreateModal = async () => {
@@ -328,13 +329,55 @@ const DeliveryChallans = () => {
         setVehicleNumber('');
         setDriverName('');
         setPercentage('0');
-        setSelectedBatch(null);
+        setSelectedDensity('');
+        setAvailableRollsPool([]);
         setAvailableRolls([]);
         setSelectedRolls([]);
-        setShowRollSelection(false);
+        setModalError('');
+        setIsEditing(false);
+        setEditingDcId(null);
+        setIsCreateModalOpen(true);
+        await Promise.all([fetchAllAvailableRolls(), fetchDcTemplateConfig(), fetchDcTemplates()]);
+    };
+
+    const handleOpenEditModal = async (dc, e) => {
+        if (e && e.stopPropagation) e.stopPropagation();
+        const density = dc.density || (dc.rolls && dc.rolls.length > 0 ? dc.rolls[0].barcode.split('-')[1] : '');
+        setSelectedDensity(density);
+        // Prefill left-side form fields from DC
+        setPartyName(dc.partyName || '');
+        setPartyAddress(dc.partyAddress || '');
+        setQuality(dc.quality || '');
+        setFolding(dc.folding || '');
+        setLotNo(dc.lotNo || '');
+        setBillNo(dc.billNo || '');
+        setBillPreparedBy(dc.billPreparedBy || '');
+        setVehicleNumber(dc.vehicleNumber || '');
+        setDriverName(dc.driverName || '');
+        setPercentage(String(dc.appliedPercentage ?? '0'));
+        // Try to set selected batch from dc if available
+        setSelectedBatch(dc.batch || (dc.batchId ? { _id: dc.batchId, batchCode: dc.batchCode } : null));
+        setShowRollSelection(true);
         setModalError('');
         setIsCreateModalOpen(true);
-        await Promise.all([fetchOutBatches(), fetchDcTemplateConfig(), fetchDcTemplates()]);
+        setIsEditing(true);
+        setEditingDcId(dc._id);
+
+        await Promise.all([fetchDcTemplateConfig(), fetchDcTemplates()]);
+
+        try {
+            const res = await withExponentialBackoff(() =>
+                axios.get(`${apiUrl}/api/dc/available-rolls?density=${density}`, authHeaders)
+            );
+            const unassignedRolls = res.data || [];
+            const dcRolls = dc.rolls || [];
+
+            setAvailableRolls([...dcRolls, ...unassignedRolls]);
+            setSelectedRolls(dcRolls.map(r => r.barcode));
+        } catch (error) {
+            console.error('Failed to fetch available rolls for editing:', error);
+            showNotification('Failed to fetch rolls for editing', 'error');
+        }
     };
 
     const validateManualFields = (templateConfig) => {
@@ -536,22 +579,22 @@ const DeliveryChallans = () => {
         }
     };
 
-    const fetchOutBatches = async () => {
+    const fetchAllAvailableRolls = async () => {
         try {
-            setBatchLoading(true);
+            setLoadingRolls(true);
             const res = await withExponentialBackoff(() =>
-                axios.get(`${apiUrl}/api/sessions/batch/active-out/list`, authHeaders)
+                axios.get(`${apiUrl}/api/dc/available-rolls`, authHeaders)
             );
-            setOutBatches(res.data || []);
-            setSelectedBatch(null);
+            setAvailableRollsPool(res.data || []);
+            setSelectedDensity('');
             setPercentage('0');
         } catch (error) {
-            console.error('Failed to fetch OUT batches:', error);
-            const message = getApiErrorMessage(error, 'Failed to load OUT batches');
+            console.error('Failed to fetch available rolls:', error);
+            const message = getApiErrorMessage(error, 'Failed to load available rolls');
             setModalError(message);
             showNotification(message, 'error');
         } finally {
-            setBatchLoading(false);
+            setLoadingRolls(false);
         }
     };
 
@@ -751,7 +794,7 @@ const DeliveryChallans = () => {
                                                         <div style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>{dc.totalMetre} m</div>
                                                     </div>
                                                 </td>
-                                                <td style={{ padding: '1rem 1.5rem', textAlign: 'center' }}>
+                                                <td style={{ padding: '1rem 1.5rem', textAlign: 'center', display: 'flex', justifyContent: 'center', gap: '0.5rem', alignItems: 'center' }}>
                                                     <span style={{
                                                         display: 'inline-flex',
                                                         alignItems: 'center',
@@ -768,6 +811,21 @@ const DeliveryChallans = () => {
                                                     }}>
                                                         {dc.status}
                                                     </span>
+                                                    <button
+                                                        title="Edit"
+                                                        onClick={(e) => handleOpenEditModal(dc, e)}
+                                                        onMouseDown={(e) => e.stopPropagation()}
+                                                        style={{
+                                                            background: 'transparent',
+                                                            border: '1px solid var(--border-color)',
+                                                            borderRadius: '8px',
+                                                            padding: '6px 8px',
+                                                            cursor: 'pointer',
+                                                            color: 'var(--text-primary)'
+                                                        }}
+                                                    >
+                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" /></svg>
+                                                    </button>
                                                 </td>
                                             </tr>
                                         );
@@ -805,8 +863,8 @@ const DeliveryChallans = () => {
                     }}>
                         {/* Modal Header */}
                         <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-secondary)' }}>
-                            <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}><IconTruck /> Create Delivery Challan</h2>
-                            <button onClick={() => setIsCreateModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}>
+                            <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}><IconTruck /> {isEditing ? 'Edit Delivery Challan' : 'Create Delivery Challan'}</h2>
+                            <button onClick={() => { setIsCreateModalOpen(false); setIsEditing(false); setEditingDcId(null); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}>
                                 <IconX />
                             </button>
                         </div>
@@ -949,166 +1007,165 @@ const DeliveryChallans = () => {
                                 
                                 <div style={{ marginTop: '2rem', padding: '1.5rem', background: 'var(--bg-secondary)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
                                     <h3 style={{ margin: '0 0 1rem', fontSize: '1rem' }}>
-                                        {showRollSelection ? 'Selected Rolls Summary' : 'Selected Batch'}
-                                    </h3>
-                                    {selectedBatch ? (
-                                        <>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                                                <span style={{ color: 'var(--text-secondary)' }}>Batch Code:</span>
-                                                <span style={{ fontWeight: 'bold' }}>{selectedBatch.batchCode}</span>
-                                            </div>
-                                            {showRollSelection ? (
-                                                <>
-                                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                                                        <span style={{ color: 'var(--text-secondary)' }}>Selected Rolls:</span>
-                                                        <span style={{ fontWeight: 'bold' }}>{selectedRolls.length}/{availableRolls.length}</span>
-                                                    </div>
-                                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                                                        <span style={{ color: 'var(--text-secondary)' }}>Selected Metre:</span>
-                                                        <span style={{ fontWeight: 'bold' }}>
-                                                            {(() => {
-                                                                const selectedMetre = availableRolls
-                                                                    .filter(roll => selectedRolls.includes(roll.barcode))
-                                                                    .reduce((sum, roll) => sum + (parseFloat(roll.metre) || 0), 0);
-                                                                return selectedMetre.toFixed(2);
-                                                            })()}m
-                                                        </span>
-                                                    </div>
-                                                    <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--accent-color)', fontWeight: 'bold' }}>
-                                                        <span>With {percentage}% Adjustment:</span>
-                                                        <span>
-                                                            {(() => {
-                                                                const selectedMetre = availableRolls
-                                                                    .filter(roll => selectedRolls.includes(roll.barcode))
-                                                                    .reduce((sum, roll) => sum + (parseFloat(roll.metre) || 0), 0);
-                                                                return (selectedMetre * (1 + parseFloat(percentage || 0) / 100)).toFixed(2);
-                                                            })()}m
-                                                        </span>
-                                                    </div>
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                                                        <span style={{ color: 'var(--text-secondary)' }}>Total Rolls:</span>
-                                                        <span style={{ fontWeight: 'bold' }}>{selectedBatch.rollCount}</span>
-                                                    </div>
-                                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                                                        <span style={{ color: 'var(--text-secondary)' }}>Original Metre:</span>
-                                                        <span style={{ fontWeight: 'bold' }}>{selectedBatch.totalMetre}m</span>
-                                                    </div>
-                                                    <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--accent-color)', fontWeight: 'bold' }}>
-                                                        <span>With {percentage}% Adjustment:</span>
-                                                        <span>{(parseFloat(selectedBatch.totalMetre) * (1 + parseFloat(percentage || 0) / 100)).toFixed(2)}m</span>
-                                                    </div>
-                                                </>
-                                            )}
-                                        </>
-                                    ) : (
-                                        <span style={{ color: 'var(--text-secondary)' }}>Select a batch from the right side</span>
-                                    )}
+        Selected Rolls Summary
+    </h3>
+    {selectedDensity ? (
+        <>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Pick Density:</span>
+                <span style={{ fontWeight: 'bold' }}>{selectedDensity} PPI</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Selected Rolls:</span>
+                <span style={{ fontWeight: 'bold' }}>{selectedRolls.length}/{availableRolls.length}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Selected Metre:</span>
+                <span style={{ fontWeight: 'bold' }}>
+                    {(() => {
+                        const selectedMetre = availableRolls
+                            .filter(roll => selectedRolls.includes(roll.barcode))
+                            .reduce((sum, roll) => sum + (parseFloat(roll.metre) || 0), 0);
+                        return selectedMetre.toFixed(2);
+                    })()}m
+                </span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--accent-color)', fontWeight: 'bold' }}>
+                <span>With {percentage}% Adjustment:</span>
+                <span>
+                    {(() => {
+                        const selectedMetre = availableRolls
+                            .filter(roll => selectedRolls.includes(roll.barcode))
+                            .reduce((sum, roll) => sum + (parseFloat(roll.metre) || 0), 0);
+                        return (selectedMetre * (1 + parseFloat(percentage || 0) / 100)).toFixed(2);
+                    })()}m
+                </span>
+            </div>
+        </>
+    ) : (
+        <span style={{ color: 'var(--text-secondary)' }}>Select a pick density from the right side</span>
+    )}
                                 </div>
                                 </div>
                             </div>
                             
-                            {/* Right Side: Batch Selection or Roll Selection */}
-                            <div style={{ flex: 1, padding: '1.5rem', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--bg-primary)' }}>
-                                {!showRollSelection ? (
-                                    <>
-                                        <h3 style={{ margin: '0 0 1rem', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>OUTSTOCK BATCHES - Select One</h3>
-                                        <div style={{ flex: 1, overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: '8px' }}>
-                                            {batchLoading ? (
-                                                <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>Loading batches...</div>
-                                            ) : outBatches.length === 0 ? (
-                                                <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>No active OUTSTOCK batches available.</div>
-                                            ) : (
-                                                <div>
-                                                    {outBatches.map(batch => (
-                                                        <div 
-                                                            key={batch._id}
-                                                            onClick={() => handleBatchSelect(batch)}
-                                                            style={{
-                                                                padding: '1rem',
-                                                                borderBottom: '1px solid var(--border-color)',
-                                                                cursor: 'pointer',
-                                                                background: selectedBatch?._id === batch._id ? 'rgba(99, 102, 241, 0.15)' : 'transparent',
-                                                                borderLeft: selectedBatch?._id === batch._id ? '3px solid var(--accent-color)' : '3px solid transparent',
-                                                                transition: 'all 0.2s'
-                                                            }}
-                                                        >
-                                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '0.5rem' }}>
-                                                                <div style={{ fontWeight: '700', color: 'var(--text-primary)' }}>
-                                                                    Batch: {batch.batchCode}
-                                                                </div>
-                                                                {selectedBatch?._id === batch._id && (
-                                                                    <span style={{ background: 'var(--accent-color)', color: 'white', padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold' }}>✓ Selected</span>
-                                                                )}
-                                                            </div>
-                                                            <div style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-                                                                Rolls: {batch.rollCount} • Metre: {batch.totalMetre}m
-                                                            </div>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            )}
-                                        </div>
-                                    </>
-                                ) : (
-                                    <>
-                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
-                                            <h3 style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-secondary)' }}>SELECT ROLLS FROM BATCH ({selectedRolls.length}/{availableRolls.length})</h3>
-                                            <button 
-                                                onClick={() => closeBatchAndRollSelection()}
-                                                style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: '0.9rem', fontWeight: '600' }}
-                                            >
-                                                ← Back to Batches
-                                            </button>
-                                        </div>
-                                        <div style={{ flex: 1, overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: '8px' }}>
-                                            {availableRolls.length === 0 ? (
-                                                <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>No rolls in this batch.</div>
-                                            ) : (
-                                                <div>
-                                                    {availableRolls.map((roll, idx) => (
-                                                        <div 
-                                                            key={roll.barcode || idx}
-                                                            onClick={() => toggleRollSelection(roll.barcode)}
-                                                            style={{
-                                                                padding: '0.9rem 1rem',
-                                                                borderBottom: '1px solid var(--border-color)',
-                                                                cursor: 'pointer',
-                                                                background: selectedRolls.includes(roll.barcode) ? 'rgba(99, 102, 241, 0.15)' : 'transparent',
-                                                                borderLeft: selectedRolls.includes(roll.barcode) ? '3px solid var(--accent-color)' : '3px solid transparent',
-                                                                transition: 'all 0.2s',
-                                                                display: 'flex',
-                                                                alignItems: 'center',
-                                                                gap: '0.75rem'
-                                                            }}
-                                                        >
-                                                            <input 
-                                                                type="checkbox" 
-                                                                checked={selectedRolls.includes(roll.barcode)}
-                                                                onChange={() => {}} 
-                                                                style={{ cursor: 'pointer', width: '18px', height: '18px' }}
-                                                            />
-                                                            <div style={{ flex: 1 }}>
-                                                                <div style={{ fontWeight: '700', color: 'var(--text-primary)', fontSize: '0.9rem' }}>
-                                                                    {roll.barcode}
-                                                                </div>
-                                                                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
-                                                                    {roll.metre}m
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            )}
-                                        </div>
-                                        <div style={{ marginTop: '1rem', padding: '0.9rem', background: 'rgba(99, 102, 241, 0.08)', border: '1px solid rgba(99, 102, 241, 0.3)', borderRadius: '8px', fontSize: '0.9rem', color: 'var(--text-primary)' }}>
-                                            Selected: <strong>{selectedRolls.length}</strong> rolls
-                                        </div>
-                                    </>
+                            {/* Right Side: Density & Roll Selection */}
+    <div style={{ flex: 1, padding: '1.5rem', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--bg-primary)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+            <h3 style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                {viewedBatchCode ? `ROLLS IN ${viewedBatchCode}` : 'AVAILABLE ROLLS'} ({selectedRolls.length} Selected)
+            </h3>
+            {viewedBatchCode ? (
+                <button 
+                    onClick={() => setViewedBatchCode(null)}
+                    style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: '0.9rem', fontWeight: '600' }}
+                >
+                    ← Back to Batches
+                </button>
+            ) : (
+                <select 
+                    value={selectedDensity} 
+                    onChange={e => handleDensitySelect(e.target.value)}
+                    disabled={isEditing}
+                    style={{ padding: '0.4rem 0.6rem', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontSize: '0.85rem' }}
+                >
+                    <option value="">Select Pick Density</option>
+                    {Array.from(new Set(availableRollsPool.map(r => r.barcode.split('-')[1]).filter(Boolean))).sort().map(density => (
+                        <option key={density} value={density}>{density} PPI</option>
+                    ))}
+                    {isEditing && selectedDensity && !availableRollsPool.some(r => r.barcode.split('-')[1] === selectedDensity) && (
+                        <option value={selectedDensity}>{selectedDensity} PPI</option>
+                    )}
+                </select>
+            )}
+        </div>
+        
+        <div style={{ flex: 1, overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: '8px' }}>
+            {!selectedDensity ? (
+                <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>Please select a Pick Density from the dropdown above.</div>
+            ) : loadingRolls ? (
+                <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>Loading rolls...</div>
+            ) : availableRolls.length === 0 ? (
+                <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>No available rolls found for this density.</div>
+            ) : !viewedBatchCode ? (
+                // Show Batches List
+                <div>
+                    {(() => {
+                        const batchGroups = {};
+                        availableRolls.forEach(roll => {
+                            const bcode = roll.batchCode || 'Unknown';
+                            if (!batchGroups[bcode]) batchGroups[bcode] = { count: 0, metre: 0, selectedCount: 0 };
+                            batchGroups[bcode].count++;
+                            batchGroups[bcode].metre += parseFloat(roll.metre) || 0;
+                            if (selectedRolls.includes(roll.barcode)) batchGroups[bcode].selectedCount++;
+                        });
+                        return Object.entries(batchGroups).map(([bcode, stats]) => (
+                            <div 
+                                key={bcode}
+                                onClick={() => setViewedBatchCode(bcode)}
+                                style={{
+                                    padding: '1rem',
+                                    borderBottom: '1px solid var(--border-color)',
+                                    cursor: 'pointer',
+                                    background: 'transparent',
+                                    borderLeft: '3px solid transparent',
+                                    transition: 'all 0.2s',
+                                    display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+                                }}
+                            >
+                                <div>
+                                    <div style={{ fontWeight: '700', color: 'var(--text-primary)', marginBottom: '0.2rem' }}>Batch: {bcode}</div>
+                                    <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Rolls: {stats.count} • Metre: {stats.metre.toFixed(2)}m</div>
+                                </div>
+                                <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: stats.selectedCount > 0 ? 'var(--accent-color)' : 'var(--text-secondary)' }}>
+                                    {stats.selectedCount} Selected &rarr;
+                                </div>
+                            </div>
+                        ));
+                    })()}
+                </div>
+            ) : (
+                // Show Rolls Grid for the selected batch
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '0.75rem', padding: '1rem' }}>
+                    {availableRolls.filter(r => (r.batchCode || 'Unknown') === viewedBatchCode).map((roll) => {
+                        const isSelected = selectedRolls.includes(roll.barcode);
+                        return (
+                            <div 
+                                key={roll.barcode}
+                                onClick={() => toggleRollSelection(roll.barcode)}
+                                style={{
+                                    border: `1px solid ${isSelected ? 'var(--accent-color)' : 'var(--border-color)'}`,
+                                    background: isSelected ? 'rgba(99, 102, 241, 0.08)' : 'var(--bg-secondary)',
+                                    borderRadius: '8px',
+                                    padding: '0.75rem',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.2s ease',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '0.25rem',
+                                    position: 'relative'
+                                }}
+                            >
+                                <div style={{ fontWeight: '700', fontSize: '0.9rem', color: isSelected ? 'var(--accent-color)' : 'var(--text-primary)' }}>
+                                    {roll.barcode}
+                                </div>
+                                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                    {roll.metre}m • {roll.weight}kg
+                                </div>
+                                {isSelected && (
+                                    <div style={{ position: 'absolute', top: '0.5rem', right: '0.5rem', color: 'var(--accent-color)' }}>
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                            <polyline points="20 6 9 17 4 12"></polyline>
+                                        </svg>
+                                    </div>
                                 )}
                             </div>
+                        );
+                    })}
+                </div>
+            )}
+        </div>
+    </div>
                         </div>
 
                         {/* Modal Footer */}
@@ -1118,7 +1175,7 @@ const DeliveryChallans = () => {
                                 className="btn"
                                 style={{ background: 'rgba(99, 102, 241, 0.15)', color: 'var(--accent-color)', fontWeight: '600', border: '1px solid var(--accent-color)' }}
                                 onClick={handlePreviewDC}
-                                disabled={!selectedBatch || !partyName}
+                                disabled={(!selectedBatch && !isEditing) || !partyName}
                             >
                                 <IconEye size="16" style={{ marginRight: '0.4rem' }} /> PREVIEW
                             </button>
@@ -1126,9 +1183,9 @@ const DeliveryChallans = () => {
                                 className="btn" 
                                 style={{ background: 'var(--accent-color)', color: 'white', fontWeight: 'bold' }}
                                 onClick={handleCreateDC}
-                                disabled={!selectedBatch || !partyName}
+                                disabled={(!selectedBatch && !isEditing) || !partyName}
                             >
-                                GENERATE & PRINT
+                                {isEditing ? 'UPDATE & PRINT' : 'GENERATE & PRINT'}
                             </button>
                         </div>
                     </div>
