@@ -3,7 +3,7 @@ import axios from 'axios';
 import { io } from 'socket.io-client';
 import { useConfig } from '../context/ConfigContext';
 import { useNotification } from '../context/NotificationContext';
-import { IconEye, IconPlus, IconTruck, IconX } from '../components/Icons';
+import { IconEdit, IconPlus, IconTrash, IconTruck, IconX } from '../components/Icons';
 import { DENSITY_NAME } from '../constants';
 import { generateQuotationPdf } from '../utils/pdfGenerator';
 import { cachedAxiosGet, withExponentialBackoff } from '../utils/apiUtils';
@@ -57,6 +57,7 @@ const Quotations = () => {
     const [densities, setDensities] = useState([]);
     const [pdfPreviewUrl, setPdfPreviewUrl] = useState('');
     const [pdfPreviewTitle, setPdfPreviewTitle] = useState('Quotation PDF Preview');
+    const [previewQuotation, setPreviewQuotation] = useState(null);
     const previewIframeRef = useRef(null);
     const [dcTemplateConfig, setDcTemplateConfig] = useState(null);
     const [formErrors, setFormErrors] = useState({});
@@ -75,6 +76,38 @@ const Quotations = () => {
         ...(dcTemplateConfig || {})
     }), [dcTemplateConfig]);
 
+    const buildQuotationRows = useCallback((quotation) => {
+        if (!quotation) return [];
+
+        const rawRows = Array.isArray(quotation.rolls) && quotation.rolls.length > 0
+            ? quotation.rolls
+            : (Array.isArray(quotation.rollSnapshots)
+                ? quotation.rollSnapshots.map((roll) => ({
+                    barcode: roll.barcode,
+                    metre: Number(roll.metre || 0),
+                    weight: Number(roll.weight || 0),
+                    pieces: Array.from({ length: Math.max(1, Number(roll.pieces || 1)) })
+                }))
+                : []);
+
+        return rawRows.map((roll) => ({
+            ...roll,
+            pieces: Array.isArray(roll?.pieces)
+                ? roll.pieces
+                : Array.from({ length: Math.max(1, Number(roll?.pieces || 1)) })
+        }));
+    }, []);
+
+    const clearPreviewUrl = useCallback((url) => {
+        if (!url) return;
+
+        try {
+            URL.revokeObjectURL(url);
+        } catch (error) {
+            console.debug('Quotation preview URL cleanup skipped:', error);
+        }
+    }, []);
+
     const isEditMode = !!form.id;
     const totalRolls = selectedBarcodes.length;
     const simpleFieldStyle = {
@@ -91,6 +124,80 @@ const Quotations = () => {
         fontWeight: 600,
         color: 'var(--text-secondary)',
         marginBottom: '0.4rem'
+    };
+    const actionGroupStyle = {
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '0.25rem',
+        padding: '0.24rem 0.26rem',
+        borderRadius: '999px',
+        background: 'var(--bg-primary)',
+        border: '1px solid var(--border-color)',
+        boxShadow: 'inset 0 1px 0 rgba(148, 163, 184, 0.08)'
+    };
+    const actionButtonBaseStyle = {
+        minWidth: '34px',
+        minHeight: '34px',
+        padding: '0.42rem 0.52rem',
+        borderRadius: '999px',
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        transition: 'transform 0.15s ease, border-color 0.15s ease, background 0.15s ease'
+    };
+    const actionEditButtonStyle = {
+        ...actionButtonBaseStyle,
+        border: '1px solid var(--border-color)',
+        background: 'var(--bg-secondary)',
+        color: 'var(--text-primary)'
+    };
+    const actionDeleteButtonStyle = {
+        ...actionButtonBaseStyle,
+        border: '1px solid rgba(239, 68, 68, 0.25)',
+        background: 'rgba(239, 68, 68, 0.08)',
+        color: 'var(--error-color)'
+    };
+    const previewActionButtonStyle = {
+        minHeight: '34px',
+        padding: '0.45rem 0.8rem',
+        borderRadius: '999px',
+        border: '1px solid rgba(148, 163, 184, 0.2)',
+        background: 'rgba(255, 255, 255, 0.08)',
+        color: '#f8fafc',
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '0.35rem',
+        boxShadow: '0 4px 10px rgba(2, 6, 23, 0.14)'
+    };
+    const tableHeaderCellStyle = {
+        padding: '0.82rem 0.95rem',
+        fontSize: '0.74rem',
+        fontWeight: 700,
+        letterSpacing: '0.08em',
+        textTransform: 'uppercase',
+        color: 'var(--text-secondary)',
+        lineHeight: 1.2,
+        whiteSpace: 'nowrap'
+    };
+    const tableBodyCellStyle = {
+        padding: '0.84rem 0.95rem',
+        fontSize: '0.88rem',
+        fontWeight: 500,
+        lineHeight: 1.3,
+        color: 'var(--text-primary)',
+        borderTop: '1px solid var(--table-border-color)'
+    };
+    const tableNumericCellStyle = {
+        ...tableBodyCellStyle,
+        fontVariantNumeric: 'tabular-nums',
+        fontFeatureSettings: '"tnum" 1, "lnum" 1'
+    };
+    const tableIdCellStyle = {
+        ...tableBodyCellStyle,
+        fontWeight: 700,
+        letterSpacing: '0.01em'
     };
     const fieldErrorStyle = {
         marginTop: '0.35rem',
@@ -175,14 +282,10 @@ const Quotations = () => {
     useEffect(() => {
         return () => {
             if (pdfPreviewUrl) {
-                try {
-                    URL.revokeObjectURL(pdfPreviewUrl);
-                } catch (error) {
-                    console.debug('Quotation preview URL cleanup skipped:', error);
-                }
+                clearPreviewUrl(pdfPreviewUrl);
             }
         };
-    }, [pdfPreviewUrl]);
+    }, [clearPreviewUrl, pdfPreviewUrl]);
 
     const fetchQuotations = async () => {
         try {
@@ -279,6 +382,11 @@ const Quotations = () => {
             fetchDcTemplateConfig(),
             fetchAvailableRolls(quotation.density || '', selected)
         ]);
+    };
+
+    const handleEditQuotation = (quotation) => {
+        if (!quotation) return;
+        _openEditModal(quotation);
     };
 
     const closeModal = () => {
@@ -379,16 +487,13 @@ const Quotations = () => {
 
             const quotation = res.data?.quotation;
             if (quotation) {
-                const rows = Array.isArray(quotation.rolls) ? quotation.rolls : [];
+                const rows = buildQuotationRows(quotation);
                 const pdfUrl = generateQuotationPdf(quotation, rows, quotation.templateSnapshot || activeTemplate, { mode: 'bloburl' });
                 if (pdfUrl) {
                     if (pdfPreviewUrl) {
-                        try {
-                            URL.revokeObjectURL(pdfPreviewUrl);
-                        } catch (error) {
-                            console.debug('PDF preview URL cleanup skipped:', error);
-                        }
+                        clearPreviewUrl(pdfPreviewUrl);
                     }
+                    setPreviewQuotation(quotation);
                     setPdfPreviewTitle(`Quotation ${quotation.quotationNumber} Preview`);
                     setPdfPreviewUrl(pdfUrl);
                 }
@@ -443,7 +548,7 @@ const Quotations = () => {
                 weight: Number(roll.weight || 0),
                 pieces: Array.isArray(roll.pieces)
                     ? roll.pieces
-                    : new Array(Number(roll.pieces || 1)).fill({ length: 0 })
+                    : Array.from({ length: Math.max(1, Number(roll.pieces || 1)) })
             }));
 
         const draftQuotation = {
@@ -479,27 +584,20 @@ const Quotations = () => {
         }
 
         if (pdfPreviewUrl) {
-            try {
-                URL.revokeObjectURL(pdfPreviewUrl);
-            } catch (error) {
-                console.debug('Quotation preview URL cleanup skipped:', error);
-            }
+            clearPreviewUrl(pdfPreviewUrl);
         }
 
         setPdfPreviewTitle(isEditMode ? 'Draft Update Preview' : 'Draft Quotation Preview');
+        setPreviewQuotation({
+            ...draftQuotation,
+            rolls: rows
+        });
         setPdfPreviewUrl(pdfUrl);
         setDraftPrintPayload({ payload });
     };
 
     const handleViewPdf = async (quotation) => {
-        const rows = Array.isArray(quotation.rolls) && quotation.rolls.length > 0
-            ? quotation.rolls
-            : (Array.isArray(quotation.rollSnapshots) ? quotation.rollSnapshots.map((r) => ({
-                barcode: r.barcode,
-                metre: r.metre,
-                weight: r.weight,
-                pieces: new Array(Number(r.pieces || 1)).fill({ length: 0 })
-            })) : []);
+        const rows = buildQuotationRows(quotation);
 
         const pdfUrl = generateQuotationPdf(
             quotation,
@@ -514,13 +612,10 @@ const Quotations = () => {
         }
 
         if (pdfPreviewUrl) {
-            try {
-                URL.revokeObjectURL(pdfPreviewUrl);
-            } catch (error) {
-                console.debug('Quotation preview URL cleanup skipped:', error);
-            }
+            clearPreviewUrl(pdfPreviewUrl);
         }
 
+        setPreviewQuotation(quotation);
         setPdfPreviewTitle(`Quotation ${quotation.quotationNumber} Preview`);
         setPdfPreviewUrl(pdfUrl);
         setDraftPrintPayload(null);
@@ -541,17 +636,62 @@ const Quotations = () => {
         }
     };
 
+    const handleDeleteQuotation = async (quotation) => {
+        if (!quotation) return;
+
+        if (!window.confirm(`Delete quotation ${quotation.quotationNumber}? This cannot be undone.`)) {
+            return;
+        }
+
+        try {
+            await axios.delete(`${apiUrl}/api/quotations/${quotation._id}`, authHeaders());
+            showNotification(`Quotation ${quotation.quotationNumber} deleted successfully`, 'success');
+
+            if (previewQuotation?._id === quotation._id) {
+                closePdfPreview();
+            }
+
+            await fetchQuotations();
+        } catch (error) {
+            console.error('Failed to delete quotation:', error);
+            showNotification(getApiErrorMessage(error, 'Failed to delete quotation'), 'error');
+        }
+    };
+
     const closePdfPreview = () => {
         if (pdfPreviewUrl) {
-            try {
-                URL.revokeObjectURL(pdfPreviewUrl);
-            } catch (error) {
-                console.debug('Quotation preview URL cleanup skipped:', error);
-            }
+            clearPreviewUrl(pdfPreviewUrl);
         }
         setPdfPreviewUrl('');
         setPdfPreviewTitle('Quotation PDF Preview');
+        setPreviewQuotation(null);
         setDraftPrintPayload(null);
+    };
+
+    const handleDownloadPdfPreview = async () => {
+        if (!pdfPreviewUrl) {
+            showNotification('No preview available to download', 'error');
+            return;
+        }
+
+        try {
+            const response = await fetch(pdfPreviewUrl);
+            const blob = await response.blob();
+            const filename = `${String(previewQuotation?.quotationNumber || 'Quotation').replace(/\s+/g, '_')}.pdf`;
+            const downloadUrl = window.URL.createObjectURL(blob);
+            const anchor = document.createElement('a');
+            anchor.style.display = 'none';
+            anchor.href = downloadUrl;
+            anchor.download = filename;
+            document.body.appendChild(anchor);
+            anchor.click();
+            anchor.remove();
+            window.URL.revokeObjectURL(downloadUrl);
+            showNotification('PDF downloaded successfully', 'success');
+        } catch (error) {
+            console.error('Failed to download preview PDF:', error);
+            showNotification(getApiErrorMessage(error, 'Failed to download PDF'), 'error');
+        }
     };
 
     const handlePrintPdfPreview = async () => {
@@ -755,27 +895,29 @@ const Quotations = () => {
                             marginTop: '0.35rem',
                             border: '1px solid var(--border-color)',
                             borderRadius: '12px',
-                            overflow: 'hidden',
+                            overflowX: 'auto',
+                            overflowY: 'hidden',
                             background: 'var(--bg-secondary)',
-                            boxShadow: '0 10px 22px rgba(2, 6, 23, 0.12)'
+                            boxShadow: '0 10px 22px rgba(2, 6, 23, 0.12)',
+                            WebkitOverflowScrolling: 'touch'
                         }}>
-                            <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed' }}>
+                            <table style={{ width: '100%', minWidth: '860px', borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed' }}>
                                 <colgroup>
                                     <col style={{ width: '17%' }} />
                                     <col style={{ width: '12%' }} />
-                                    <col style={{ width: '29%' }} />
+                                    <col style={{ width: '24%' }} />
                                     <col style={{ width: '12%' }} />
                                     <col style={{ width: '10%' }} />
-                                    <col style={{ width: '20%' }} />
+                                    <col style={{ width: '10%' }} />
                                 </colgroup>
                                 <thead>
                                     <tr style={{ background: 'var(--table-header-bg)' }}>
-                                        <th style={{ textAlign: 'left', padding: '0.9rem 1rem', fontSize: '0.75rem', letterSpacing: '0.06em', color: 'var(--text-secondary)' }}>QUOTATION NO.</th>
-                                        <th style={{ textAlign: 'center', padding: '0.9rem 1rem', fontSize: '0.75rem', letterSpacing: '0.06em', color: 'var(--text-secondary)' }}>DATE</th>
-                                        <th style={{ textAlign: 'left', padding: '0.9rem 1rem', fontSize: '0.75rem', letterSpacing: '0.06em', color: 'var(--text-secondary)' }}>PARTY</th>
-                                        <th style={{ textAlign: 'center', padding: '0.9rem 1rem', fontSize: '0.75rem', letterSpacing: '0.06em', color: 'var(--text-secondary)' }}>{DENSITY_NAME}</th>
-                                        <th style={{ textAlign: 'center', padding: '0.9rem 1rem', fontSize: '0.75rem', letterSpacing: '0.06em', color: 'var(--text-secondary)' }}>TOTAL ROLLS</th>
-                                        <th style={{ textAlign: 'center', padding: '0.9rem 1rem', fontSize: '0.75rem', letterSpacing: '0.06em', color: 'var(--text-secondary)' }}>STATUS</th>
+                                        <th style={{ ...tableHeaderCellStyle, textAlign: 'left' }}>QUOTATION NO.</th>
+                                        <th style={{ ...tableHeaderCellStyle, textAlign: 'center' }}>DATE</th>
+                                        <th style={{ ...tableHeaderCellStyle, textAlign: 'left' }}>PARTY</th>
+                                        <th style={{ ...tableHeaderCellStyle, textAlign: 'center' }}>{DENSITY_NAME}</th>
+                                        <th style={{ ...tableHeaderCellStyle, textAlign: 'center' }}>TOTAL ROLLS</th>
+                                        <th style={{ ...tableHeaderCellStyle, textAlign: 'center' }}>ACTIONS</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -791,36 +933,40 @@ const Quotations = () => {
                                                onMouseOver={(e) => { e.currentTarget.style.background = 'var(--row-hover-bg)'; }}
                                                onMouseOut={(e) => { e.currentTarget.style.background = index % 2 === 0 ? 'transparent' : 'var(--row-alt-bg)'; }}>
                                                 <td style={{
-                                                    fontWeight: '700',
-                                                    padding: '0.9rem 1rem',
+                                                    ...tableIdCellStyle,
                                                     whiteSpace: 'nowrap',
                                                     overflow: 'hidden',
-                                                    textOverflow: 'ellipsis',
-                                                    borderTop: '1px solid var(--table-border-color)'
+                                                    textOverflow: 'ellipsis'
                                                 }}>
                                                     {quotation.quotationNumber}
                                                 </td>
-                                                <td style={{ textAlign: 'center', padding: '0.9rem 1rem', whiteSpace: 'nowrap', borderTop: '1px solid var(--table-border-color)' }}>{new Date(quotation.createdAt).toLocaleDateString()}</td>
-                                                <td style={{ padding: '0.9rem 1rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', borderTop: '1px solid var(--table-border-color)' }} title={quotation.partyName}>{quotation.partyName}</td>
-                                                <td style={{ textAlign: 'center', padding: '0.9rem 1rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', borderTop: '1px solid var(--table-border-color)' }} title={quotation.density}>{quotation.density}</td>
-                                                <td style={{ fontWeight: '700', textAlign: 'center', padding: '0.9rem 1rem', borderTop: '1px solid var(--table-border-color)' }}>{quotation.totalRolls}</td>
-                                                <td style={{ textAlign: 'center', padding: '0.9rem 1rem', borderTop: '1px solid var(--table-border-color)' }}>
-                                                    <span style={{
-                                                        display: 'inline-flex',
-                                                        alignItems: 'center',
-                                                        justifyContent: 'center',
-                                                        minWidth: '96px',
-                                                        padding: '5px 10px',
-                                                        borderRadius: '999px',
-                                                        fontSize: '0.73rem',
-                                                        fontWeight: '700',
-                                                        letterSpacing: '0.03em',
-                                                        background: isCancelled ? 'rgba(239, 68, 68, 0.1)' : 'rgba(16, 185, 129, 0.1)',
-                                                        color: isCancelled ? 'var(--error-color)' : 'var(--success-color)',
-                                                        border: `1px solid ${isCancelled ? 'rgba(239, 68, 68, 0.35)' : 'rgba(16, 185, 129, 0.35)'}`
-                                                    }}>
-                                                        {quotation.status}
-                                                    </span>
+                                                <td style={{ ...tableNumericCellStyle, textAlign: 'center', whiteSpace: 'nowrap' }}>{new Date(quotation.createdAt).toLocaleDateString()}</td>
+                                                <td style={{ ...tableBodyCellStyle, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={quotation.partyName}>{quotation.partyName}</td>
+                                                <td style={{ ...tableBodyCellStyle, textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={quotation.density}>{quotation.density}</td>
+                                                <td style={{ ...tableNumericCellStyle, fontWeight: 700, textAlign: 'center' }}>{quotation.totalRolls}</td>
+                                                <td style={{ ...tableBodyCellStyle, textAlign: 'center', padding: '0.72rem 0.5rem' }}>
+                                                    <div style={actionGroupStyle}>
+                                                        <button
+                                                            type="button"
+                                                            className="btn"
+                                                            onClick={(e) => { e.stopPropagation(); handleEditQuotation(quotation); }}
+                                                            title="Edit"
+                                                            aria-label="Edit quotation"
+                                                            style={actionEditButtonStyle}
+                                                        >
+                                                            <IconEdit size="16" />
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            className="btn"
+                                                            onClick={(e) => { e.stopPropagation(); handleDeleteQuotation(quotation); }}
+                                                            title="Delete"
+                                                            aria-label="Delete quotation"
+                                                            style={actionDeleteButtonStyle}
+                                                        >
+                                                            <IconTrash size="16" />
+                                                        </button>
+                                                    </div>
                                                 </td>
                                             </tr>
                                         );
@@ -1200,9 +1346,12 @@ const Quotations = () => {
                         background: 'rgba(15, 23, 42, 0.85)'
                     }}>
                         <h3 style={{ margin: 0, fontSize: '1rem', color: '#f8fafc' }}>{pdfPreviewTitle}</h3>
-                        <div style={{ display: 'flex', gap: '0.6rem' }}>
-                            <button className="btn" onClick={handlePrintPdfPreview}>Print</button>
-                            <button className="btn" onClick={closePdfPreview}>Close</button>
+                        <div style={{ display: 'flex', gap: '0.55rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                            <button className="btn" onClick={() => previewQuotation && handleEditQuotation(previewQuotation)} disabled={!previewQuotation?._id} style={previewActionButtonStyle}>Edit</button>
+                            <button className="btn" onClick={handleDownloadPdfPreview} disabled={!pdfPreviewUrl} style={previewActionButtonStyle}>Download</button>
+                            <button className="btn" onClick={() => previewQuotation && handleDeleteQuotation(previewQuotation)} disabled={!previewQuotation?._id} style={{ ...previewActionButtonStyle, borderColor: 'rgba(248, 113, 113, 0.38)', color: '#fecaca' }}>Delete</button>
+                            <button className="btn" onClick={handlePrintPdfPreview} disabled={!pdfPreviewUrl} style={previewActionButtonStyle}>Print</button>
+                            <button className="btn" onClick={closePdfPreview} style={{ ...previewActionButtonStyle, background: 'rgba(248, 250, 252, 0.95)', color: 'rgb(15, 23, 42)' }}>Close</button>
                         </div>
                     </div>
 
