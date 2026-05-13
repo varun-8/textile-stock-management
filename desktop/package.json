@@ -2,6 +2,7 @@
   "name": "desktop",
   "private": true,
   "version": "1.1.2",
+  "author": "Prodexa",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -47,7 +48,7 @@
   "main": "electron-main.cjs",
   "build": {
     "appId": "com.textilestock.inventory",
-    "productName": "Textile Stock Management",
+    "productName": "LoomTrack",
     "directories": {
       "output": "dist-app",
       "buildResources": "public"
@@ -88,10 +89,10 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Textile Stock Management"
+      "shortcutName": "LoomTrack"
     },
     "portable": {
-      "artifactName": "Textile-Stock-Management-Portable.exe"
+      "artifactName": "LoomTrack-Portable.exe"
     }
   }
 }

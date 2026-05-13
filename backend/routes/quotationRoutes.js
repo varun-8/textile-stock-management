@@ -156,8 +156,7 @@ router.post('/', async (req, res) => {
             validityDate,
             density,
             barcodes,
-            notes,
-            terms,
+            appliedPercentage,
             templateId,
             templateName,
             templateSnapshot
@@ -187,8 +186,7 @@ router.post('/', async (req, res) => {
             rolls: rolls.map((roll) => roll._id),
             rollSnapshots: rolls.map(toRollSnapshot),
             totalRolls: rolls.length,
-            notes: typeof notes === 'string' ? notes.trim().slice(0, 1200) : '',
-            terms: typeof terms === 'string' ? terms.trim().slice(0, 1200) : '',
+            appliedPercentage: Number(appliedPercentage || 0),
             createdBy: req.user ? req.user.username : 'Admin'
         });
 
@@ -252,8 +250,7 @@ router.put('/:id', async (req, res) => {
             validityDate,
             density,
             barcodes,
-            notes,
-            terms,
+            appliedPercentage,
             templateId,
             templateName,
             templateSnapshot
@@ -280,8 +277,7 @@ router.put('/:id', async (req, res) => {
         quotation.rolls = rolls.map((roll) => roll._id);
         quotation.rollSnapshots = rolls.map(toRollSnapshot);
         quotation.totalRolls = rolls.length;
-        quotation.notes = typeof notes === 'string' ? notes.trim().slice(0, 1200) : '';
-        quotation.terms = typeof terms === 'string' ? terms.trim().slice(0, 1200) : '';
+        quotation.appliedPercentage = Number(appliedPercentage || 0);
 
         await quotation.save();
 

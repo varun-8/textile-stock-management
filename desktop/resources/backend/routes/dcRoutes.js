@@ -27,25 +27,47 @@ router.get('/', async (req, res) => {
 // Get Available Rolls for DC (Only RESERVED rolls and not linked to a DC)
 router.get('/available-rolls', async (req, res) => {
     try {
-        const { batchId } = req.query;
+        const { density } = req.query;
         const query = {
             status: 'RESERVED',
             $or: [{ dcId: { $exists: false } }, { dcId: null }]
         };
 
-        if (batchId) {
-            query.transactionHistory = {
-                $elemMatch: {
-                    status: 'RESERVED',
-                    sessionId: batchId
-                }
-            };
+        if (density) {
+            query.barcode = { $regex: new RegExp(`-${density}-`, 'i') };
         }
 
         const rolls = await ClothRoll.find(query)
             .sort({ updatedAt: -1 })
-            .select('barcode metre weight pieces updatedAt');
-        res.json(rolls);
+            .select('barcode metre weight pieces updatedAt transactionHistory')
+            .lean();
+
+        const Session = require('../models/Session');
+        const sessionIds = new Set();
+        rolls.forEach(r => {
+            const tx = (r.transactionHistory || []).find(t => t.status === 'RESERVED' && t.sessionId);
+            if (tx) sessionIds.add(tx.sessionId.toString());
+        });
+
+        const sessions = await Session.find({ _id: { $in: Array.from(sessionIds) } }).select('batchCode').lean();
+        const batchCodeMap = new Map();
+        sessions.forEach(s => batchCodeMap.set(s._id.toString(), s.batchCode));
+
+        const rollsWithBatch = rolls.map(r => {
+            const tx = (r.transactionHistory || []).find(t => t.status === 'RESERVED' && t.sessionId);
+            const batchCode = tx ? batchCodeMap.get(tx.sessionId.toString()) : 'Unknown';
+            return {
+                _id: r._id,
+                barcode: r.barcode,
+                metre: r.metre,
+                weight: r.weight,
+                pieces: r.pieces,
+                updatedAt: r.updatedAt,
+                batchCode: batchCode || 'Unknown'
+            };
+        });
+
+        res.json(rollsWithBatch);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -65,61 +87,26 @@ router.post('/', async (req, res) => {
             appliedPercentage,
             vehicleNumber,
             driverName,
-            batchId,
+            density,
             templateId,
             templateName,
-            templateSnapshot
+            templateSnapshot,
+            barcodes
         } = req.body;
         
         if (!partyName) {
             return res.status(400).json({ error: 'Party Name is required' });
         }
 
-        if (!batchId) {
-            return res.status(400).json({ error: 'Batch is required for DC generation' });
+        if (!Array.isArray(barcodes) || barcodes.length === 0) {
+            return res.status(400).json({ error: 'Please provide at least one barcode to include in the DC' });
         }
 
-        const sourceBatch = await Session.findById(batchId).lean();
-        if (!sourceBatch) {
-            return res.status(404).json({ error: 'Batch not found' });
+        const rollsToDispatch = await ClothRoll.find({ barcode: { $in: barcodes } });
+        
+        if (rollsToDispatch.length !== barcodes.length) {
+            return res.status(400).json({ error: 'Some requested rolls could not be found' });
         }
-
-        if (sourceBatch.type !== 'OUT') {
-            return res.status(400).json({ error: 'Only Stock Out batches can be used for DC' });
-        }
-
-        if (sourceBatch.status !== 'COMPLETED') {
-            return res.status(400).json({ error: 'Only fully completed batches can undergo DC' });
-        }
-
-        const existingBatchDc = await DeliveryChallan.findOne({ sourceBatchId: sourceBatch._id }).lean();
-        if (existingBatchDc) {
-            return res.status(400).json({ error: `DC already exists for this batch (${existingBatchDc.dcNumber})` });
-        }
-
-        const batchRolls = await ClothRoll.find({
-            "transactionHistory.sessionId": sourceBatch._id
-        }).select('barcode transactionHistory').lean();
-
-        const hasHistoricalDcForBatch = batchRolls.some((roll) =>
-            (roll.transactionHistory || []).some((tx) =>
-                typeof tx.details === 'string' && tx.details.includes('Dispatched via DC-')
-            )
-        );
-
-        if (hasHistoricalDcForBatch) {
-            return res.status(400).json({ error: 'This completed batch has already undergone DC once' });
-        }
-
-        const eligibleBatchRolls = await getSessionDispatchRollDocs(sourceBatch._id);
-
-        if (eligibleBatchRolls.length === 0) {
-            return res.status(400).json({ error: 'No reserved rolls are available for this dispatch batch' });
-        }
-
-        // DC rolls are always derived from the selected dispatch batch.
-        // Client payload cannot manually add/remove roll barcodes.
-        const rollsToDispatch = eligibleBatchRolls;
         
         let totalMetre = 0;
         for (const roll of rollsToDispatch) {
@@ -161,8 +148,7 @@ router.post('/', async (req, res) => {
             billPreparedBy: typeof billPreparedBy === 'string' ? billPreparedBy.trim().slice(0, 120) : '',
             vehicleNumber,
             driverName,
-            sourceBatchId: sourceBatch._id,
-            sourceBatchCode: sourceBatch.batchCode || '',
+            density: density || '',
             templateId: typeof templateId === 'string' ? templateId.slice(0, 64) : '',
             templateName: typeof templateName === 'string' ? templateName.slice(0, 80) : '',
             templateSnapshot: templateSnapshot && typeof templateSnapshot === 'object' ? templateSnapshot : null,
@@ -383,6 +369,207 @@ router.post('/manual-out', async (req, res) => {
         res.json({ success: true, moved: rolls.length, reason: normalizedReason });
     } catch (err) {
         console.error('Manual Out error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Edit an existing DC
+router.put('/:id', async (req, res) => {
+    try {
+        const dcId = req.params.id;
+        const dc = await DeliveryChallan.findById(dcId);
+        if (!dc) return res.status(404).json({ error: 'DC not found' });
+
+        if (dc.status === 'CANCELLED') {
+            return res.status(400).json({ error: 'Cannot edit a cancelled DC' });
+        }
+
+        const {
+            partyName,
+            partyAddress,
+            quality,
+            folding,
+            lotNo,
+            billNo,
+            billPreparedBy,
+            vehicleNumber,
+            driverName,
+            barcodes,
+            appliedPercentage
+        } = req.body;
+
+        if (!partyName) {
+            return res.status(400).json({ error: 'Party Name is required' });
+        }
+
+        if (!Array.isArray(barcodes) || barcodes.length === 0) {
+            return res.status(400).json({ error: 'Please provide at least one barcode' });
+        }
+
+        // Handle Text Fields
+        dc.partyName = partyName;
+        dc.partyAddress = typeof partyAddress === 'string' ? partyAddress.trim().slice(0, 300) : '';
+        dc.quality = typeof quality === 'string' ? quality.trim().slice(0, 120) : '';
+        dc.folding = typeof folding === 'string' ? folding.trim().slice(0, 120) : '';
+        dc.lotNo = typeof lotNo === 'string' ? lotNo.trim().slice(0, 120) : '';
+        dc.billNo = typeof billNo === 'string' ? billNo.trim().slice(0, 120) : '';
+        dc.billPreparedBy = typeof billPreparedBy === 'string' ? billPreparedBy.trim().slice(0, 120) : '';
+        dc.vehicleNumber = vehicleNumber || '';
+        dc.driverName = driverName || '';
+
+        const pct = Number(appliedPercentage) || 0;
+        const safePct = pct < -100 ? -100 : pct;
+        dc.appliedPercentage = parseFloat(safePct.toFixed(2));
+
+        // Handle Rolls Modification
+        const currentRollDocs = await ClothRoll.find({ dcId: dc._id });
+        const currentBarcodes = currentRollDocs.map(r => r.barcode);
+
+        const barcodesToRemove = currentBarcodes.filter(b => !barcodes.includes(b));
+        const barcodesToAdd = barcodes.filter(b => !currentBarcodes.includes(b));
+
+        // Validation for barcodesToAdd
+        let rollsToAdd = [];
+        if (barcodesToAdd.length > 0) {
+            rollsToAdd = await ClothRoll.find({ barcode: { $in: barcodesToAdd } });
+            
+            if (rollsToAdd.length !== barcodesToAdd.length) {
+                return res.status(400).json({ error: 'Some rolls to add were not found in the database.' });
+            }
+
+            for (const roll of rollsToAdd) {
+                // We no longer require the roll to belong to a specific source batch
+                if (roll.status !== 'RESERVED') {
+                    return res.status(400).json({ error: `Roll ${roll.barcode} is not in RESERVED status (Status: ${roll.status}).` });
+                }
+
+                if (roll.dcId) {
+                    return res.status(400).json({ error: `Roll ${roll.barcode} is already assigned to another DC.` });
+                }
+            }
+        }
+
+        const employeeName = req.user ? req.user.username : 'Admin DC Engine';
+
+        // Process Removals
+        if (barcodesToRemove.length > 0) {
+            const rollsToRemoveDocs = currentRollDocs.filter(r => barcodesToRemove.includes(r.barcode));
+            const removeBulkOps = rollsToRemoveDocs.map(roll => ({
+                updateOne: {
+                    filter: { _id: roll._id },
+                    update: {
+                        $set: { status: 'RESERVED' },
+                        $unset: { dcId: "" },
+                        $push: {
+                            transactionHistory: {
+                                status: 'RESERVED',
+                                details: `Removed from ${dc.dcNumber}`,
+                                date: new Date(),
+                                employeeName
+                            }
+                        }
+                    }
+                }
+            }));
+            await ClothRoll.bulkWrite(removeBulkOps);
+
+            await Barcode.updateMany(
+                { full_barcode: { $in: barcodesToRemove } },
+                {
+                    $set: { status: 'Active', lifecycleStatus: 'PRINTED' },
+                    $push: {
+                        lifecycleHistory: {
+                            action: 'REMOVED_FROM_DISPATCH',
+                            note: `Removed from ${dc.dcNumber}`,
+                            by: employeeName,
+                            at: new Date()
+                        }
+                    }
+                }
+            );
+        }
+
+        // Process Additions
+        if (rollsToAdd.length > 0) {
+            const addBulkOps = rollsToAdd.map(roll => ({
+                updateOne: {
+                    filter: { _id: roll._id },
+                    update: {
+                        $set: { status: 'OUT', dcId: dc._id },
+                        $push: {
+                            transactionHistory: {
+                                status: 'OUT',
+                                details: `Dispatched via ${dc.dcNumber} (Edit)`,
+                                date: new Date(),
+                                employeeName
+                            }
+                        }
+                    }
+                }
+            }));
+            await ClothRoll.bulkWrite(addBulkOps);
+
+            await Barcode.updateMany(
+                { full_barcode: { $in: barcodesToAdd } },
+                {
+                    $set: {
+                        status: 'Used',
+                        lifecycleStatus: 'USED_IN_DISPATCH',
+                        lastPrintedAt: new Date(),
+                        lastPrintedBy: employeeName
+                    },
+                    $push: {
+                        lifecycleHistory: {
+                            action: 'USED_IN_DISPATCH',
+                            note: `Added via ${dc.dcNumber} (Edit)`,
+                            by: employeeName,
+                            at: new Date()
+                        }
+                    }
+                }
+            );
+        }
+
+        // Update DC totals
+        const finalRollDocs = await ClothRoll.find({ dcId: dc._id });
+        let newTotalMetre = 0;
+        for (const roll of finalRollDocs) {
+            newTotalMetre += roll.metre;
+        }
+
+        const totalMetreWithAdjustment = newTotalMetre * (1 + dc.appliedPercentage / 100);
+
+        dc.rolls = finalRollDocs.map(r => r._id);
+        dc.totalRolls = finalRollDocs.length;
+        dc.totalMetre = parseFloat(totalMetreWithAdjustment.toFixed(2));
+
+        await dc.save();
+
+        await AuditLog.create({
+            action: 'INVENTORY_EDIT',
+            user: employeeName,
+            details: {
+                action: 'EDIT_DC',
+                dcNumber: dc.dcNumber,
+                rollsAdded: barcodesToAdd.length,
+                rollsRemoved: barcodesToRemove.length
+            },
+            ipAddress: req.ip
+        });
+
+        if (req.io) {
+            req.io.emit('stock_update', {
+                type: 'DC_EDITED',
+                dcNumber: dc.dcNumber,
+                timestamp: new Date()
+            });
+        }
+
+        const populatedDC = await DeliveryChallan.findById(dc._id).populate('rolls');
+        res.json({ success: true, dc: populatedDC });
+
+    } catch (err) {
+        console.error('Error editing DC:', err);
         res.status(500).json({ error: err.message });
     }
 });

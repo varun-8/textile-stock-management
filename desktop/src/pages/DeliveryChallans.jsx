@@ -412,10 +412,6 @@ const DeliveryChallans = () => {
             setModalError('Party Name is required');
             return showNotification('Party Name is required', 'error');
         }
-        if (!selectedBatch && !isEditing) {
-            setModalError('Select a batch for preview');
-            return showNotification('Select a batch for preview', 'error');
-        }
         if (selectedRolls.length === 0) {
             setModalError('Please select at least one roll');
             return showNotification('Please select at least one roll', 'error');
@@ -494,10 +490,6 @@ const DeliveryChallans = () => {
         if (!partyName) {
             setModalError('Party Name is required');
             return showNotification('Party Name is required', 'error');
-        }
-        if (!selectedBatch && !isEditing) {
-            setModalError('Select a batch for the DC');
-            return showNotification('Select a batch for the DC', 'error');
         }
         if (selectedRolls.length === 0) {
             setModalError('Please select at least one roll');
@@ -1178,7 +1170,7 @@ const DeliveryChallans = () => {
                                 className="btn"
                                 style={{ background: 'rgba(99, 102, 241, 0.15)', color: 'var(--accent-color)', fontWeight: '600', border: '1px solid var(--accent-color)' }}
                                 onClick={handlePreviewDC}
-                                disabled={(!selectedBatch && !isEditing) || !partyName}
+                                disabled={!partyName || selectedRolls.length === 0}
                             >
                                 <IconEye size="16" style={{ marginRight: '0.4rem' }} /> PREVIEW
                             </button>
@@ -1186,7 +1178,7 @@ const DeliveryChallans = () => {
                                 className="btn" 
                                 style={{ background: 'var(--accent-color)', color: 'white', fontWeight: 'bold' }}
                                 onClick={handleCreateDC}
-                                disabled={(!selectedBatch && !isEditing) || !partyName}
+                                disabled={!partyName || selectedRolls.length === 0}
                             >
                                 {isEditing ? 'UPDATE & PRINT' : 'GENERATE & PRINT'}
                             </button>

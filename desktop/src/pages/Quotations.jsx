@@ -38,8 +38,7 @@ const emptyForm = {
     partyAddress: '',
     validityDate: '',
     density: '',
-    notes: '',
-    terms: ''
+    appliedPercentage: '0'
 };
 
 const Quotations = () => {
@@ -371,8 +370,7 @@ const Quotations = () => {
             partyAddress: quotation.partyAddress || '',
             validityDate: quotation.validityDate ? new Date(quotation.validityDate).toISOString().slice(0, 10) : '',
             density: quotation.density || '',
-            notes: quotation.notes || '',
-            terms: quotation.terms || ''
+            appliedPercentage: String(quotation.appliedPercentage ?? '0')
         });
         setFormErrors({});
         setSubmitError('');
@@ -468,8 +466,7 @@ const Quotations = () => {
             validityDate: form.validityDate || null,
             density: form.density,
             barcodes: selectedBarcodes,
-            notes: form.notes,
-            terms: form.terms,
+            appliedPercentage: parseFloat(form.appliedPercentage) || 0,
             templateId: typeof dcTemplateConfig?.templateId === 'string' ? dcTemplateConfig.templateId : '',
             templateName: typeof dcTemplateConfig?.templateName === 'string' ? dcTemplateConfig.templateName : '',
             templateSnapshot: activeTemplate
@@ -559,8 +556,7 @@ const Quotations = () => {
             validityDate: form.validityDate || null,
             density: form.density,
             totalRolls: rows.length,
-            notes: form.notes,
-            terms: form.terms,
+            appliedPercentage: parseFloat(form.appliedPercentage) || 0,
             status: 'ACTIVE'
         };
 
@@ -570,8 +566,7 @@ const Quotations = () => {
             validityDate: form.validityDate || null,
             density: form.density,
             barcodes: selectedBarcodes,
-            notes: form.notes,
-            terms: form.terms,
+            appliedPercentage: parseFloat(form.appliedPercentage) || 0,
             templateId: typeof dcTemplateConfig?.templateId === 'string' ? dcTemplateConfig.templateId : '',
             templateName: typeof dcTemplateConfig?.templateName === 'string' ? dcTemplateConfig.templateName : '',
             templateSnapshot: activeTemplate
@@ -1130,26 +1125,17 @@ const Quotations = () => {
                                 </div>
 
                                 <div className="form-group" style={{ marginTop: '1rem' }}>
-                                    <label style={simpleLabelStyle}>Notes</label>
-                                    <textarea
+                                    <label style={simpleLabelStyle}>Percentage Adjustment (%)</label>
+                                    <input
+                                        type="number"
                                         className="input"
-                                        rows={2}
-                                        value={form.notes}
-                                        onChange={(e) => updateFormField('notes', e.target.value)}
-                                        placeholder="Optional notes"
-                                        style={{ ...simpleFieldStyle, resize: 'vertical', minHeight: '72px' }}
-                                    />
-                                </div>
-
-                                <div className="form-group" style={{ marginTop: '1rem' }}>
-                                    <label style={simpleLabelStyle}>Terms</label>
-                                    <textarea
-                                        className="input"
-                                        rows={2}
-                                        value={form.terms}
-                                        onChange={(e) => updateFormField('terms', e.target.value)}
-                                        placeholder="Optional terms"
-                                        style={{ ...simpleFieldStyle, resize: 'vertical', minHeight: '72px' }}
+                                        min="0"
+                                        max="100"
+                                        step="0.01"
+                                        value={form.appliedPercentage}
+                                        onChange={(e) => updateFormField('appliedPercentage', e.target.value)}
+                                        placeholder="0"
+                                        style={simpleFieldStyle}
                                     />
                                 </div>
 

@@ -56,15 +56,9 @@ const quotationSchema = new mongoose.Schema({
         required: true,
         default: 0
     },
-    notes: {
-        type: String,
-        trim: true,
-        default: ''
-    },
-    terms: {
-        type: String,
-        trim: true,
-        default: ''
+    appliedPercentage: {
+        type: Number,
+        default: 0
     },
     status: {
         type: String,

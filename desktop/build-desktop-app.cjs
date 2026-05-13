@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Build script for Textile Stock Management Electron App
+ * Build script for LoomTrack Electron App
  * Creates a complete desktop application with frontend, backend, and MongoDB
  */
 
@@ -15,7 +15,7 @@ const BACKEND_DIR = path.join(PROJECT_ROOT, 'backend');
 const RESOURCES_DIR = path.join(DESKTOP_DIR, 'resources');
 
 console.log('\n' + '='.repeat(70));
-console.log('  TEXTILE STOCK MANAGEMENT - DESKTOP APP BUILDER');
+console.log('  LOOMTRACK - DESKTOP APP BUILDER');
 console.log('='.repeat(70) + '\n');
 
 // Helper function to run commands
@@ -152,7 +152,7 @@ try {
     // Update build configuration
     packageJson.build = {
         appId: 'com.textilestock.inventory',
-        productName: 'Textile Stock Management',
+        productName: 'LoomTrack',
         directories: {
             output: 'dist-app',
             buildResources: 'public'
@@ -189,10 +189,10 @@ try {
             allowToChangeInstallationDirectory: true,
             createDesktopShortcut: true,
             createStartMenuShortcut: true,
-            shortcutName: 'Textile Stock Management'
+            shortcutName: 'LoomTrack'
         },
         portable: {
-            artifactName: 'Textile-Stock-Management-Portable.exe'
+            artifactName: 'LoomTrack-Portable.exe'
         }
     };
     
@@ -218,8 +218,8 @@ console.log('  BUILD SUCCESSFUL');
 console.log('='.repeat(70) + '\n');
 
 const distDir = path.join(DESKTOP_DIR, 'dist-app');
-const portableExe = path.join(distDir, 'Textile-Stock-Management-Portable.exe');
-const installerExe = path.join(distDir, 'Textile Stock Management 1.0.0.exe');
+const portableExe = path.join(distDir, 'LoomTrack-Portable.exe');
+const installerExe = path.join(distDir, 'LoomTrack 1.0.0.exe');
 
 console.log('Output files:\n');
 

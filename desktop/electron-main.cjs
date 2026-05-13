@@ -1,5 +1,10 @@
 const { app, BrowserWindow, screen, ipcMain, dialog, session } = require('electron');
 const path = require('path');
+
+// Set App User Model ID for Windows taskbar icons
+if (process.platform === 'win32') {
+    app.setAppUserModelId('com.textilestock.inventory');
+}
 const fs = require('fs');
 const net = require('net');
 const http = require('http');
@@ -399,14 +404,19 @@ function killServices() {
 function createWindow() {
     const { width, height } = screen.getPrimaryDisplay().workAreaSize;
 
-    // In packaged mode with asarUnpack, the icon lives in app.asar.unpacked
-    const iconPath = app.isPackaged
-        ? path.join(process.resourcesPath, 'app.asar.unpacked', 'icon.png')
-        : path.join(__dirname, 'icon.png');
+    // Resolve icon path
+    const iconExt = process.platform === 'win32' ? 'ico' : 'png';
+    let iconPath = path.join(__dirname, 'public', `icon.${iconExt}`);
+    
+    // Fallback if the file doesn't exist
+    if (!fs.existsSync(iconPath)) {
+        iconPath = path.join(__dirname, 'public', 'icon.png');
+    }
 
     const mainWindow = new BrowserWindow({
         width: width,
         height: height,
+        title: 'LoomTrack',
         icon: iconPath,
         webPreferences: {
             nodeIntegration: false,

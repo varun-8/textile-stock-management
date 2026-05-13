@@ -4,6 +4,7 @@ const User = require('../models/User');
 const crypto = require('crypto'); // Built-in Node module
 const os = require('os');
 const { verifyToken, issueAdminToken } = require('../middleware/authMiddleware');
+const { authenticateAdmin } = require('../services/adminCredentialService');
 
 module.exports = function createAuthRouter(io) {
     const router = express.Router();
@@ -323,11 +324,10 @@ router.post('/admin-login', async (req, res) => {
             return res.status(400).json({ error: 'Username and password required' });
         }
         
-        // Validate against environment variables (hardcoded admin credentials)
-        const validUsername = process.env.APP_USERNAME || 'admin';
-        const validPassword = process.env.APP_PASSWORD || 'password';
+        // Validate against admin credential service (persistent admin.json)
+        const isValid = await authenticateAdmin(username, password);
         
-        if (username !== validUsername || password !== validPassword) {
+        if (!isValid) {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
         

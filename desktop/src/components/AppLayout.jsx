@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useConfig } from '../context/ConfigContext';
 import { IconBox, IconScan, IconSettings, IconCloud, IconUsers, IconBroadcast, IconTruck } from './Icons';
-import AppLogo from '../assets/logo.svg';
+import AppLogo from '../assets/logo.png';
 import { DENSITY_NAME } from '../constants';
 
 const AppLayout = ({ children }) => {

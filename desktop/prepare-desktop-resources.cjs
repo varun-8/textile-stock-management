@@ -27,6 +27,14 @@ function copyIfExists(src, dest) {
     return false;
 }
 
+function safeRemoveSync(targetPath) {
+    try {
+        fs.removeSync(targetPath);
+    } catch (error) {
+        console.warn(`Skipping removal of locked resource: ${targetPath} (${error.message})`);
+    }
+}
+
 function prepareDesktopResources() {
     fs.ensureDirSync(RESOURCES_DIR);
     fs.ensureDirSync(BACKEND_RESOURCES_DIR);
@@ -64,7 +72,7 @@ function prepareDesktopResources() {
     const srcModules = path.join(BACKEND_DIR, 'node_modules');
     const destModules = path.join(BACKEND_RESOURCES_DIR, 'node_modules');
     if (fs.existsSync(srcModules)) {
-        fs.removeSync(destModules);
+        safeRemoveSync(destModules);
         fs.copySync(srcModules, destModules);
     } else {
         runCommand('npm install --omit=dev', BACKEND_RESOURCES_DIR);
@@ -76,8 +84,12 @@ function prepareDesktopResources() {
     }
 
     if (fs.existsSync(MONGO_RESOURCES_SRC)) {
-        fs.removeSync(MONGO_RESOURCES_DEST);
-        fs.copySync(MONGO_RESOURCES_SRC, MONGO_RESOURCES_DEST);
+        safeRemoveSync(MONGO_RESOURCES_DEST);
+        try {
+            fs.copySync(MONGO_RESOURCES_SRC, MONGO_RESOURCES_DEST, { overwrite: true });
+        } catch (error) {
+            console.warn(`Skipping MongoDB refresh due to lock: ${error.message}`);
+        }
     }
 }
 

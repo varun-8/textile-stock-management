@@ -414,8 +414,21 @@ const connectWithRetry = () => {
             mongoose.connect(uri, {
                 serverSelectionTimeoutMS: 5000,
                 family: 4 // Use IPv4
-            }).then(() => {
+            }).then(async () => {
                 console.log('✅ Connected to MongoDB Local (textile-stock-management)');
+                
+                // Drop problematic unique index if it exists
+                try {
+                    const db = mongoose.connection.db;
+                    await db.collection('deliverychallans').dropIndex('sourceBatchId_1');
+                    console.log('🗑️ Dropped unique index sourceBatchId_1 from deliverychallans');
+                } catch (err) {
+                    // IndexNotFound is code 27 or "index not found with name" message
+                    if (err.code !== 27 && !err.message.includes('index not found')) {
+                        console.warn('⚠️ Could not drop sourceBatchId_1 index:', err.message);
+                    }
+                }
+
                 resolve();
             }).catch(err => {
                 console.error('❌ MongoDB Connection Error:', err.message);

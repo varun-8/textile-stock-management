@@ -406,22 +406,41 @@ const apiCircuitBreaker = new CircuitBreaker({
 
 // Database Connection
 const connectWithRetry = () => {
-    const uri = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/textile-stock-management';
-    console.log(`📡 Attempting to connect to MongoDB at ${uri}...`);
-    
-    mongoose.connect(uri, {
-        serverSelectionTimeoutMS: 5000,
-        family: 4 // Use IPv4
-    }).then(() => {
-        console.log('✅ Connected to MongoDB Local (textile-stock-management)');
-    }).catch(err => {
-        console.error('❌ MongoDB Connection Error:', err.message);
-        console.log('🔄 Retrying in 5 seconds...');
-        setTimeout(connectWithRetry, 5000);
+    return new Promise((resolve) => {
+        const attempt = () => {
+            const uri = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/textile-stock-management';
+            console.log(`📡 Attempting to connect to MongoDB at ${uri}...`);
+            
+            mongoose.connect(uri, {
+                serverSelectionTimeoutMS: 5000,
+                family: 4 // Use IPv4
+            }).then(async () => {
+                console.log('✅ Connected to MongoDB Local (textile-stock-management)');
+                
+                // Drop problematic unique index if it exists
+                try {
+                    const db = mongoose.connection.db;
+                    await db.collection('deliverychallans').dropIndex('sourceBatchId_1');
+                    console.log('🗑️ Dropped unique index sourceBatchId_1 from deliverychallans');
+                } catch (err) {
+                    // IndexNotFound is code 27 or "index not found with name" message
+                    if (err.code !== 27 && !err.message.includes('index not found')) {
+                        console.warn('⚠️ Could not drop sourceBatchId_1 index:', err.message);
+                    }
+                }
+
+                resolve();
+            }).catch(err => {
+                console.error('❌ MongoDB Connection Error:', err.message);
+                console.log('🔄 Retrying in 5 seconds...');
+                setTimeout(attempt, 5000);
+            });
+        };
+        attempt();
     });
 };
 
-connectWithRetry();
+const dbConnectPromise = connectWithRetry();
 
 // Initialize Cloud Backup Manager
 const getCloudBackupDir = () => {
@@ -808,21 +827,23 @@ const startHttpsServer = (port, label) => {
     return server;
 };
 
-startHttpsServer(HTTPS_PORT, 'Primary');
+dbConnectPromise.then(() => {
+    startHttpsServer(HTTPS_PORT, 'Primary');
 
-if (httpsOptions && ENABLE_HTTPS_COMPAT_443 && HTTPS_PORT !== 443) {
-    startHttpsServer(443, 'Compatibility');
-}
+    if (httpsOptions && ENABLE_HTTPS_COMPAT_443 && HTTPS_PORT !== 443) {
+        startHttpsServer(443, 'Compatibility');
+    }
 
-httpServer.on('error', (err) => {
-    console.error(`HTTP server failed on port ${HTTP_PORT}:`, err.message);
-    console.error('HTTP port is unavailable. Another backend instance may already be running.');
-    process.exit(1);
-});
+    httpServer.on('error', (err) => {
+        console.error(`HTTP server failed on port ${HTTP_PORT}:`, err.message);
+        console.error('HTTP port is unavailable. Another backend instance may already be running.');
+        process.exit(1);
+    });
 
-httpServer.listen(HTTP_PORT, '0.0.0.0', () => {
-    const localIp = getLocalIp();
-    console.log(`HTTP Server running on port ${HTTP_PORT}`);
-    console.log(`- Local Access:   http://localhost:${HTTP_PORT}`);
-    console.log(`- Network Access: http://${localIp}:${HTTP_PORT}`);
+    httpServer.listen(HTTP_PORT, '0.0.0.0', () => {
+        const localIp = getLocalIp();
+        console.log(`HTTP Server running on port ${HTTP_PORT}`);
+        console.log(`- Local Access:   http://localhost:${HTTP_PORT}`);
+        console.log(`- Network Access: http://${localIp}:${HTTP_PORT}`);
+    });
 });

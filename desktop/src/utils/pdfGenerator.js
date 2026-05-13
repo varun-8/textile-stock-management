@@ -729,6 +729,11 @@ export const generateQuotationPdf = (quotationData, rollsList, templateConfig = 
     const template = normalizeTemplate(templateConfig, quotationData);
     template.documentTitle = 'QUOTATION';
     const rows = Array.isArray(rollsList) ? rollsList : [];
+    
+    const pct = Number(quotationData?.appliedPercentage || 0);
+    const safePct = Number.isFinite(pct) ? pct : 0;
+    const factor = 1 + safePct / 100;
+    const adjustedMetre = (value) => Number((Number(value || 0) * factor).toFixed(2));
 
     const pageWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
@@ -886,7 +891,7 @@ export const generateQuotationPdf = (quotationData, rollsList, templateConfig = 
         return [
             String(index + 1),
             String(roll?.barcode || '-'),
-            Number(roll?.metre || 0).toFixed(2),
+            adjustedMetre(roll?.metre || 0).toFixed(2),
             String(piecesCount)
         ];
     });
@@ -927,7 +932,7 @@ export const generateQuotationPdf = (quotationData, rollsList, templateConfig = 
     yPosition = (doc.lastAutoTable?.finalY || yPosition) + 5;
 
     const totalRolls = Number(quotationData.totalRolls || rows.length || 0);
-    const totalMetre = rows.reduce((sum, roll) => sum + Number(roll?.metre || 0), 0);
+    const totalMetre = rows.reduce((sum, roll) => sum + adjustedMetre(roll?.metre || 0), 0);
     ensureSpace(16);
 
     const summaryGap = 4;
@@ -953,9 +958,6 @@ export const generateQuotationPdf = (quotationData, rollsList, templateConfig = 
     doc.text(totalMetre.toFixed(2), marginLeft + summaryWidth + summaryGap + summaryWidth - 2.5, summaryTop + 9.2, { align: 'right' });
 
     yPosition += summaryHeight + 5;
-
-    drawTextSection('Notes', quotationData.notes);
-    drawTextSection('Terms & Conditions', quotationData.terms);
 
     const footerY = pageHeight - 12;
     doc.setDrawColor(...borderColor);

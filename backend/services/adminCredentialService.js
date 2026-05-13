@@ -9,7 +9,8 @@ try {
     console.warn('[Security] Optional dependency "bcryptjs" not installed. Falling back to SHA-256 credential hashing.');
 }
 
-const DATA_DIR = process.env.LICENSE_DATA_DIR || path.resolve(__dirname, '..', 'license-data');
+const DATA_DIR = process.env.LICENSE_DATA_DIR || 
+    (process.env.APP_RUNTIME_DIR ? path.join(process.env.APP_RUNTIME_DIR, 'license-data') : path.resolve(__dirname, '..', 'license-data'));
 const ADMIN_FILE = path.join(DATA_DIR, 'admin.json');
 
 const ensureDataDir = () => {
@@ -54,7 +55,7 @@ const ensureAdminStore = async () => {
     }
 
     const username = String(process.env.APP_USERNAME || 'admin').trim();
-    const password = String(process.env.APP_PASSWORD || 'change-me').trim();
+    const password = String(process.env.APP_PASSWORD || 'password').trim();
     const passwordHash = await hashPassword(password);
     const record = {
         username,

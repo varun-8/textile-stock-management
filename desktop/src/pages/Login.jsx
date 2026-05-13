@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useConfig } from '../context/ConfigContext';
-import AppLogo from '../assets/logo.svg';
+import AppLogo from '../assets/logo.png';
 
 const Login = () => {
     const { apiUrl, updateApiUrl } = useConfig();
