@@ -236,7 +236,7 @@ const Employees = () => {
                                         <th style={thStyle}>NAME</th>
                                         <th style={thStyle}>ACCESS PIN</th>
                                         <th style={thStyle}>LAST ACTIVE</th>
-                                        <th style={thStyle}>LAST DEVICE</th>
+                                        <th style={{ ...thStyle, whiteSpace: 'nowrap' }}>LAST DEVICE</th>
                                         <th style={thStyle}>STATUS</th>
                                         <th style={{ ...thStyle, textAlign: 'right' }}>ACTIONS</th>
                                     </tr>
@@ -296,15 +296,29 @@ const Employees = () => {
                                             <td style={{ ...tdStyle, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                                                 {emp.lastActive ? new Date(emp.lastActive).toLocaleString() : <span style={{ opacity: 0.4 }}>Never</span>}
                                             </td>
-                                            <td style={tdStyle}>
+                                            <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
                                                 {emp.lastScanner ? (
                                                     <span style={{
-                                                        background: 'var(--bg-tertiary)', padding: '4px 8px', borderRadius: '4px',
-                                                        fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-primary)', border: '1px solid var(--border-color)'
+                                                        display: 'inline-flex',
+                                                        alignItems: 'center',
+                                                        maxWidth: '100%',
+                                                        background: 'var(--bg-tertiary)',
+                                                        padding: '0.3rem 0.6rem',
+                                                        borderRadius: '999px',
+                                                        fontSize: '0.70rem',
+                                                        fontWeight: '600',
+                                                        color: 'var(--text-primary)',
+                                                        border: '1px solid var(--border-color)',
+                                                        fontFamily: '"Segoe UI", "Helvetica Neue", Arial, sans-serif',
+                                                        lineHeight: 1,
+                                                        letterSpacing: '0.01em',
+                                                        whiteSpace: 'nowrap',
+                                                        overflow: 'hidden',
+                                                        textOverflow: 'ellipsis'
                                                     }}>
                                                         {emp.lastScanner}
                                                     </span>
-                                                ) : <span style={{ opacity: 0.4, fontSize: '0.8rem' }}>-</span>}
+                                                ) : <span style={{ opacity: 0.4, fontSize: '0.75rem', whiteSpace: 'nowrap' }}>-</span>}
                                             </td>
                                             <td style={tdStyle}>
                                                 <span style={{

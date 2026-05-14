@@ -61,6 +61,8 @@ const clothRollSchema = new mongoose.Schema({
         type: [pieceSchema],
         default: undefined
     },
+    employeeId: String, // Employee ID (E001, E002, etc.)
+    employeeName: String, // Latest employee name (snapshot)
     transactionHistory: [transactionSchema],
     dcId: {
         type: mongoose.Schema.Types.ObjectId,

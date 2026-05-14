@@ -528,6 +528,7 @@ router.put('/:id/dispatch-rolls', async (req, res) => {
 
         const now = new Date();
         const bulkOps = [];
+        const batchEditorName = req.user ? req.user.username : 'Batch Editor';
 
         for (const roll of addRolls) {
             bulkOps.push({
@@ -535,8 +536,8 @@ router.put('/:id/dispatch-rolls', async (req, res) => {
                     filter: { _id: roll._id },
                     update: {
                         $set: isDispatchedBatch
-                            ? { status: 'OUT', dcId: linkedDc._id }
-                            : { status: 'RESERVED' },
+                            ? { status: 'OUT', dcId: linkedDc._id, employeeName: batchEditorName }
+                            : { status: 'RESERVED', employeeName: batchEditorName },
                         $push: {
                             transactionHistory: {
                                 status: isDispatchedBatch ? 'OUT' : 'RESERVED',
@@ -544,7 +545,7 @@ router.put('/:id/dispatch-rolls', async (req, res) => {
                                     ? `Added to dispatched batch${linkedDc?.dcNumber ? ` (${linkedDc.dcNumber})` : ''}`
                                     : 'Added to dispatch batch',
                                 date: now,
-                                employeeName: req.user ? req.user.username : 'Batch Editor',
+                                employeeName: batchEditorName,
                                 sessionId: session._id
                             }
                         }
@@ -555,14 +556,14 @@ router.put('/:id/dispatch-rolls', async (req, res) => {
 
         for (const roll of removeRolls) {
             const update = {
-                $set: { status: 'IN' },
+                $set: { status: 'IN', employeeName: batchEditorName },
                 $unset: { dcId: '' },
                 $push: {
                     transactionHistory: {
                         status: 'IN',
                         details: 'Removed from dispatch batch',
                         date: now,
-                        employeeName: req.user ? req.user.username : 'Batch Editor',
+                        employeeName: batchEditorName,
                         sessionId: session._id
                     }
                 }

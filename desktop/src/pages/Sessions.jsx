@@ -825,15 +825,15 @@ const Sessions = () => {
                         </div>
                     </div>
 
-                    <div className="panel" style={{ padding: 0, overflow: 'hidden', border: '1px solid var(--border-color)', borderRadius: '16px' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+                    <div className="panel" style={{ padding: 0, overflow: 'hidden', border: '1px solid var(--border-color)', borderRadius: '16px', boxShadow: '0 14px 28px rgba(2, 6, 23, 0.08)' }}>
+                        <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: '0.88rem', fontFamily: '"Segoe UI", "Helvetica Neue", Arial, sans-serif' }}>
                             <thead style={{ background: 'var(--bg-tertiary)', borderBottom: '1px solid var(--border-color)' }}>
                                 <tr>
-                                    <th style={{ padding: '1rem 1.5rem', textAlign: 'left', fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', width: '25%' }}>Batch / Date & Time</th>
-                                    <th style={{ padding: '1rem 1.5rem', textAlign: 'left', fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', width: '15%' }}>Type</th>
-                                    <th style={{ padding: '1rem 1.5rem', textAlign: 'center', fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', width: '15%' }}>{DENSITY_NAME}</th>
-                                    <th style={{ padding: '1rem 1.5rem', textAlign: 'right', fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', width: '15%' }}>Items Scanned</th>
-                                    <th style={{ padding: '1rem 1.5rem', textAlign: 'right', fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', width: '30%' }}>Actions</th>
+                                    <th style={{ padding: '0.95rem 1.35rem', textAlign: 'left', fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', width: '25%', fontFamily: '"Segoe UI", "Helvetica Neue", Arial, sans-serif' }}>Batch / Date & Time</th>
+                                    <th style={{ padding: '0.95rem 1.35rem', textAlign: 'left', fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', width: '15%', fontFamily: '"Segoe UI", "Helvetica Neue", Arial, sans-serif' }}>Type</th>
+                                    <th style={{ padding: '0.95rem 1.35rem', textAlign: 'center', fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', width: '15%', fontFamily: '"Segoe UI", "Helvetica Neue", Arial, sans-serif' }}>{DENSITY_NAME}</th>
+                                    <th style={{ padding: '0.95rem 1.35rem', textAlign: 'right', fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', width: '15%', fontFamily: '"Segoe UI", "Helvetica Neue", Arial, sans-serif' }}>Items Scanned</th>
+                                    <th style={{ padding: '0.95rem 1.35rem', textAlign: 'right', fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', width: '30%', fontFamily: '"Segoe UI", "Helvetica Neue", Arial, sans-serif' }}>Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -846,19 +846,28 @@ const Sessions = () => {
                                     </tr>
                                 ) : (
                                     filteredHistory.map(s => (
-                                        <tr key={s._id} style={{ borderBottom: '1px solid var(--border-color)', transition: 'background 0.2s' }} className="hover:bg-white/5">
-                                            <td style={{ padding: '1rem 1.5rem' }}>
-                                                <div style={{ fontWeight: '700', color: 'var(--text-primary)', fontFamily: 'monospace' }}>
+                                        <tr key={s._id} style={{ borderBottom: '1px solid var(--border-color)', transition: 'background 0.2s, transform 0.15s ease', cursor: 'default' }} className="hover:bg-white/5">
+                                            <td style={{ padding: '1rem 1.35rem', verticalAlign: 'top' }}>
+                                                <div style={{ fontWeight: '700', color: 'var(--text-primary)', fontFamily: '"Segoe UI", "Helvetica Neue", Arial, sans-serif', letterSpacing: '0.01em' }}>
                                                     {s.batchCode || s._id}
                                                 </div>
-                                                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '4px', whiteSpace: 'nowrap' }}>
+                                                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '4px', whiteSpace: 'nowrap', lineHeight: 1.35 }}>
                                                     {new Date(s.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })} {new Date(s.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                                     {s.endedAt ? ` - ${new Date(s.endedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}
                                                 </div>
                                             </td>
-                                            <td style={{ padding: '1rem 1.5rem' }}>
+                                            <td style={{ padding: '1rem 1.35rem', verticalAlign: 'top' }}>
                                                 <span style={{
-                                                    padding: '4px 10px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '800', letterSpacing: '0.05em',
+                                                    display: 'inline-flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center',
+                                                    padding: '0.42rem 0.75rem',
+                                                    borderRadius: '999px',
+                                                    fontSize: '0.72rem',
+                                                    fontWeight: '700',
+                                                    letterSpacing: '0.04em',
+                                                    lineHeight: 1,
+                                                    fontFamily: '"Segoe UI", "Helvetica Neue", Arial, sans-serif',
                                                     background: s.type === 'IN' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
                                                     color: s.type === 'IN' ? 'var(--success-color)' : 'var(--error-color)',
                                                     border: `1px solid ${s.type === 'IN' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)'}`
@@ -866,20 +875,20 @@ const Sessions = () => {
                                                     {s.type === 'IN' ? 'STOCK IN' : 'DISPATCH'}
                                                 </span>
                                             </td>
-                                            <td style={{ padding: '1rem 1.5rem', textAlign: 'center', fontWeight: '700', fontSize: '1rem' }}>
+                                            <td style={{ padding: '1rem 1.35rem', textAlign: 'center', fontWeight: '700', fontSize: '0.96rem', verticalAlign: 'top' }}>
                                                 {s.targetSize}
                                             </td>
-                                            <td style={{ padding: '1rem 1.5rem', textAlign: 'right', fontFamily: 'monospace', fontSize: '1rem', fontWeight: '700' }}>
+                                            <td style={{ padding: '1rem 1.35rem', textAlign: 'right', fontFamily: '"Segoe UI", "Helvetica Neue", Arial, sans-serif', fontSize: '0.98rem', fontWeight: '700', verticalAlign: 'top' }}>
                                                 {s.totalItems !== undefined ? s.totalItems : (s.scannedCount || 0)}
                                             </td>
 
-                                            <td style={{ padding: '1rem 1.5rem', textAlign: 'right' }}>
-                                                <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                                            <td style={{ padding: '1rem 1.35rem', textAlign: 'right', verticalAlign: 'top' }}>
+                                                <div style={{ display: 'inline-flex', gap: '0.45rem', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                                                     {s.type === 'OUT' && (
                                                         <button
                                                             onClick={() => openDispatchEditModal(s)}
                                                             className="btn"
-                                                            style={{ padding: '6px 12px', fontSize: '0.8rem', background: 'rgba(99, 102, 241, 0.1)', border: 'none', color: 'var(--accent-color)' }}
+                                                            style={{ padding: '0.5rem 0.8rem', fontSize: '0.78rem', background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--accent-color)', borderRadius: '999px', fontWeight: '700', letterSpacing: '0.02em' }}
                                                             title="Edit Dispatch Batch"
                                                         >
                                                             <IconEdit size={14} /> Edit
@@ -889,7 +898,7 @@ const Sessions = () => {
                                                     <button
                                                         onClick={() => handleExport(s._id, s.type, s.targetSize, 'summary')}
                                                         className="btn"
-                                                        style={{ padding: '6px 12px', fontSize: '0.8rem', background: 'var(--bg-primary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                                                        style={{ padding: '0.5rem 0.8rem', fontSize: '0.78rem', background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: '999px', fontWeight: '700', letterSpacing: '0.02em' }}
                                                         title="Download Excel Summary"
                                                     >
                                                         Export
@@ -897,7 +906,7 @@ const Sessions = () => {
                                                     <button
                                                         onClick={() => handleViewReport(s._id)}
                                                         className="btn"
-                                                        style={{ padding: '6px 12px', fontSize: '0.8rem', background: 'rgba(99, 102, 241, 0.1)', border: 'none', color: 'var(--accent-color)' }}
+                                                        style={{ padding: '0.5rem 0.8rem', fontSize: '0.78rem', background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--accent-color)', borderRadius: '999px', fontWeight: '700', letterSpacing: '0.02em' }}
                                                     >
                                                         View
                                                     </button>

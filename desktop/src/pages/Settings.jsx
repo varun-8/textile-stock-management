@@ -17,6 +17,13 @@ const Settings = () => {
     const [serverIp, setServerIp] = useState('Loading...');
     const [scanners, setScanners] = useState([]);
 
+    // Backup/Restore Modal States
+    const [showImportConfirm, setShowImportConfirm] = useState(false);
+    const [pendingImportFile, setPendingImportFile] = useState(null);
+    const [showRestoreConfirm, setShowRestoreConfirm] = useState(false);
+    const [pendingRestoreFilename, setPendingRestoreFilename] = useState(null);
+    const [restoreIsProcessing, setRestoreIsProcessing] = useState(false);
+
     // Wipe states
     const [showWipeConfirm, setShowWipeConfirm] = useState(false);
     const [wipePasswordInput, setWipePasswordInput] = useState('');
@@ -361,16 +368,19 @@ const Settings = () => {
     const handleImportBackup = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
+        setPendingImportFile(file);
+        setShowImportConfirm(true);
+    };
 
-        if (!window.confirm('WARNING: Restoring a backup will OVERWRITE all current data. This action cannot be undone. Continue?')) {
-            return;
-        }
+    const confirmImportBackup = async () => {
+        if (!pendingImportFile) return;
+        setShowImportConfirm(false);
 
         const reader = new FileReader();
         reader.onload = async (e) => {
             try {
                 const content = JSON.parse(e.target.result);
-                setBackupMsg('Restoring data...');
+                setBackupMsg('⏳ Restoring data...');
 
                 const token = localStorage.getItem('ADMIN_TOKEN');
                 const res = await fetch(`${apiUrl}/api/admin/restore`, {
@@ -384,24 +394,32 @@ const Settings = () => {
 
                 const data = await res.json();
                 if (res.ok) {
-                    alert('System restored successfully. The page will reload.');
-                    window.location.reload();
+                    setBackupMsg('✅ Restore successful. Reloading...');
+                    setTimeout(() => window.location.reload(), 1500);
                 } else {
-                    alert(`Restore failed: ${data.error}`);
-                    setBackupMsg('');
+                    setBackupMsg(`❌ Restore failed: ${data.error}`);
                 }
-            } catch {
-                alert('Invalid backup file format');
-                setBackupMsg('');
+            } catch (err) {
+                setBackupMsg('❌ Invalid backup file format');
+                console.error(err);
             }
+            setPendingImportFile(null);
         };
-        reader.readAsText(file);
+        reader.readAsText(pendingImportFile);
     };
 
     const handleRestore = async (filename) => {
-        if (!window.confirm(`Restore from ${filename}? Current data will be replaced.`)) return;
+        setPendingRestoreFilename(filename);
+        setShowRestoreConfirm(true);
+    };
+
+    const confirmRestore = async () => {
+        if (!pendingRestoreFilename) return;
+        setShowRestoreConfirm(false);
+        setRestoreIsProcessing(true);
 
         try {
+            setBackupMsg(`⏳ Restoring from ${pendingRestoreFilename}...`);
             const token = localStorage.getItem('ADMIN_TOKEN');
             const res = await fetch(`${apiUrl}/api/admin/restore`, {
                 method: 'POST',
@@ -409,15 +427,21 @@ const Settings = () => {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`
                 },
-                body: JSON.stringify({ filename })
+                body: JSON.stringify({ filename: pendingRestoreFilename })
             });
             if (res.ok) {
-                alert('Restore complete. Reloading...');
-                window.location.reload();
+                setBackupMsg('✅ Restore successful. Reloading...');
+                setTimeout(() => window.location.reload(), 1500);
             } else {
-                alert('Restore failed');
+                setBackupMsg('❌ Restore failed');
             }
-        } catch (err) { console.error(err); alert('Restore failed'); }
+        } catch (err) { 
+            console.error(err);
+            setBackupMsg('❌ Restore failed'); 
+        } finally {
+            setRestoreIsProcessing(false);
+            setPendingRestoreFilename(null);
+        }
     };
 
     const handleDownload = async (filename) => {
@@ -1165,6 +1189,94 @@ const Settings = () => {
                 </div>
             </div>
 
+            {/* Import Backup Confirmation Modal */}
+            {showImportConfirm && (
+                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0, 0, 0, 0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, animation: 'fadeIn 0.2s ease' }}>
+                    <div style={{ background: 'var(--bg-secondary)', borderRadius: '16px', padding: '2rem', maxWidth: '500px', width: '90vw', boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)', border: '1px solid var(--border-color)', animation: 'slideUp 0.3s ease' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
+                            <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: 'rgba(239, 68, 68, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--error-color)', fontSize: '1.5rem' }}>⚠️</div>
+                            <h2 style={{ margin: 0, fontSize: '1.3rem', color: 'var(--text-primary)' }}>Restore Backup?</h2>
+                        </div>
+                        <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', lineHeight: '1.6', marginBottom: '1.5rem' }}>
+                            This will <strong>replace all current data</strong> with the contents of the backup file. This action <strong>cannot be undone</strong>.
+                        </p>
+                        <div style={{ background: 'rgba(239, 68, 68, 0.05)', borderLeft: '4px solid var(--error-color)', padding: '1rem', borderRadius: '8px', marginBottom: '2rem', fontSize: '0.85rem', color: 'var(--text-primary)' }}>
+                            ⓘ Make sure you have verified the backup file before proceeding.
+                        </div>
+                        <div style={{ display: 'flex', gap: '1rem' }}>
+                            <button
+                                onClick={confirmImportBackup}
+                                style={{
+                                    flex: 1, padding: '0.9rem', borderRadius: '8px', border: 'none', background: 'var(--error-color)', color: 'white',
+                                    fontWeight: '700', fontSize: '0.9rem', cursor: 'pointer', letterSpacing: '0.05em', transition: 'all 0.2s', boxShadow: '0 4px 12px rgba(239, 68, 68, 0.3)'
+                                }}
+                                onMouseEnter={(e) => e.target.style.background = '#dc2626'}
+                                onMouseLeave={(e) => e.target.style.background = 'var(--error-color)'}
+                            >
+                                RESTORE BACKUP
+                            </button>
+                            <button
+                                onClick={() => { setShowImportConfirm(false); setPendingImportFile(null); }}
+                                style={{
+                                    flex: 1, padding: '0.9rem', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)',
+                                    fontWeight: '700', fontSize: '0.9rem', cursor: 'pointer', letterSpacing: '0.05em', transition: 'all 0.2s'
+                                }}
+                                onMouseEnter={(e) => e.target.style.background = 'var(--bg-tertiary)'}
+                                onMouseLeave={(e) => e.target.style.background = 'var(--bg-primary)'}
+                            >
+                                CANCEL
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Restore from History Confirmation Modal */}
+            {showRestoreConfirm && (
+                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0, 0, 0, 0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, animation: 'fadeIn 0.2s ease' }}>
+                    <div style={{ background: 'var(--bg-secondary)', borderRadius: '16px', padding: '2rem', maxWidth: '500px', width: '90vw', boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)', border: '1px solid var(--border-color)', animation: 'slideUp 0.3s ease' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
+                            <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: 'rgba(239, 68, 68, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--error-color)', fontSize: '1.5rem' }}>⚠️</div>
+                            <h2 style={{ margin: 0, fontSize: '1.3rem', color: 'var(--text-primary)' }}>Confirm Restoration</h2>
+                        </div>
+                        <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', lineHeight: '1.6', marginBottom: '0.5rem' }}>
+                            Restoring from: <code style={{ background: 'var(--bg-tertiary)', padding: '0.3rem 0.6rem', borderRadius: '6px', fontSize: '0.8rem', color: 'var(--accent-color)', fontFamily: 'monospace', fontWeight: '600' }}>{pendingRestoreFilename}</code>
+                        </p>
+                        <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', lineHeight: '1.6', marginBottom: '1.5rem' }}>
+                            All current data will be replaced with data from this backup file.
+                        </p>
+                        <div style={{ background: 'rgba(239, 68, 68, 0.05)', borderLeft: '4px solid var(--error-color)', padding: '1rem', borderRadius: '8px', marginBottom: '2rem', fontSize: '0.85rem', color: 'var(--text-primary)', lineHeight: '1.5' }}>
+                            <strong>⚠️ Warning:</strong> This action is <strong>permanent and irreversible</strong>. Ensure you have a current backup before proceeding.
+                        </div>
+                        <div style={{ display: 'flex', gap: '1rem' }}>
+                            <button
+                                onClick={confirmRestore}
+                                disabled={restoreIsProcessing}
+                                style={{
+                                    flex: 1, padding: '0.9rem', borderRadius: '8px', border: 'none', background: restoreIsProcessing ? 'rgba(239, 68, 68, 0.5)' : 'var(--error-color)', color: 'white',
+                                    fontWeight: '700', fontSize: '0.9rem', cursor: restoreIsProcessing ? 'not-allowed' : 'pointer', letterSpacing: '0.05em', transition: 'all 0.2s', boxShadow: '0 4px 12px rgba(239, 68, 68, 0.3)'
+                                }}
+                                onMouseEnter={(e) => !restoreIsProcessing && (e.target.style.background = '#dc2626')}
+                                onMouseLeave={(e) => !restoreIsProcessing && (e.target.style.background = 'var(--error-color)')}
+                            >
+                                {restoreIsProcessing ? '⏳ RESTORING...' : 'RESTORE NOW'}
+                            </button>
+                            <button
+                                onClick={() => { setShowRestoreConfirm(false); setPendingRestoreFilename(null); }}
+                                disabled={restoreIsProcessing}
+                                style={{
+                                    flex: 1, padding: '0.9rem', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)',
+                                    fontWeight: '700', fontSize: '0.9rem', cursor: restoreIsProcessing ? 'not-allowed' : 'pointer', opacity: restoreIsProcessing ? 0.5 : 1, letterSpacing: '0.05em', transition: 'all 0.2s'
+                                }}
+                                onMouseEnter={(e) => !restoreIsProcessing && (e.target.style.background = 'var(--bg-tertiary)')}
+                                onMouseLeave={(e) => !restoreIsProcessing && (e.target.style.background = 'var(--bg-primary)')}
+                            >
+                                CANCEL
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
         </div>
     );

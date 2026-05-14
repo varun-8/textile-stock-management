@@ -3,7 +3,7 @@ import axios from 'axios';
 import { io } from 'socket.io-client';
 import { useConfig } from '../context/ConfigContext';
 import { useNotification } from '../context/NotificationContext';
-import { IconPlus, IconTruck, IconEye, IconX, IconPrint } from '../components/Icons';
+import { IconPlus, IconTruck, IconEye, IconX, IconPrint, IconEdit } from '../components/Icons';
 import { generateDCPdf } from '../utils/pdfGenerator';
 import { withExponentialBackoff } from '../utils/apiUtils';
 
@@ -34,8 +34,6 @@ const DEFAULT_DC_TEMPLATE = {
     footerFontSize: 9,
     signatoryFontSize: 8
 };
-
-const RECORD_TABLE_FONT = '"Segoe UI", "Helvetica Neue", Arial, sans-serif';
 
 const DeliveryChallans = () => {
     const { apiUrl } = useConfig();
@@ -664,6 +662,67 @@ const DeliveryChallans = () => {
         fontWeight: '500',
         boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.02)'
     };
+    const actionGroupStyle = {
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '0.35rem',
+        padding: '0.3rem 0.35rem',
+        borderRadius: '999px',
+        background: 'transparent',
+        border: '1px solid var(--border-color)',
+        boxShadow: 'inset 0 1px 0 rgba(148, 163, 184, 0.08)'
+    };
+    const actionButtonBaseStyle = {
+        minWidth: '34px',
+        minHeight: '34px',
+        padding: '0.45rem 0.7rem',
+        borderRadius: '999px',
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        cursor: 'pointer',
+        transition: 'transform 0.15s ease, border-color 0.15s ease, color 0.15s ease'
+    };
+    const actionEditButtonStyle = {
+        ...actionButtonBaseStyle,
+        border: '1px solid transparent',
+        background: 'transparent',
+        color: 'var(--accent-color)',
+        fontWeight: 700,
+        boxShadow: 'none',
+        letterSpacing: '0.03em'
+    };
+    const tableHeaderCellStyle = {
+        padding: '1rem 1.4rem',
+        fontSize: '0.72rem',
+        fontWeight: 700,
+        letterSpacing: '0.06em',
+        textTransform: 'uppercase',
+        color: 'var(--text-secondary)',
+        lineHeight: 1.2,
+        whiteSpace: 'nowrap',
+        fontFamily: 'var(--font-family)'
+    };
+    const tableBodyCellStyle = {
+        padding: '1rem 1.4rem',
+        fontSize: '0.86rem',
+        fontWeight: 500,
+        lineHeight: 1.3,
+        color: 'var(--text-primary)',
+        borderTop: '1px solid var(--table-border-color)',
+        fontFamily: 'var(--font-family)'
+    };
+    const tableNumericCellStyle = {
+        ...tableBodyCellStyle,
+        fontVariantNumeric: 'tabular-nums',
+        fontFeatureSettings: '"tnum" 1, "lnum" 1'
+    };
+    const tableIdCellStyle = {
+        ...tableBodyCellStyle,
+        fontWeight: 700,
+        letterSpacing: '0.01em'
+    };
 
     return (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden', background: 'var(--bg-primary)' }}>
@@ -697,7 +756,7 @@ const DeliveryChallans = () => {
 
             {/* Main Content */}
             <main style={{ flex: 1, padding: '2.5rem 2rem', overflowY: 'auto', background: 'var(--bg-primary)' }}>
-                <div className="card">
+                <div style={{ width: '100%', maxWidth: '100%', margin: 0 }}>
                     <h2 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.5rem' }}>
                         <IconTruck size="18" /> DC History
                     </h2>
@@ -725,22 +784,24 @@ const DeliveryChallans = () => {
                             No Delivery Challans generated yet.
                         </div>
                     ) : (
-                        <div className="panel" style={{ padding: 0, overflow: 'hidden', border: '1px solid var(--border-color)', borderRadius: '16px', boxShadow: '0 16px 30px rgba(2, 6, 23, 0.1)' }}>
-                            <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', fontSize: '0.9rem', fontFamily: RECORD_TABLE_FONT }}>
+                        <div className="panel" style={{ width: '100%', maxWidth: '100%', padding: 0, overflowX: 'auto', overflowY: 'hidden', border: '1px solid var(--border-color)', borderRadius: '16px', boxShadow: '0 16px 30px rgba(2, 6, 23, 0.1)' }}>
+                            <table style={{ width: '100%', minWidth: '860px', borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed', fontFamily: 'var(--font-family)' }}>
                                 <colgroup>
-                                    <col style={{ width: '20%' }} />
+                                    <col style={{ width: '18%' }} />
                                     <col style={{ width: '12%' }} />
-                                    <col style={{ width: '30%' }} />
-                                    <col style={{ width: '14%' }} />
-                                    <col style={{ width: '24%' }} />
+                                    <col style={{ width: '28%' }} />
+                                    <col style={{ width: '12%' }} />
+                                    <col style={{ width: '12%' }} />
+                                    <col style={{ width: '18%' }} />
                                 </colgroup>
                                 <thead>
-                                    <tr style={{ background: 'var(--bg-tertiary)', borderBottom: '1px solid var(--border-color)' }}>
-                                        <th style={{ padding: '1rem 1.5rem', textAlign: 'left', fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>DC No.</th>
-                                        <th style={{ padding: '1rem 1.5rem', textAlign: 'center', fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Date</th>
-                                        <th style={{ padding: '1rem 1.5rem', textAlign: 'left', fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Party</th>
-                                        <th style={{ padding: '1rem 1.5rem', textAlign: 'center', fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Totals</th>
-                                        <th style={{ padding: '1rem 1.5rem', textAlign: 'center', fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Status</th>
+                                    <tr style={{ background: 'var(--bg-tertiary)' }}>
+                                        <th style={{ ...tableHeaderCellStyle, textAlign: 'left' }}>DC NO.</th>
+                                        <th style={{ ...tableHeaderCellStyle, textAlign: 'center' }}>DATE</th>
+                                        <th style={{ ...tableHeaderCellStyle, textAlign: 'left' }}>PARTY</th>
+                                        <th style={{ ...tableHeaderCellStyle, textAlign: 'center' }}>ROLLS</th>
+                                        <th style={{ ...tableHeaderCellStyle, textAlign: 'center' }}>METRE</th>
+                                        <th style={{ ...tableHeaderCellStyle, textAlign: 'center' }}>ACTIONS</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -752,7 +813,6 @@ const DeliveryChallans = () => {
                                                 style={{ 
                                                     opacity: isCancelled ? 0.65 : 1,
                                                     background: idx % 2 === 0 ? 'transparent' : 'var(--row-alt-bg)',
-                                                    borderBottom: '1px solid var(--border-color)',
                                                     transition: 'background 0.2s ease',
                                                     cursor: 'pointer'
                                                 }}
@@ -766,61 +826,37 @@ const DeliveryChallans = () => {
                                                 onClick={() => handleViewPdf(dc)}
                                             >
                                                 <td style={{
-                                                    fontWeight: '700',
-                                                    padding: '1rem 1.5rem',
-                                                    textAlign: 'left',
-                                                    color: 'var(--accent-color)',
+                                                    ...tableIdCellStyle,
                                                     whiteSpace: 'nowrap',
                                                     overflow: 'hidden',
-                                                    textOverflow: 'ellipsis',
-                                                    letterSpacing: '0.01em'
+                                                    textOverflow: 'ellipsis'
                                                 }} title={dc.dcNumber}>
                                                     {dc.dcNumber}
                                                 </td>
-                                                <td style={{ padding: '1rem 1.5rem', textAlign: 'center', fontSize: '0.9rem', color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+                                                <td style={{ ...tableNumericCellStyle, textAlign: 'center', whiteSpace: 'nowrap' }}>
                                                     {new Date(dc.createdAt).toLocaleDateString('en-IN')}
                                                 </td>
-                                                <td style={{ padding: '1rem 1.5rem', textAlign: 'left', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={dc.partyName}>
+                                                <td style={{ ...tableBodyCellStyle, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={dc.partyName}>
                                                     {dc.partyName}
                                                 </td>
-                                                <td style={{ padding: '1rem 1.5rem', textAlign: 'center' }}>
-                                                    <div style={{ fontSize: '0.85rem', lineHeight: '1.4' }}>
-                                                        <div style={{ fontWeight: '700', color: 'var(--text-primary)' }}>{dc.totalRolls}</div>
-                                                        <div style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>{dc.totalMetre} m</div>
-                                                    </div>
+                                                <td style={{ ...tableNumericCellStyle, textAlign: 'center', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                                                    {dc.totalRolls}
                                                 </td>
-                                                <td style={{ padding: '1rem 1.5rem', textAlign: 'center', display: 'flex', justifyContent: 'center', gap: '0.5rem', alignItems: 'center' }}>
-                                                    <span style={{
-                                                        display: 'inline-flex',
-                                                        alignItems: 'center',
-                                                        justifyContent: 'center',
-                                                        minWidth: '96px',
-                                                        padding: '5px 10px',
-                                                        borderRadius: '999px',
-                                                        fontSize: '0.73rem',
-                                                        fontWeight: '700',
-                                                        letterSpacing: '0.03em',
-                                                        background: isCancelled ? 'rgba(239, 68, 68, 0.12)' : 'rgba(16, 185, 129, 0.12)',
-                                                        color: isCancelled ? 'var(--error-color)' : 'var(--success-color)',
-                                                        border: `1px solid ${isCancelled ? 'rgba(239, 68, 68, 0.3)' : 'rgba(16, 185, 129, 0.3)'}`
-                                                    }}>
-                                                        {dc.status}
-                                                    </span>
+                                                <td style={{ ...tableNumericCellStyle, textAlign: 'center', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                                                    {dc.totalMetre} m
+                                                </td>
+                                                <td style={{ ...tableBodyCellStyle, textAlign: 'center', padding: '0.72rem 0.75rem' }}>
+                                                    <div style={actionGroupStyle}>
                                                     <button
                                                         title="Edit"
                                                         onClick={(e) => handleOpenEditModal(dc, e)}
                                                         onMouseDown={(e) => e.stopPropagation()}
-                                                        style={{
-                                                            background: 'transparent',
-                                                            border: '1px solid var(--border-color)',
-                                                            borderRadius: '8px',
-                                                            padding: '6px 8px',
-                                                            cursor: 'pointer',
-                                                            color: 'var(--text-primary)'
-                                                        }}
+                                                        className="btn"
+                                                        style={actionEditButtonStyle}
                                                     >
-                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" /></svg>
+                                                        <IconEdit size="16" />
                                                     </button>
+                                                    </div>
                                                 </td>
                                             </tr>
                                         );

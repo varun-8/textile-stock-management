@@ -443,13 +443,12 @@ const Dashboard = () => {
                                     <th style={thStyle}>BARCODE ID</th>
                                     <th style={thStyle}>FLOW STATUS</th>
                                     <th style={thStyle}>METRICS (M/KG)</th>
-                                    <th style={thStyle}>OPERATOR</th>
-                                    <th style={{ ...thStyle, textAlign: 'right' }}>CONTROL</th>
+                                    <th style={{ ...thStyle, textAlign: 'right', paddingRight: '1.25rem', width: '13%' }}>CONTROL</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {displayList.length === 0 ? (
-                                    <tr><td colSpan="6" style={{ padding: '4rem', textAlign: 'center', color: 'var(--text-secondary)' }}>No transactions recorded in this period.</td></tr>
+                                    <tr><td colSpan="5" style={{ padding: '4rem', textAlign: 'center', color: 'var(--text-secondary)' }}>No transactions recorded in this period.</td></tr>
                                 ) : displayList.map((log, i) => {
                                     return (
                                         <tr
@@ -481,12 +480,8 @@ const Dashboard = () => {
                                                     </div>
                                                 ) : <span style={{ opacity: 0.4 }}>PENDING REGISTRATION</span>}
                                             </td>
-                                            <td style={tdStyle}>
-                                                <span style={{ fontSize: '0.9rem', fontWeight: '600', color: 'var(--text-primary)', opacity: 0.9 }}>
-                                                    {log.employee || <span style={{ opacity: 0.4, fontStyle: 'italic' }}>System</span>}
-                                                </span>
-                                            </td>
-                                            <td style={{ ...tdStyle, textAlign: 'right' }}>
+                                            <td style={{ ...tdStyle, textAlign: 'right', paddingRight: '1.25rem' }}>
+                                                <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', width: '100%' }}>
                                                 <button
                                                     type="button"
                                                     onClick={(event) => {
@@ -506,7 +501,7 @@ const Dashboard = () => {
                                                     className="btn"
                                                     title="Edit"
                                                     style={{
-                                                        padding: '8px',
+                                                        padding: '8px 10px',
                                                         fontSize: '11px',
                                                         background: 'var(--bg-tertiary)',
                                                         color: 'inherit',
@@ -521,6 +516,7 @@ const Dashboard = () => {
                                                 >
                                                     <IconEdit />
                                                 </button>
+                                                </div>
                                             </td>
                                         </tr>
                                     );

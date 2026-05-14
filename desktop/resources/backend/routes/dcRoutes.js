@@ -166,7 +166,7 @@ router.post('/', async (req, res) => {
                 updateOne: {
                     filter: { _id: roll._id },
                     update: {
-                        $set: { status: 'OUT', dcId: dc._id },
+                        $set: { status: 'OUT', dcId: dc._id, employeeName: req.user ? req.user.username : 'Admin DC Engine' },
                         $push: {
                             transactionHistory: {
                                 status: 'OUT',

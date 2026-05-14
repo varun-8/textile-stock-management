@@ -240,7 +240,7 @@ POST /api/admin/cloud-backup/timing   - Update backup timing
 
 ## Support
 
-For B2 setup issues:
+For B2 setup issues: the desig of the system setting 
 1. Login to [Backblaze B2](https://www.backblaze.com/b2/cloud-storage/)
 2. Go to App Keys section
 3. Create new Application Key

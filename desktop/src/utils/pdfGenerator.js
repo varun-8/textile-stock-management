@@ -737,16 +737,19 @@ export const generateQuotationPdf = (quotationData, rollsList, templateConfig = 
 
     const pageWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
-    const marginLeft = 14;
-    const marginRight = 14;
-    const topMargin = 12;
-    const bottomMargin = 16;
+    const marginLeft = 12;
+    const marginRight = 12;
+    const topMargin = 8;
+    const bottomMargin = 18;
     const contentWidth = pageWidth - marginLeft - marginRight;
-    const titleColor = [17, 24, 39];
-    const textColor = [31, 41, 55];
-    const mutedColor = [107, 114, 128];
-    const borderColor = [55, 65, 81];
-    const softFill = [249, 250, 251];
+    
+    // Monochrome styling for quotation PDFs.
+    const primaryColor = [0, 0, 0];
+    const accentColor = [0, 0, 0];
+    const titleColor = [0, 0, 0];
+    const textColor = [0, 0, 0];
+    const mutedColor = [0, 0, 0];
+    const borderColor = [0, 0, 0];
     let yPosition = topMargin;
 
     const ensureSpace = (requiredHeight = 10) => {
@@ -755,36 +758,7 @@ export const generateQuotationPdf = (quotationData, rollsList, templateConfig = 
         yPosition = topMargin;
     };
 
-    const drawTextSection = (title, value) => {
-        const safeValue = String(value || '').trim();
-        if (!safeValue) return;
-
-        const lines = doc.splitTextToSize(safeValue, contentWidth - 8);
-        const bodyHeight = Math.max(8, lines.length * 3.9 + 2);
-        const totalHeight = bodyHeight + 6;
-        ensureSpace(totalHeight + 4);
-
-        doc.setDrawColor(...borderColor);
-        doc.setLineWidth(0.25);
-        doc.rect(marginLeft, yPosition, contentWidth, totalHeight);
-        doc.setFillColor(...softFill);
-        doc.rect(marginLeft, yPosition, contentWidth, 6, 'F');
-
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(8.2);
-        doc.setTextColor(...titleColor);
-        doc.text(title, marginLeft + 2.5, yPosition + 4.1);
-
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(8.1);
-        doc.setTextColor(...textColor);
-        lines.forEach((line, idx) => {
-            doc.text(line, marginLeft + 2.5, yPosition + 9 + idx * 3.9);
-        });
-
-        yPosition += totalHeight + 4;
-    };
-
+    // ===== HEADER SECTION =====
     const createdDate = quotationData.createdAt
         ? new Date(quotationData.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
         : 'N/A';
@@ -796,183 +770,357 @@ export const generateQuotationPdf = (quotationData, rollsList, templateConfig = 
     const subTitle = template.subTitle || DEFAULT_TEMPLATE.subTitle;
     const logoDataUrl = String(template.logoDataUrl || '');
     const hasLogo = logoDataUrl.startsWith('data:image/');
-    let textStartX = 14;
+    let textStartX = marginLeft;
 
+    // Logo and company name
     if (hasLogo) {
         try {
             const isPng = logoDataUrl.startsWith('data:image/png');
             const format = isPng ? 'PNG' : 'JPEG';
-            doc.addImage(logoDataUrl, format, 14, 12, 20, 20);
-            textStartX = 38;
+            doc.addImage(logoDataUrl, format, marginLeft, topMargin + 2, 18, 18);
+            textStartX = marginLeft + 22;
         } catch (error) {
             console.debug('Skipping invalid quotation logo image:', error);
-            textStartX = 14;
+            textStartX = marginLeft;
         }
     }
 
     doc.setTextColor(...titleColor);
-    doc.setFontSize(22);
+    doc.setFontSize(20);
     doc.setFont('helvetica', 'bold');
-    doc.text(company || 'COMPANY NAME', textStartX, 20);
+    doc.text(company || 'COMPANY NAME', textStartX, topMargin + 10);
 
-    doc.setFontSize(9);
+    doc.setFontSize(8);
     doc.setFont('helvetica', 'normal');
     if (subTitle) {
         doc.setTextColor(...mutedColor);
-        doc.text(subTitle, textStartX, 26);
+        doc.text(subTitle, textStartX, topMargin + 16);
     }
 
-    doc.setTextColor(...titleColor);
-    doc.setFontSize(16);
-    doc.setFont('helvetica', 'bold');
-    doc.text('QUOTATION', 200, 20, { align: 'right' });
-
-    if (quotationData.status === 'CANCELLED') {
-        doc.setTextColor(185, 28, 28);
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(9);
-        doc.text('CANCELLED', 200, 26, { align: 'right' });
-        doc.setTextColor(...titleColor);
-    }
-
+    // Right-aligned quotation badge
+    const docBadgeX = pageWidth - marginRight;
+    doc.setDrawColor(...borderColor);
+    doc.setLineWidth(0.3);
+    doc.rect(docBadgeX - 40, topMargin + 3, 40, 16);
+    
+    doc.setTextColor(...accentColor);
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.text('QUOTATION', docBadgeX - 2, topMargin + 7, { align: 'right' });
+    
     doc.setFontSize(10);
     doc.setFont('helvetica', 'bold');
-    doc.text('Quotation No:', 145, 36);
-    doc.setFont('helvetica', 'normal');
-    doc.text(String(quotationData.quotationNumber || 'N/A'), 175, 36);
+    doc.setTextColor(...titleColor);
+    doc.text(String(quotationData.quotationNumber || 'N/A'), docBadgeX - 2, topMargin + 14, { align: 'right' });
 
+    yPosition = topMargin + 24;
+
+    // ===== INFO SECTION (Organized Grid) =====
+    const infoBoxHeight = 26;
+    ensureSpace(infoBoxHeight);
+
+    // Left box: Bill To
+    doc.setDrawColor(...borderColor);
+    doc.setLineWidth(0.3);
+    doc.rect(marginLeft, yPosition, (contentWidth / 2 - 1), infoBoxHeight);
+    
     doc.setFont('helvetica', 'bold');
-    doc.text('Date:', 145, 42);
-    doc.setFont('helvetica', 'normal');
-    doc.text(createdDate, 175, 42);
-
+    doc.setFontSize(7.2);
+    doc.setTextColor(...primaryColor);
+    doc.text('BILLED TO', marginLeft + 2, yPosition + 3.8);
+    
     doc.setFont('helvetica', 'bold');
-    doc.text('Billed To:', 14, 36);
-    doc.setFont('helvetica', 'normal');
-    doc.text(String(quotationData.partyName || 'N/A'), 14, 42);
-
+    doc.setFontSize(9.2);
+    doc.setTextColor(...titleColor);
+    doc.text(String(quotationData.partyName || 'N/A'), marginLeft + 2, yPosition + 10);
+    
     const partyAddress = String(quotationData.partyAddress || '').trim();
-    let headerBottom = 62;
     if (partyAddress) {
-        doc.setFontSize(8.4);
+        doc.setFontSize(7.5);
+        doc.setFont('helvetica', 'normal');
         doc.setTextColor(...textColor);
-        const addressLines = doc.splitTextToSize(partyAddress, 110);
+        const addressLines = doc.splitTextToSize(partyAddress, (contentWidth / 2 - 5));
         addressLines.slice(0, 2).forEach((line, idx) => {
-            doc.text(line, 14, 48 + idx * 4);
+            doc.text(line, marginLeft + 2, yPosition + 14 + idx * 3.5);
         });
-        headerBottom = Math.max(headerBottom, 52 + Math.min(addressLines.length, 2) * 4);
     }
 
-    doc.setFontSize(9);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(...mutedColor);
-    doc.text('Density:', 145, 50);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(...titleColor);
-    doc.text(String(quotationData.density || 'N/A'), 175, 50);
-
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(...mutedColor);
-    doc.text('Valid Till:', 145, 56);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(...titleColor);
-    doc.text(validityDate, 175, 56);
-
+    // Right box: Document Details
+    const rightBoxX = marginLeft + (contentWidth / 2 + 1);
     doc.setDrawColor(...borderColor);
-    doc.setLineWidth(0.5);
-    doc.line(14, headerBottom, 200, headerBottom);
-    yPosition = headerBottom + 6;
+    doc.setLineWidth(0.3);
+    doc.rect(rightBoxX, yPosition, (contentWidth / 2 - 1), infoBoxHeight);
+    
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.2);
+    doc.setTextColor(...primaryColor);
+    doc.text('DETAILS', rightBoxX + 2, yPosition + 3.8);
+    
+    const detailsY = yPosition + 9;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.2);
+    doc.setTextColor(...mutedColor);
+    doc.text('Date:', rightBoxX + 2, detailsY);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(...titleColor);
+    doc.text(createdDate, rightBoxX + 16, detailsY);
+    
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(...mutedColor);
+    doc.text('Valid Till:', rightBoxX + 2, detailsY + 4);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(...titleColor);
+    doc.text(validityDate, rightBoxX + 16, detailsY + 4);
+    
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(...mutedColor);
+    doc.text('Density:', rightBoxX + 2, detailsY + 8);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(...titleColor);
+    doc.text(String(quotationData.density || 'N/A'), rightBoxX + 16, detailsY + 8);
 
-    const tableRows = (rows.length > 0 ? rows : [{}]).map((roll, index) => {
+    if (quotationData.status === 'CANCELLED') {
+        doc.setTextColor(...titleColor);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8.5);
+        doc.text('CANCELLED', rightBoxX + 2, detailsY + 12);
+    }
+
+    yPosition += infoBoxHeight + 3;
+
+    // ===== ITEMS TABLE =====
+    ensureSpace(40);
+    
+    const maxRowsForSingleColumn = 25;
+    const useTwoColumns = rows.length > maxRowsForSingleColumn;
+
+    let tableRows = [];
+    let head = [];
+    let columnStyles = {};
+
+    if (!useTwoColumns) {
+        tableRows = (rows.length > 0 ? rows : [{}]).map((roll, index) => {
+            if (rows.length === 0) {
+                return ['-', 'No rolls selected', '0.00', '0'];
+            }
+            const piecesCount = Array.isArray(roll?.pieces) ? roll.pieces.length : Number(roll?.pieces || 1);
+            return [
+                String(index + 1),
+                String(roll?.barcode || '-'),
+                adjustedMetre(roll?.metre || 0).toFixed(2),
+                String(piecesCount)
+            ];
+        });
+        head = [['S.No', 'Barcode ID', 'Metre', 'Pieces']];
+        columnStyles = {
+            0: { cellWidth: 15, halign: 'center' },
+            1: { cellWidth: 100, halign: 'left', textVAlign: 'middle' },
+            2: { cellWidth: 40, halign: 'right' },
+            3: { cellWidth: 31, halign: 'right' }
+        };
+    } else {
         if (rows.length === 0) {
-            return ['-', 'No rolls selected', '0.00', '0'];
+            tableRows.push(['-', 'No rolls selected', '0.00', '0', '', '', '', '']);
+        } else {
+            for (let i = 0; i < rows.length; i += 2) {
+                const leftRoll = rows[i];
+                const rightRoll = rows[i + 1];
+
+                const piecesCountLeft = Array.isArray(leftRoll?.pieces) ? leftRoll.pieces.length : Number(leftRoll?.pieces || 1);
+                const rowData = [
+                    String(i + 1),
+                    String(leftRoll?.barcode || '-'),
+                    adjustedMetre(leftRoll?.metre || 0).toFixed(2),
+                    String(piecesCountLeft)
+                ];
+
+                if (rightRoll) {
+                    const piecesCountRight = Array.isArray(rightRoll?.pieces) ? rightRoll.pieces.length : Number(rightRoll?.pieces || 1);
+                    rowData.push(
+                        String(i + 2),
+                        String(rightRoll?.barcode || '-'),
+                        adjustedMetre(rightRoll?.metre || 0).toFixed(2),
+                        String(piecesCountRight)
+                    );
+                } else {
+                    rowData.push('', '', '', '');
+                }
+                tableRows.push(rowData);
+            }
         }
-        const piecesCount = Array.isArray(roll?.pieces) ? roll.pieces.length : Number(roll?.pieces || 1);
-        return [
-            String(index + 1),
-            String(roll?.barcode || '-'),
-            adjustedMetre(roll?.metre || 0).toFixed(2),
-            String(piecesCount)
-        ];
-    });
+        head = [['S.No', 'Barcode ID', 'Metre', 'Pcs', 'S.No', 'Barcode ID', 'Metre', 'Pcs']];
+        columnStyles = {
+            0: { cellWidth: 10, halign: 'center' },
+            1: { cellWidth: 46, halign: 'left', textVAlign: 'middle' },
+            2: { cellWidth: 24, halign: 'right' },
+            3: { cellWidth: 13, halign: 'right' },
+            4: { cellWidth: 10, halign: 'center' },
+            5: { cellWidth: 46, halign: 'left', textVAlign: 'middle' },
+            6: { cellWidth: 24, halign: 'right' },
+            7: { cellWidth: 13, halign: 'right' }
+        };
+    }
 
     autoTable(doc, {
         startY: yPosition,
-        margin: { left: marginLeft, right: marginRight },
+        margin: { left: marginLeft, right: marginRight, bottom: bottomMargin + 8, top: topMargin },
         tableWidth: contentWidth,
-        head: [['S.No', 'Barcode', 'Metre', 'Pieces']],
+        head: head,
         body: tableRows,
         theme: 'grid',
         headStyles: {
-            fillColor: [245, 246, 248],
-            textColor: [17, 24, 39],
+            fillColor: [240, 240, 240],
+            textColor: [0, 0, 0],
             fontStyle: 'bold',
-            fontSize: 8.4,
-            lineColor: borderColor,
-            lineWidth: 0.25,
+            fontSize: 8.5,
+            lineColor: [80, 80, 80],
+            lineWidth: 0.2,
             halign: 'center',
-            cellPadding: 2.6
+            cellPadding: 3,
+            textVAlign: 'middle'
         },
         bodyStyles: {
             fontSize: 8.2,
-            textColor: [31, 41, 55],
-            lineColor: [156, 163, 175],
-            lineWidth: 0.2,
-            cellPadding: 2.4,
+            textColor: [0, 0, 0],
+            lineColor: [180, 180, 180],
+            lineWidth: 0.1,
+            cellPadding: 2.5,
             valign: 'middle'
         },
-        columnStyles: {
-            0: { cellWidth: 14, halign: 'center' },
-            1: { cellWidth: 98, halign: 'left' },
-            2: { cellWidth: 26, halign: 'right' },
-            3: { cellWidth: 22, halign: 'right' }
+        columnStyles: columnStyles,
+        pageBreak: 'auto',
+        rowPageBreak: 'avoid',
+        didDrawPage: (data) => {
+            // Draw header on continuation pages
+            if (data.pageNumber > 1) {
+                doc.setFontSize(8);
+                doc.setFont('helvetica', 'bold');
+                doc.setTextColor(0, 0, 0);
+                doc.text(`${company || 'COMPANY'} - Quotation ${quotationData.quotationNumber || 'N/A'} (continued)`, marginLeft, topMargin + 3);
+                doc.setLineWidth(0.3);
+                doc.line(marginLeft, topMargin + 5, pageWidth - marginRight, topMargin + 5);
+            }
         }
     });
 
     yPosition = (doc.lastAutoTable?.finalY || yPosition) + 5;
 
+    // ===== SUMMARY SECTION (only on last page) =====
     const totalRolls = Number(quotationData.totalRolls || rows.length || 0);
     const totalMetre = rows.reduce((sum, roll) => sum + adjustedMetre(roll?.metre || 0), 0);
-    ensureSpace(16);
+    
+    const summaryHeight = 14;
+    
+    // Add summary only if there's space on current page
+    if (yPosition + summaryHeight + 12 <= pageHeight - bottomMargin) {
+        const summaryWidth = (contentWidth - 2) / 2;
 
-    const summaryGap = 4;
-    const summaryWidth = (contentWidth - summaryGap) / 2;
-    const summaryHeight = 12;
-    const summaryTop = yPosition;
+        // Total Rolls Summary Box
+        doc.setDrawColor(...accentColor);
+        doc.setLineWidth(0.4);
+        doc.rect(marginLeft, yPosition, summaryWidth, summaryHeight);
 
-    doc.setDrawColor(...borderColor);
-    doc.setLineWidth(0.25);
-    doc.rect(marginLeft, summaryTop, summaryWidth, summaryHeight);
-    doc.rect(marginLeft + summaryWidth + summaryGap, summaryTop, summaryWidth, summaryHeight);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(7.5);
+        doc.setTextColor(...mutedColor);
+        doc.text('TOTAL ROLLS', marginLeft + 3, yPosition + 3.5);
 
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(7.8);
-    doc.setTextColor(...mutedColor);
-    doc.text('TOTAL ROLLS', marginLeft + 2.5, summaryTop + 4.4);
-    doc.text('TOTAL METRE', marginLeft + summaryWidth + summaryGap + 2.5, summaryTop + 4.4);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(13);
+        doc.setTextColor(...primaryColor);
+        doc.text(String(totalRolls), marginLeft + summaryWidth - 3, yPosition + 10.5, { align: 'right' });
 
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(11.6);
-    doc.setTextColor(...titleColor);
-    doc.text(String(totalRolls), marginLeft + summaryWidth - 2.5, summaryTop + 9.2, { align: 'right' });
-    doc.text(totalMetre.toFixed(2), marginLeft + summaryWidth + summaryGap + summaryWidth - 2.5, summaryTop + 9.2, { align: 'right' });
+        // Total Metre Summary Box
+        doc.setDrawColor(...accentColor);
+        doc.setLineWidth(0.4);
+        doc.rect(marginLeft + summaryWidth + 2, yPosition, summaryWidth, summaryHeight);
 
-    yPosition += summaryHeight + 5;
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(7.5);
+        doc.setTextColor(...mutedColor);
+        doc.text('TOTAL METRE', marginLeft + summaryWidth + 5, yPosition + 3.5);
 
-    const footerY = pageHeight - 12;
-    doc.setDrawColor(...borderColor);
-    doc.setLineWidth(0.35);
-    doc.line(marginLeft, footerY - 4.5, pageWidth - marginRight, footerY - 4.5);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(13);
+        doc.setTextColor(...accentColor);
+        doc.text(totalMetre.toFixed(2), marginLeft + contentWidth - 3, yPosition + 10.5, { align: 'right' });
+    } else if (yPosition + summaryHeight + 12 > pageHeight - bottomMargin) {
+        // Add summary on new page if not enough space
+        doc.addPage();
+        yPosition = topMargin + 6;
 
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7.3);
-    doc.setTextColor(...mutedColor);
-    doc.text(`Generated on ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })}`, marginLeft, footerY);
+        // Draw page header
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(...primaryColor);
+        doc.text(`${company || 'COMPANY'} - Quotation Summary`, marginLeft, yPosition);
+        yPosition += 6;
 
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8.2);
-    doc.setTextColor(...titleColor);
-    doc.text('Authorised Signatory', pageWidth - marginRight, footerY, { align: 'right' });
+        const summaryWidth = (contentWidth - 2) / 2;
+
+        // Total Rolls Summary Box
+        doc.setDrawColor(...accentColor);
+        doc.setLineWidth(0.4);
+        doc.rect(marginLeft, yPosition, summaryWidth, summaryHeight);
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(7.5);
+        doc.setTextColor(...mutedColor);
+        doc.text('TOTAL ROLLS', marginLeft + 3, yPosition + 3.5);
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(13);
+        doc.setTextColor(...primaryColor);
+        doc.text(String(totalRolls), marginLeft + summaryWidth - 3, yPosition + 10.5, { align: 'right' });
+
+        // Total Metre Summary Box
+        doc.setDrawColor(...accentColor);
+        doc.setLineWidth(0.4);
+        doc.rect(marginLeft + summaryWidth + 2, yPosition, summaryWidth, summaryHeight);
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(7.5);
+        doc.setTextColor(...mutedColor);
+        doc.text('TOTAL METRE', marginLeft + summaryWidth + 5, yPosition + 3.5);
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(13);
+        doc.setTextColor(...accentColor);
+        doc.text(totalMetre.toFixed(2), marginLeft + contentWidth - 3, yPosition + 10.5, { align: 'right' });
+    }
+
+    // ===== FOOTER SECTION (Add to all pages) =====
+    const totalPages = doc.internal.pages.length - 1 || 1;
+    const footerY = pageHeight - bottomMargin;
+    
+    for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+        doc.setPage(pageNum);
+        
+        // Bottom border
+        doc.setDrawColor(...borderColor);
+        doc.setLineWidth(0.3);
+        doc.line(marginLeft, footerY - 5, pageWidth - marginRight, footerY - 5);
+
+        // Footer text
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7);
+        doc.setTextColor(...mutedColor);
+        doc.text(`Generated on ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })} at ${new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}`, marginLeft, footerY - 1);
+
+        // Page number
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7);
+        doc.setTextColor(...mutedColor);
+        doc.text(`Page ${pageNum} of ${totalPages}`, pageWidth / 2, footerY - 1, { align: 'center' });
+
+        // Signatory section (only on first page)
+        if (pageNum === 1) {
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(7.5);
+            doc.setTextColor(...titleColor);
+            doc.text('Authorised Signatory', pageWidth - marginRight, footerY - 1, { align: 'right' });
+        }
+    }
 
     const filename = `${String(quotationData.quotationNumber || 'Quotation').replace(/\s+/g, '_')}.pdf`;
     return finalizePdf(doc, filename, options);
