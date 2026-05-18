@@ -153,6 +153,27 @@ const Settings = () => {
 
     // Core preview generator — called only by button click
     const generatePreview = (templateToUse) => {
+        const sampleRolls = Array.from({ length: 100 }, (_, i) => {
+            const index = i + 1;
+            const paddedId = String(index).padStart(4, '0');
+            const metre = 30 + (i % 10);
+            return {
+                barcode: `26-42-${paddedId}`,
+                metre: metre,
+                pieces: [{ length: metre }]
+            };
+        });
+
+        // Add some multiple piece variations for realism
+        sampleRolls[1].pieces = [{ length: 14.00 }, { length: 14.50 }];
+        sampleRolls[1].metre = 28.50;
+        sampleRolls[3].pieces = [{ length: 15.00 }, { length: 15.00 }, { length: 15.00 }];
+        sampleRolls[3].metre = 45.00;
+        sampleRolls[5].pieces = [{ length: 15.00 }, { length: 15.00 }, { length: 15.00 }, { length: 15.00 }];
+        sampleRolls[5].metre = 60.00;
+        sampleRolls[11].pieces = [{ length: 11.00 }, { length: 11.00 }, { length: 11.00 }, { length: 11.00 }, { length: 11.00 }];
+        sampleRolls[11].metre = 55.00;
+
         const sampleDc = {
             dcNumber: 'DC-PREVIEW',
             createdAt: new Date().toISOString(),
@@ -160,25 +181,9 @@ const Settings = () => {
             partyName: 'Sample Party Name',
             vehicleNumber: 'KA-01-AB-1234',
             driverName: 'John Doe',
-            totalRolls: 13,
-            totalMetre: 410.5
+            totalRolls: 100,
+            totalMetre: sampleRolls.reduce((acc, r) => acc + r.metre, 0)
         };
-
-        const sampleRolls = [
-            { barcode: '26-42-0001', metre: 30.00, pieces: [{ length: 30.00 }] },
-            { barcode: '26-42-0002', metre: 28.50, pieces: [{ length: 14.00 }, { length: 14.50 }] },
-            { barcode: '26-42-0003', metre: 34.50, pieces: [{ length: 34.50 }] },
-            { barcode: '26-42-0004', metre: 45.00, pieces: [{ length: 15.00 }, { length: 15.00 }, { length: 15.00 }] },
-            { barcode: '26-42-0005', metre: 22.00, pieces: [{ length: 22.00 }] },
-            { barcode: '26-42-0006', metre: 60.00, pieces: [{ length: 15.00 }, { length: 15.00 }, { length: 15.00 }, { length: 15.00 }] },
-            { barcode: '26-42-0007', metre: 33.00, pieces: [{ length: 33.00 }] },
-            { barcode: '26-42-0008', metre: 12.00, pieces: [{ length: 12.00 }] },
-            { barcode: '26-42-0009', metre: 25.50, pieces: [{ length: 12.50 }, { length: 13.00 }] },
-            { barcode: '26-42-0010', metre: 10.00, pieces: [{ length: 10.00 }] },
-            { barcode: '26-42-0011', metre: 40.00, pieces: [{ length: 40.00 }] },
-            { barcode: '26-42-0012', metre: 55.00, pieces: [{ length: 11.00 }, { length: 11.00 }, { length: 11.00 }, { length: 11.00 }, { length: 11.00 }] },
-            { barcode: '26-42-0013', metre: 15.00, pieces: [{ length: 15.00 }] }
-        ];
 
         const pdfUrl = generateDCPdf(sampleDc, sampleRolls, templateToUse, { mode: 'bloburl' });
         if (!pdfUrl) return;  // silent fail — no popup

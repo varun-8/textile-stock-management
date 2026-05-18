@@ -1082,9 +1082,57 @@ const DeliveryChallans = () => {
                             {/* Right Side: Density & Roll Selection */}
     <div style={{ flex: 1, padding: '1.5rem', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--bg-primary)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-            <h3 style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-                {viewedBatchCode ? `ROLLS IN ${viewedBatchCode}` : 'AVAILABLE ROLLS'} ({selectedRolls.length} Selected)
-            </h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                <h3 style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                    {viewedBatchCode ? `ROLLS IN ${viewedBatchCode}` : 'AVAILABLE ROLLS'} ({selectedRolls.length} Selected)
+                </h3>
+                {selectedDensity && availableRolls.length > 0 && (
+                    <button 
+                        onClick={() => {
+                            if (viewedBatchCode) {
+                                const batchRolls = availableRolls.filter(r => (r.batchCode || 'Unknown') === viewedBatchCode).map(r => r.barcode);
+                                const allSelected = batchRolls.every(b => selectedRolls.includes(b));
+                                if (allSelected) {
+                                    setSelectedRolls(prev => prev.filter(b => !batchRolls.includes(b)));
+                                } else {
+                                    setSelectedRolls(prev => [...new Set([...prev, ...batchRolls])]);
+                                }
+                            } else {
+                                const allSelected = selectedRolls.length === availableRolls.length;
+                                if (allSelected) {
+                                    setSelectedRolls([]);
+                                } else {
+                                    setSelectedRolls(availableRolls.map(r => r.barcode));
+                                }
+                            }
+                        }}
+                        style={{
+                            background: 'rgba(99, 102, 241, 0.1)',
+                            color: 'var(--accent-color)',
+                            border: '1px solid var(--accent-color)',
+                            padding: '0.2rem 0.6rem',
+                            borderRadius: '4px',
+                            fontSize: '0.75rem',
+                            cursor: 'pointer',
+                            fontWeight: '600',
+                            transition: 'all 0.2s'
+                        }}
+                        onMouseOver={e => { e.currentTarget.style.background = 'var(--accent-color)'; e.currentTarget.style.color = 'white'; }}
+                        onMouseOut={e => { e.currentTarget.style.background = 'rgba(99, 102, 241, 0.1)'; e.currentTarget.style.color = 'var(--accent-color)'; }}
+                    >
+                        {(() => {
+                            if (viewedBatchCode) {
+                                const batchRolls = availableRolls.filter(r => (r.batchCode || 'Unknown') === viewedBatchCode);
+                                const allSelected = batchRolls.length > 0 && batchRolls.every(r => selectedRolls.includes(r.barcode));
+                                return allSelected ? 'Deselect All in Batch' : 'Select All in Batch';
+                            } else {
+                                const allSelected = availableRolls.length > 0 && selectedRolls.length === availableRolls.length;
+                                return allSelected ? 'Deselect All' : 'Select All';
+                            }
+                        })()}
+                    </button>
+                )}
+            </div>
             {viewedBatchCode ? (
                 <button 
                     onClick={() => setViewedBatchCode(null)}

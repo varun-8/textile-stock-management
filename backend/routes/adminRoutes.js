@@ -670,7 +670,7 @@ router.put('/inventory/update', async (req, res) => {
         clothRoll.pieces = normalizedPieces;
 
         // Ensure status is valid before assignment
-        if (targetStatus && ['IN', 'OUT'].includes(targetStatus)) {
+        if (targetStatus && ['IN', 'OUT', 'RESERVED'].includes(targetStatus)) {
             clothRoll.status = targetStatus;
         }
 
@@ -706,6 +706,16 @@ router.put('/inventory/update', async (req, res) => {
             details: { barcode, metre: totalMetre, pieces: normalizedPieces, weight, percentage, status: clothRoll.status },
             ipAddress: req.ip
         });
+
+        if (req.io || global.io) {
+            const socketIo = req.io || global.io;
+            socketIo.emit('stock_update', {
+                type: 'INVENTORY_UPDATED',
+                barcode,
+                status: clothRoll.status,
+                timestamp: new Date()
+            });
+        }
 
         res.json({ success: true, data: clothRoll });
     } catch (err) {

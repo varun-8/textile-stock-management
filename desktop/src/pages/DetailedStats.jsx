@@ -14,6 +14,7 @@ const DetailedStats = () => {
     const [loading, setLoading] = useState(false);
     const [sizes, setSizes] = useState([]);
     const [pieceModal, setPieceModal] = useState(null);
+    const [recordActionModal, setRecordActionModal] = useState(null);
     const [refreshTick, setRefreshTick] = useState(0);
     const [editItem, setEditItem] = useState(null);
     const [filters, setFilters] = useState({
@@ -201,6 +202,37 @@ const DetailedStats = () => {
         } catch (err) {
             console.error("Save Error:", err);
             alert(`Network failure: ${err.message || "Could not connect to server"}. Please check your connection or API settings.`);
+        }
+    };
+
+    const handleStockOut = async (row) => {
+        try {
+            const token = localStorage.getItem('ADMIN_TOKEN');
+            const res = await fetch(`${apiUrl}/api/admin/inventory/update`, {
+                method: 'PUT',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    barcode: row.barcode,
+                    metre: row.details.metre,
+                    weight: row.details.weight,
+                    percentage: row.details.percentage,
+                    pieces: row.details.pieces,
+                    type: 'RESERVED',
+                    status: 'RESERVED'
+                })
+            });
+            if (res.ok) {
+                setRecordActionModal(null);
+                setRefreshTick(x => x + 1);
+            } else {
+                const err = await res.json().catch(()=>({}));
+                alert(err.error || "Failed to stock out");
+            }
+        } catch (e) {
+            alert("Network error: " + e.message);
         }
     };
 
@@ -499,7 +531,13 @@ const DetailedStats = () => {
                             {data.length === 0 ? (
                                 <tr><td colSpan={10} style={{ padding: '5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>No matching records found.</td></tr>
                             ) : data.map((row, i) => (
-                                <tr key={i} style={{ borderBottom: '1px solid var(--border-color)', cursor: hasMultiplePieces(row.details.pieces) ? 'pointer' : 'default' }} onClick={hasMultiplePieces(row.details.pieces) ? () => setPieceModal({ barcode: row.barcode, message: formatPieceDetails(row.details.pieces, row.details.metre) }) : undefined}>
+                                <tr key={i} style={{ borderBottom: '1px solid var(--border-color)', cursor: (type === 'stockIn' || hasMultiplePieces(row.details.pieces)) ? 'pointer' : 'default' }} onClick={() => {
+                                    if (type === 'stockIn') {
+                                        setRecordActionModal(row);
+                                    } else if (hasMultiplePieces(row.details.pieces)) {
+                                        setPieceModal({ barcode: row.barcode, message: formatPieceDetails(row.details.pieces, row.details.metre) });
+                                    }
+                                }}>
                                     <td style={tdStyle}><span style={{ fontFamily: 'monospace', fontWeight: '800' }}>{row.barcode}</span></td>
                                     <td style={tdStyle}>{row.barcode.split('-')[1] || '-'}</td>
                                     <td style={tdStyle}>
@@ -535,6 +573,26 @@ const DetailedStats = () => {
                         <h3>Piece Breakdown: {pieceModal.barcode}</h3>
                         <p style={{ whiteSpace: 'pre-line', lineHeight: '1.6' }}>{pieceModal.message}</p>
                         <button className="btn btn-secondary" onClick={() => setPieceModal(null)} style={{ marginTop: '1rem', width: '100%' }}>Close</button>
+                    </div>
+                </div>
+            )}
+
+            {recordActionModal && (
+                <div style={{ position: 'fixed', inset: 0, background: 'var(--modal-overlay)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+                    <div className="panel animate-fade-in" style={{ width: '400px' }}>
+                        <h3>Record Details: {recordActionModal.barcode}</h3>
+                        <div style={{ margin: '1rem 0', whiteSpace: 'pre-line', lineHeight: '1.6' }}>
+                            <p><strong>Metre:</strong> {recordActionModal.details.metre}</p>
+                            <p><strong>Weight:</strong> {recordActionModal.details.weight} KG</p>
+                            <p><strong>Pieces:</strong></p>
+                            <div style={{ paddingLeft: '1rem' }}>
+                                {formatPieceDetails(recordActionModal.details.pieces, recordActionModal.details.metre)}
+                            </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '1rem', marginTop: '1.5rem' }}>
+                            <button className="btn btn-secondary" onClick={() => setRecordActionModal(null)} style={{ flex: 1 }}>Close</button>
+                            <button className="btn btn-accent" style={{ flex: 1, background: 'var(--accent-color)', color: 'white', border: 'none' }} onClick={() => handleStockOut(recordActionModal)}>READY TO DISPATCH</button>
+                        </div>
                     </div>
                 </div>
             )}

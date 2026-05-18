@@ -296,7 +296,7 @@ function renderPrintedTemplateCompact(doc, dcData, rollsList, template) {
     const rollAreaW = colW * rollColCount;
     const summaryX = mL + rollAreaW;
     const summaryW = UW - rollAreaW;
-    const bottomLimit = PH - 34;
+    const bottomLimit = PH - 37;
     const titleRowH = 5.6;
     const detailRowH = 4.8;
     const _padX = 2.2;
@@ -312,17 +312,21 @@ function renderPrintedTemplateCompact(doc, dcData, rollsList, template) {
     const drawPageSummaryColumn = (pageSummaryRows, topY, rollAreaEndY) => {
         const titleH = 5;
         const headerH = 5;
-        const rows = Math.max(pageSummaryRows.length, 1);
-        const rowGap = 4.5;
         const totalRowH = 6.5;
         const columnStartY = topY;
-        const columnEndY = topY + titleH + headerH + (rows * rowGap) + totalRowH + 2;
+        const columnEndY = rollAreaEndY;
         const totalH = columnEndY - columnStartY;
 
         const splitX = summaryX + 10;
         const snoCenterX = summaryX + ((splitX - summaryX) / 2);
         const totalCenterX = splitX + ((summaryW - (splitX - summaryX)) / 2);
         const bodyFontSize = 8;
+
+        const availableHeightForRows = totalH - titleH - headerH - totalRowH;
+        const rows = Math.max(pageSummaryRows.length, 1);
+        
+        let rowGap = availableHeightForRows / rows;
+        if (rowGap > 4.5) rowGap = 4.5;
 
         setInk();
         doc.setLineWidth(0.18);
@@ -338,19 +342,24 @@ function renderPrintedTemplateCompact(doc, dcData, rollsList, template) {
         doc.text('Total Mtrs', totalCenterX, columnStartY + titleH + 3.4, { align: 'center' });
 
         const rowsAreaTopY = columnStartY + titleH + headerH;
-        const totalRowY = rowsAreaTopY + (rows * rowGap);
+        const totalRowY = columnEndY - totalRowH;
         doc.setLineWidth(0.15);
         doc.line(summaryX, totalRowY, summaryX + summaryW, totalRowY);
 
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(bodyFontSize);
+        const dynamicFontSize = rowGap < 3.2 ? 6.5 : bodyFontSize;
+        doc.setFontSize(dynamicFontSize);
+        const baselineOffset = (dynamicFontSize * 0.353) / 3;
+        
         pageSummaryRows.forEach((row, idx) => {
-            const y = rowsAreaTopY + ((idx + 1) * rowGap) - 1.5;
+            const centerY = rowsAreaTopY + (idx * rowGap) + (rowGap / 2);
+            const y = centerY + baselineOffset;
+            
             doc.text(String(row.serialNo), snoCenterX, y, { align: 'center' });
             doc.text(row.totalMtrs, totalCenterX, y, { align: 'center' });
         });
 
-        const totalY = totalRowY + 5.5;
+        const totalY = totalRowY + 4.5;
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(bodyFontSize + 0.5);
         const grandTotal = pageSummaryRows.reduce((sum, row) => sum + Number(row.totalMtrs), 0);
@@ -470,7 +479,30 @@ function renderPrintedTemplateCompact(doc, dcData, rollsList, template) {
             cursor += rollColCount;
         }
 
-        drawPageSummaryColumn(pageSummaryRows, pageTopY, drawY);
+        const footerY = PH - 35;
+        const isLastPage = cursor >= items.length;
+        const targetDrawY = isLastPage ? Math.max(drawY, footerY - 2) : drawY;
+        
+        if (targetDrawY > drawY) {
+            setInk();
+            doc.setLineWidth(0.28);
+            doc.line(mL, drawY, mL, targetDrawY);
+            doc.line(mL + rollAreaW, drawY, mL + rollAreaW, targetDrawY);
+            
+            for (let c = 1; c < rollColCount; c++) {
+                const vx = mL + (c * colW);
+                doc.line(vx, drawY, vx, targetDrawY);
+            }
+            
+            doc.setLineWidth(0.14);
+            for (let c = 0; c < rollColCount; c++) {
+                const sx = mL + (c * colW) + rollSerialHeaderW;
+                doc.line(sx, drawY, sx, targetDrawY);
+            }
+        }
+        
+        drawPageSummaryColumn(pageSummaryRows, pageTopY, targetDrawY);
+        drawY = targetDrawY;
 
         if (cursor < items.length) {
             drawY = renderPrintedContinuationPage(doc, template, {
@@ -667,6 +699,7 @@ export const generateDCPdf = (dcData, rollsList, templateConfig = null, options 
 
     autoTable(doc, {
         startY: 68,
+        margin: { bottom: 45 },
         head: tableHeaders,
         body: tableBody,
         theme: 'grid',
@@ -688,7 +721,14 @@ export const generateDCPdf = (dcData, rollsList, templateConfig = null, options 
         }
     });
 
-    const finalY = doc.lastAutoTable.finalY || 68;
+    const pageHeight = doc.internal.pageSize.getHeight();
+    let finalY = doc.lastAutoTable.finalY || 68;
+    
+    // Ensure enough space for the summary rect and signatures
+    if (finalY > pageHeight - 45) {
+        doc.addPage();
+        finalY = 20;
+    }
     
     doc.setLineWidth(0.5);
     doc.rect(14, finalY + 4, 186, 12);
@@ -704,7 +744,6 @@ export const generateDCPdf = (dcData, rollsList, templateConfig = null, options 
     const computedTotal = rollsList.reduce((sum, roll) => sum + adjustedMetre(roll.metre), 0);
     doc.text(Number(computedTotal).toFixed(2), 165, finalY + 12);
 
-    const pageHeight = doc.internal.pageSize.getHeight();
     doc.setFont("helvetica", "bold");
     doc.text("Authorized Signatory", 14, pageHeight - 20);
     doc.text("Receiver's Signature", 150, pageHeight - 20);
