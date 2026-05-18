@@ -290,7 +290,7 @@ function renderPrintedTemplateCompact(doc, dcData, rollsList, template) {
     doc.line(mL, curY, PW - mR, curY);
     const startY = curY + 1;
 
-    const totalColCount = 6;
+    const totalColCount = 5;
     const rollColCount = 4;
     const colW = UW / totalColCount;
     const rollAreaW = colW * rollColCount;
@@ -319,8 +319,9 @@ function renderPrintedTemplateCompact(doc, dcData, rollsList, template) {
         const columnEndY = topY + titleH + headerH + (rows * rowGap) + totalRowH + 2;
         const totalH = columnEndY - columnStartY;
 
-        const splitX = summaryX + 15;
+        const splitX = summaryX + 10;
         const snoCenterX = summaryX + ((splitX - summaryX) / 2);
+        const totalCenterX = splitX + ((summaryW - (splitX - summaryX)) / 2);
         const bodyFontSize = 8;
 
         setInk();
@@ -334,7 +335,7 @@ function renderPrintedTemplateCompact(doc, dcData, rollsList, template) {
         doc.setFontSize(8);
         doc.text('ROLL SUMMARY', summaryX + (summaryW / 2), columnStartY + 3.6, { align: 'center' });
         doc.text('S.No', snoCenterX, columnStartY + titleH + 3.4, { align: 'center' });
-        doc.text('Total Mtrs', summaryX + summaryW - 2, columnStartY + titleH + 3.4, { align: 'right' });
+        doc.text('Total Mtrs', totalCenterX, columnStartY + titleH + 3.4, { align: 'center' });
 
         const rowsAreaTopY = columnStartY + titleH + headerH;
         const totalRowY = rowsAreaTopY + (rows * rowGap);
@@ -346,15 +347,15 @@ function renderPrintedTemplateCompact(doc, dcData, rollsList, template) {
         pageSummaryRows.forEach((row, idx) => {
             const y = rowsAreaTopY + ((idx + 1) * rowGap) - 1.5;
             doc.text(String(row.serialNo), snoCenterX, y, { align: 'center' });
-            doc.text(row.totalMtrs, summaryX + summaryW - 2, y, { align: 'right' });
+            doc.text(row.totalMtrs, totalCenterX, y, { align: 'center' });
         });
 
         const totalY = totalRowY + 5.5;
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(bodyFontSize + 0.5);
         const grandTotal = pageSummaryRows.reduce((sum, row) => sum + Number(row.totalMtrs), 0);
-        doc.text('Total Meters', splitX + 2, totalY);
-        doc.text(grandTotal.toFixed(2), summaryX + summaryW - 2, totalY, { align: 'right' });
+        doc.text('Total', snoCenterX, totalY, { align: 'center' });
+        doc.text(grandTotal.toFixed(2), totalCenterX, totalY, { align: 'center' });
     };
 
     let drawY = startY;
@@ -455,10 +456,7 @@ function renderPrintedTemplateCompact(doc, dcData, rollsList, template) {
                 doc.setFont('helvetica', 'bold');
                 doc.setFontSize(7.8);
                 const totalY = drawY + titleRowH + (maxPieceRows * detailRowH) + textOffsetY;
-                // Piece count is shown only in the starting column.
-                if (showPieceNumbers) {
-                    doc.text(String(entry.pieceValues.length), serialCenterX, totalY, { align: 'center' });
-                }
+                // Do not show the piece-count serial on the totals row; only show the total metres.
                 doc.text(entry.totalText, valueCellCenterX, totalY, { align: 'center' });
 
                 pageSummaryRows.push({

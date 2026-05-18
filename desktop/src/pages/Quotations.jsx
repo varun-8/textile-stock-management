@@ -894,158 +894,92 @@ const Quotations = () => {
                             No quotations generated yet.
                         </div>
                     ) : (
-                        <div style={{
-                            width: '100%',
-                            display: 'grid',
-                            gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))',
-                            gap: '1.5rem',
-                            marginTop: '1rem'
-                        }}>
-                            {quotations.map((quotation, index) => {
-                                const isCancelled = quotation.status === 'CANCELLED';
-                                return (
-                                    <div
-                                        key={quotation._id}
-                                        onClick={() => handleViewPdf(quotation)}
-                                        style={{
-                                            opacity: isCancelled ? 0.65 : 1,
-                                            background: 'rgba(30, 41, 59, 0.4)',
-                                            backdropFilter: 'blur(16px)',
-                                            WebkitBackdropFilter: 'blur(16px)',
-                                            border: '1px solid rgba(255, 255, 255, 0.08)',
-                                            borderRadius: '24px',
-                                            padding: '1.75rem',
-                                            display: 'flex',
-                                            flexDirection: 'column',
-                                            gap: '1.2rem',
-                                            cursor: 'pointer',
-                                            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.2)',
-                                            transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-                                            position: 'relative',
-                                            overflow: 'hidden'
-                                        }}
-                                        onMouseOver={(e) => {
-                                            e.currentTarget.style.transform = 'translateY(-6px) scale(1.01)';
-                                            e.currentTarget.style.boxShadow = '0 20px 40px rgba(99, 102, 241, 0.15)';
-                                            e.currentTarget.style.border = '1px solid rgba(99, 102, 241, 0.4)';
-                                            e.currentTarget.style.background = 'rgba(30, 41, 59, 0.75)';
-                                        }}
-                                        onMouseOut={(e) => {
-                                            e.currentTarget.style.transform = 'translateY(0) scale(1)';
-                                            e.currentTarget.style.boxShadow = '0 8px 32px rgba(0, 0, 0, 0.2)';
-                                            e.currentTarget.style.border = '1px solid rgba(255, 255, 255, 0.08)';
-                                            e.currentTarget.style.background = 'rgba(30, 41, 59, 0.4)';
-                                        }}
-                                    >
-                                        <div style={{
-                                            position: 'absolute',
-                                            top: 0,
-                                            left: 0,
-                                            width: '5px',
-                                            height: '100%',
-                                            background: isCancelled ? 'var(--error-color)' : 'linear-gradient(180deg, var(--accent-color), #818cf8)'
-                                        }} />
-                                        
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                            <div>
-                                                <h3 style={{ margin: '0 0 0.4rem', fontSize: '1.3rem', fontWeight: '800', color: '#f8fafc', letterSpacing: '0.02em', textShadow: '0 2px 10px rgba(0,0,0,0.5)' }}>
+                        <div className="panel" style={{ width: '100%', maxWidth: '100%', padding: 0, overflowX: 'auto', overflowY: 'hidden', border: '1px solid var(--border-color)', borderRadius: '16px', boxShadow: '0 16px 30px rgba(2, 6, 23, 0.1)' }}>
+                            <table style={{ width: '100%', minWidth: '860px', borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed', fontFamily: 'var(--font-family)' }}>
+                                <colgroup>
+                                    <col style={{ width: '18%' }} />
+                                    <col style={{ width: '12%' }} />
+                                    <col style={{ width: '28%' }} />
+                                    <col style={{ width: '12%' }} />
+                                    <col style={{ width: '12%' }} />
+                                    <col style={{ width: '18%' }} />
+                                </colgroup>
+                                <thead>
+                                    <tr style={{ background: 'var(--bg-tertiary)' }}>
+                                        <th style={{ ...tableHeaderCellStyle, textAlign: 'left' }}>QUOTATION NO.</th>
+                                        <th style={{ ...tableHeaderCellStyle, textAlign: 'center' }}>DATE</th>
+                                        <th style={{ ...tableHeaderCellStyle, textAlign: 'left' }}>PARTY</th>
+                                        <th style={{ ...tableHeaderCellStyle, textAlign: 'center' }}>ROLLS</th>
+                                        <th style={{ ...tableHeaderCellStyle, textAlign: 'center' }}>PPI</th>
+                                        <th style={{ ...tableHeaderCellStyle, textAlign: 'center' }}>ACTIONS</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {quotations.map((quotation, idx) => {
+                                        const isCancelled = quotation.status === 'CANCELLED';
+                                        return (
+                                            <tr 
+                                                key={quotation._id} 
+                                                style={{ 
+                                                    opacity: isCancelled ? 0.65 : 1,
+                                                    background: idx % 2 === 0 ? 'transparent' : 'var(--row-alt-bg)',
+                                                    transition: 'background 0.2s ease',
+                                                    cursor: 'pointer'
+                                                }}
+                                                title={`Open ${quotation.quotationNumber || 'Quotation'} preview`}
+                                                onMouseOver={(e) => {
+                                                    e.currentTarget.style.background = 'var(--row-hover-bg)';
+                                                }}
+                                                onMouseOut={(e) => {
+                                                    e.currentTarget.style.background = idx % 2 === 0 ? 'transparent' : 'var(--row-alt-bg)';
+                                                }}
+                                                onClick={() => handleViewPdf(quotation)}
+                                            >
+                                                <td style={{
+                                                    ...tableIdCellStyle,
+                                                    whiteSpace: 'nowrap',
+                                                    overflow: 'hidden',
+                                                    textOverflow: 'ellipsis'
+                                                }} title={quotation.quotationNumber}>
                                                     {quotation.quotationNumber}
-                                                </h3>
-                                                <p style={{ margin: 0, fontSize: '0.85rem', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: '500' }}>
-                                                    <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: isCancelled ? '#ef4444' : '#10b981', boxShadow: `0 0 10px ${isCancelled ? '#ef4444' : '#10b981'}` }}></span>
-                                                    {new Date(quotation.createdAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
-                                                </p>
-                                            </div>
-                                            <div style={{
-                                                padding: '0.4rem 1rem',
-                                                background: 'rgba(99, 102, 241, 0.15)',
-                                                border: '1px solid rgba(99, 102, 241, 0.3)',
-                                                borderRadius: '999px',
-                                                color: '#a5b4fc',
-                                                fontSize: '0.75rem',
-                                                fontWeight: '800',
-                                                letterSpacing: '0.06em',
-                                                textTransform: 'uppercase',
-                                                boxShadow: 'inset 0 2px 4px rgba(255,255,255,0.1)'
-                                            }}>
-                                                {quotation.density}
-                                            </div>
-                                        </div>
-
-                                        <div style={{
-                                            background: 'rgba(15, 23, 42, 0.6)',
-                                            borderRadius: '16px',
-                                            padding: '1.2rem',
-                                            display: 'flex',
-                                            flexDirection: 'column',
-                                            gap: '0.8rem',
-                                            border: '1px solid rgba(255,255,255,0.03)',
-                                            boxShadow: 'inset 0 2px 10px rgba(0,0,0,0.2)'
-                                        }}>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                <span style={{ color: '#64748b', fontSize: '0.8rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Party</span>
-                                                <span style={{ color: '#f1f5f9', fontSize: '1rem', fontWeight: '600', maxWidth: '200px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={quotation.partyName}>
+                                                </td>
+                                                <td style={{ ...tableNumericCellStyle, textAlign: 'center', whiteSpace: 'nowrap' }}>
+                                                    {new Date(quotation.createdAt).toLocaleDateString('en-IN')}
+                                                </td>
+                                                <td style={{ ...tableBodyCellStyle, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={quotation.partyName}>
                                                     {quotation.partyName}
-                                                </span>
-                                            </div>
-                                            <div style={{ width: '100%', height: '1px', background: 'linear-gradient(90deg, rgba(255,255,255,0.02), rgba(255,255,255,0.1), rgba(255,255,255,0.02))' }}></div>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                <span style={{ color: '#64748b', fontSize: '0.8rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Rolls</span>
-                                                <span style={{ color: '#a5b4fc', fontSize: '1.25rem', fontWeight: '800', textShadow: '0 2px 10px rgba(99, 102, 241, 0.4)' }}>
+                                                </td>
+                                                <td style={{ ...tableNumericCellStyle, textAlign: 'center', fontWeight: 600, whiteSpace: 'nowrap' }}>
                                                     {quotation.totalRolls}
-                                                </span>
-                                            </div>
-                                        </div>
-
-                                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: 'auto', paddingTop: '0.5rem' }}>
-                                            <button
-                                                type="button"
-                                                onClick={(e) => { e.stopPropagation(); handleEditQuotation(quotation); }}
-                                                style={{
-                                                    background: 'rgba(255, 255, 255, 0.05)',
-                                                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                                                    color: '#cbd5e1',
-                                                    padding: '0.6rem',
-                                                    borderRadius: '12px',
-                                                    cursor: 'pointer',
-                                                    transition: 'all 0.2s',
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    justifyContent: 'center',
-                                                    backdropFilter: 'blur(4px)'
-                                                }}
-                                                onMouseOver={(e) => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)'; e.currentTarget.style.color = '#fff'; e.currentTarget.style.transform = 'scale(1.05)'; }}
-                                                onMouseOut={(e) => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'; e.currentTarget.style.color = '#cbd5e1'; e.currentTarget.style.transform = 'scale(1)'; }}
-                                                title="Edit"
-                                            >
-                                                <IconEdit size="18" />
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={(e) => { e.stopPropagation(); handleDeleteQuotation(quotation); }}
-                                                style={{
-                                                    background: 'rgba(239, 68, 68, 0.1)',
-                                                    border: '1px solid rgba(239, 68, 68, 0.2)',
-                                                    color: '#ef4444',
-                                                    padding: '0.6rem',
-                                                    borderRadius: '12px',
-                                                    cursor: 'pointer',
-                                                    transition: 'all 0.2s',
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    justifyContent: 'center',
-                                                    backdropFilter: 'blur(4px)'
-                                                }}
-                                                onMouseOver={(e) => { e.currentTarget.style.background = '#ef4444'; e.currentTarget.style.color = '#fff'; e.currentTarget.style.transform = 'scale(1.05)'; }}
-                                                onMouseOut={(e) => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'; e.currentTarget.style.color = '#ef4444'; e.currentTarget.style.transform = 'scale(1)'; }}
-                                                title="Delete"
-                                            >
-                                                <IconTrash size="18" />
-                                            </button>
-                                        </div>
-                                    </div>
-                                );
-                            })}
+                                                </td>
+                                                <td style={{ ...tableNumericCellStyle, textAlign: 'center', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                                                    {quotation.density}
+                                                </td>
+                                                <td style={{ ...tableBodyCellStyle, textAlign: 'center', padding: '0.72rem 0.75rem' }}>
+                                                    <div style={actionGroupStyle}>
+                                                        <button
+                                                            title="Edit"
+                                                            onClick={(e) => { e.stopPropagation(); handleEditQuotation(quotation); }}
+                                                            className="btn"
+                                                            style={actionEditButtonStyle}
+                                                        >
+                                                            <IconEdit size="16" />
+                                                        </button>
+                                                        <button
+                                                            title="Delete"
+                                                            onClick={(e) => { e.stopPropagation(); handleDeleteQuotation(quotation); }}
+                                                            className="btn"
+                                                            style={actionDeleteButtonStyle}
+                                                        >
+                                                            <IconTrash size="16" />
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
                         </div>
                     )}
                 </div>

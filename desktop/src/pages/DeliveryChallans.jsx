@@ -383,7 +383,6 @@ const DeliveryChallans = () => {
         if (templateConfig.showQuality && !quality.trim()) return 'Quality is required';
         if (templateConfig.showFolding && !folding.trim()) return 'Folding is required';
         if (templateConfig.showLotNo && !lotNo.trim()) return 'Lot No is required';
-        if (templateConfig.showBillNo && !billNo.trim()) return 'Bill No is required';
         return null;
     };
 
@@ -983,13 +982,13 @@ const DeliveryChallans = () => {
                                 )}
                                 {selectedTemplateConfig.showBillNo && (
                                     <div className="form-group" style={createDcFieldGroupStyle}>
-                                        <label style={createDcLabelStyle}>Bill No *</label>
+                                        <label style={createDcLabelStyle}>Bill No</label>
                                         <input type="text" className="input" style={createDcInputStyle} value={billNo} onChange={e => setBillNo(e.target.value)} placeholder="Bill Number" />
                                     </div>
                                 )}
                                 {selectedTemplateConfig.showBillPreparedBy && (
                                     <div className="form-group" style={createDcFieldGroupStyle}>
-                                        <label style={createDcLabelStyle}>Bill Prepared By *</label>
+                                        <label style={createDcLabelStyle}>Bill Prepared By</label>
                                         <input type="text" className="input" style={createDcInputStyle} value={billPreparedBy} onChange={e => setBillPreparedBy(e.target.value)} placeholder="Prepared By" />
                                     </div>
                                 )}

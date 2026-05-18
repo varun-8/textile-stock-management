@@ -256,7 +256,7 @@ router.post('/:id/cancel', async (req, res) => {
         await ClothRoll.updateMany(
             { dcId: dc._id },
             { 
-               $set: { status: 'IN' },
+               $set: { status: 'IN', employeeName: req.user ? req.user.username : 'Admin Cancel Engine' },
                $unset: { dcId: "" },
                $push: {
                    transactionHistory: {
@@ -329,7 +329,7 @@ router.post('/manual-out', async (req, res) => {
             updateOne: {
                 filter: { _id: roll._id },
                 update: {
-                    $set: { status: 'OUT' },
+                    $set: { status: 'OUT', employeeName: req.user ? req.user.username : 'Admin Manual Out' },
                     $push: {
                         transactionHistory: {
                             status: 'OUT',
